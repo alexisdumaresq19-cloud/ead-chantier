@@ -179,20 +179,24 @@ function PlanList({
   const [view, setView] = usePlanView();
   const index = useMemo(() => indexSheets(plans.sheets), [plans.sheets]);
   const clear = useCallback(() => setSearch(""), [setSearch]);
+  // Folders made before the first plans: nothing to search or to lay out yet.
+  const searchable = plans.sheets.length > 0;
 
   return (
     <>
-      <div className="bg-canvas/95 sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 flex gap-2 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10">
-        <SearchInput
-          value={search}
-          onChange={setSearch}
-          placeholder="Rechercher un plan"
-          className="min-w-0 flex-1 lg:max-w-md"
-        />
-        <ViewToggle view={view} onChange={setView} />
-      </div>
+      {searchable ? (
+        <div className="bg-canvas/95 sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 flex gap-2 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10">
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Rechercher un plan"
+            className="min-w-0 flex-1 lg:max-w-md"
+          />
+          <ViewToggle view={view} onChange={setView} />
+        </div>
+      ) : null}
 
-      {query ? (
+      {query && searchable ? (
         <SearchResults
           projectId={projectId}
           index={index}
@@ -370,8 +374,8 @@ const FolderSection = memo(function FolderSection({
         </div>
       ) : (
         <p className="border-line text-dim mb-3 rounded-2xl border border-dashed px-4 py-5 text-sm">
-          Ce dossier est vide. Pour y ranger une feuille, ouvrez son menu, puis « Déplacer dans un
-          dossier ».
+          Ce dossier est vide. Choisissez-le quand vous ajoutez des plans, ou ouvrez le menu
+          d&apos;une feuille, puis « Déplacer dans un dossier ».
         </p>
       )}
     </section>

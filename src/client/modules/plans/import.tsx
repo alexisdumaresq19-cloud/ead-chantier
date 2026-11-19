@@ -32,7 +32,6 @@ import {
   Button,
   ButtonLink,
   Card,
-  confirmAction,
   EmptyState,
   ErrorState,
   Field,
@@ -44,6 +43,7 @@ import {
   Spinner,
   toast,
 } from "../../ui";
+import { confirmDeliberately } from "./confirm";
 import { planKeys, planPaths, refreshProject, usePlanImport, usePlans } from "./data";
 import { FolderDialog } from "./folders";
 import {
@@ -82,13 +82,22 @@ export function ImportScreen() {
   }
 
   const data = current.data;
-  if (data === undefined) {
-    const gone = current.error instanceof ApiFailure && current.error.status === 404;
+  // Cancelled, maybe by someone else while this screen was open; or reached
+  // through another project's address, and then not this project's.
+  const gone =
+    (current.error instanceof ApiFailure && current.error.status === 404) ||
+    (data !== undefined && data.projectId !== project.id);
+  if (gone) {
     return (
       <Page title="Ajout de plans" back={back}>
-        {gone ? (
-          <Gone list={list} />
-        ) : current.isError ? (
+        <Gone list={list} />
+      </Page>
+    );
+  }
+  if (data === undefined) {
+    return (
+      <Page title="Ajout de plans" back={back}>
+        {current.isError ? (
           <ErrorState error={current.error} onRetry={() => current.refetch()} />
         ) : (
           <div role="status" aria-label="Chargement">
@@ -97,14 +106,6 @@ export function ImportScreen() {
             <Skeleton className="mt-3 h-40" />
           </div>
         )}
-      </Page>
-    );
-  }
-  // An import reached through another project's address is not this one's.
-  if (data.projectId !== project.id) {
-    return (
-      <Page title="Ajout de plans" back={back}>
-        <Gone list={list} />
       </Page>
     );
   }
@@ -181,6 +182,10 @@ function useSaver(projectId: string, importId: string) {
         for (const [id, patch] of pages)
           work.current.pages.set(id, { ...patch, ...work.current.pages.get(id) });
         setState("failed");
+        // Refused by the server: most likely the import was published or
+        // cancelled from another device. Asking for it again shows where it is.
+        if (!(error instanceof ApiFailure && error.offline))
+          void client.invalidateQueries({ queryKey: key });
         throw error;
       }
     };
@@ -205,7 +210,11 @@ function useSaver(projectId: string, importId: string) {
         work.current.settings = { ...work.current.settings, ...patch };
         soon();
       },
-      /** Forgets what is waiting: the import is being cancelled. */
+      /** Holds back the save that is waiting, while the import is being cancelled. */
+      hold() {
+        window.clearTimeout(work.current.timer);
+      },
+      /** Forgets what is waiting: the import was cancelled. */
       drop() {
         window.clearTimeout(work.current.timer);
         work.current.settings = {};
@@ -296,17 +305,22 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
 
   const cancel = useMutation({
     mutationFn: () => {
-      saver.drop();
+      saver.hold();
       return api(`/api/plan-imports/${current.id}`, { method: "DELETE" });
     },
     onSuccess: () => {
+      saver.drop();
       toast.success("Import annulé. Rien n'a été publié.");
       leave();
     },
-    onError: (error) => toast.error(errorMessage(error)),
+    onError: (error) => {
+      // Still there, and still to be checked: what was typed is saved after all.
+      void saver.flush().catch(() => {});
+      toast.error(errorMessage(error));
+    },
   });
   const askCancel = async () => {
-    const confirmed = await confirmAction({
+    const confirmed = await confirmDeliberately({
       title: "Annuler cet import?",
       text: `Les pages converties de « ${current.filename} » seront supprimées. Les plans déjà publiés ne changent pas.`,
       confirmLabel: "Annuler l'import",
@@ -331,7 +345,7 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
     },
   });
   const askPublish = async () => {
-    const confirmed = await confirmAction({
+    const confirmed = await confirmDeliberately({
       title: `Publier ${count(kept.length, "feuille")}?`,
       text:
         replaced > 0
@@ -355,7 +369,12 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
       back={{ href: list, label: "Plans" }}
       actions={
         failedWhole ? null : (
-          <Button variant="secondary" onClick={askCancel} loading={cancel.isPending}>
+          <Button
+            variant="secondary"
+            onClick={askCancel}
+            loading={cancel.isPending}
+            disabled={publish.isPending}
+          >
             Annuler l&apos;import
           </Button>
         )
@@ -489,6 +508,7 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
                 saving={saver.state}
                 error={publish.isError ? errorMessage(publish.error) : null}
                 publishing={publish.isPending}
+                cancelling={cancel.isPending}
                 onPublish={askPublish}
               />
             </>
@@ -573,7 +593,9 @@ const PageCard = memo(function PageCard({
   return (
     <li
       className={cn(
-        "bg-surface animate-fade rounded-2xl border p-3 shadow-xs",
+        // Going from field to field with the keyboard, the one that takes the
+        // focus is scrolled clear of the bar that holds the publish button.
+        "bg-surface animate-fade rounded-2xl border p-3 shadow-xs [&_button]:scroll-mb-40 [&_input]:scroll-mb-40",
         problem && !skipped ? "border-bad/50" : "border-line",
       )}
     >
@@ -670,6 +692,7 @@ function PublishBar({
   saving,
   error,
   publishing,
+  cancelling,
   onPublish,
 }: {
   converting: boolean;
@@ -681,6 +704,8 @@ function PublishBar({
   saving: SaveState;
   error: string | null;
   publishing: boolean;
+  /** The import is being cancelled: a second tap must not ask to publish it. */
+  cancelling: boolean;
   onPublish: () => void;
 }) {
   const summary = [
@@ -718,7 +743,7 @@ function PublishBar({
           className="sm:w-auto"
           onClick={onPublish}
           loading={publishing}
-          disabled={converting || kept === 0 || problems > 0}
+          disabled={converting || cancelling || kept === 0 || problems > 0}
         >
           {kept > 0 ? `Publier ${count(kept, "feuille")}` : "Publier"}
         </Button>

@@ -54,22 +54,22 @@ export function SheetList({
 type ItemProps = ListProps & { sheet: PlanSheet; query: string };
 
 /** The link to a sheet's viewer. The sheet is fetched as the finger lands. */
-function SheetLink({
+export function SheetLink({
   projectId,
-  sheet,
+  sheetId,
   className,
   children,
 }: {
   projectId: string;
-  sheet: PlanSheet;
+  sheetId: string;
   className: string;
   children: ReactNode;
 }) {
   const client = useQueryClient();
   return (
     <Link
-      href={planPaths.sheet(projectId, sheet.id)}
-      onPointerDown={() => warmSheet(client, projectId, sheet.id)}
+      href={planPaths.sheet(projectId, sheetId)}
+      onPointerDown={() => warmSheet(client, projectId, sheetId)}
       className={className}
     >
       {children}
@@ -112,7 +112,7 @@ const SheetRow = memo(function SheetRow({ projectId, sheet, query, canManage, on
     <li className="flex items-center">
       <SheetLink
         projectId={projectId}
-        sheet={sheet}
+        sheetId={sheet.id}
         className="hover:bg-canvas active:bg-canvas flex min-h-[4.75rem] min-w-0 flex-1 items-center gap-3 py-2.5 pr-2 pl-3 -outline-offset-2 transition-colors"
       >
         <PlanThumb
@@ -152,7 +152,7 @@ const SheetCard = memo(function SheetCard({
     <li className="relative">
       <SheetLink
         projectId={projectId}
-        sheet={sheet}
+        sheetId={sheet.id}
         className="border-line bg-surface hover:border-ead/60 active:bg-canvas flex h-full flex-col overflow-hidden rounded-2xl border shadow-xs transition hover:shadow-md"
       >
         <span className="border-line block border-b">

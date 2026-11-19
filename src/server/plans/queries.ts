@@ -97,11 +97,12 @@ export async function sheetsByNumber(
   return new Map(rows.map((sheet) => [sheetNumberKey(sheet.number), sheet]));
 }
 
+/** A sheet of the site. One that was archived is gone for everyone, by its address too. */
 export async function sheetRow(sheetId: string): Promise<SheetRow> {
   const [sheet] = await db
     .select()
     .from(schema.sheets)
-    .where(eq(schema.sheets.id, sheetId))
+    .where(and(eq(schema.sheets.id, sheetId), isNull(schema.sheets.archivedAt)))
     .limit(1);
   if (!sheet) throw notFound("Feuille introuvable.");
   return sheet;

@@ -8,6 +8,7 @@ import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
 import { importDto } from "@/server/plans/import-dto";
 import { createImport, needsWorker, pendingImports, runImportWorker } from "@/server/plans/imports";
+import { dayInput } from "@/server/plans/input";
 import { takeUpload } from "@/server/uploads";
 
 // Converting pages takes a few seconds each and goes on after the answer.
@@ -41,10 +42,7 @@ const input = z.object({
   uploadId: z.string(),
   folderId: z.string().nullish(),
   revisionLabel: z.string().trim().max(60).nullish(),
-  issuedOn: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullish(),
+  issuedOn: dayInput.nullish(),
 });
 
 /** Starts bringing an uploaded PDF in. */

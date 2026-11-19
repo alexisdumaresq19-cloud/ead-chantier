@@ -20,10 +20,20 @@ describe("the excerpt of a page's text", () => {
   it("cuts long text on both sides of the words", () => {
     const text = `${"a".repeat(100)} puisard ${"b".repeat(100)}`;
     const excerpt = excerptAround(text, "puisard")!;
-    expect(excerpt.startsWith("…")).toBe(true);
+    expect(excerpt.startsWith("…puisard ")).toBe(true);
     expect(excerpt.endsWith("…")).toBe(true);
-    expect(excerpt).toContain(" puisard ");
     expect(excerpt.length).toBeLessThan(120);
+  });
+
+  it("starts on a whole word, near enough for the words found to show on a phone", () => {
+    const text =
+      "3. Recouvrement minimal de 2,1 m. 4. Conduite d'égout sanitaire : PVC DR-35, pente de 0,5 %.";
+    expect(excerptAround(text, "egout")).toBe(
+      "…de 2,1 m. 4. Conduite d'égout sanitaire : PVC DR-35, pente de 0,5 %.",
+    );
+    expect(excerptAround(text, "sanitaire")).toBe(
+      "…m. 4. Conduite d'égout sanitaire : PVC DR-35, pente de 0,5 %.",
+    );
   });
 
   it("finds words written with separate accent marks", () => {

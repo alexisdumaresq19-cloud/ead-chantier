@@ -9,6 +9,7 @@ import { db, schema } from "@/server/db/client";
 import { badRequest, body, notFound, route } from "@/server/http";
 import { importDto } from "@/server/plans/import-dto";
 import { cancelImport, needsWorker, runImportWorker, saveDrafts } from "@/server/plans/imports";
+import { dayInput } from "@/server/plans/input";
 
 export const maxDuration = 300;
 
@@ -40,11 +41,7 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
 const patch = z.object({
   folderId: z.string().nullable().optional(),
   revisionLabel: z.string().trim().max(60).nullable().optional(),
-  issuedOn: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/)
-    .nullable()
-    .optional(),
+  issuedOn: dayInput.nullable().optional(),
   pages: z
     .array(
       z.object({

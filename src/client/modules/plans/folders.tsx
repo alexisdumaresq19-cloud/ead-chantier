@@ -4,7 +4,8 @@ import { useId, useState, type FormEvent } from "react";
 import type { PlanFolder } from "@/shared/plans";
 
 import { errorMessage } from "../../lib/api";
-import { Button, confirmAction, Field, FormError, Input, Sheet, toast } from "../../ui";
+import { Button, Field, FormError, Input, Sheet, toast } from "../../ui";
+import { confirmDeliberately } from "./confirm";
 import { useCreateFolder, useDeleteFolder, useRenameFolder } from "./data";
 
 /**
@@ -61,7 +62,7 @@ export function FolderDialog({
 
   const destroy = async () => {
     if (!folder) return;
-    const confirmed = await confirmAction({
+    const confirmed = await confirmDeliberately({
       title: `Supprimer le dossier « ${folder.name} »?`,
       text:
         sheetCount === 0

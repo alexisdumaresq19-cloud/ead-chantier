@@ -1,7 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronRight, WifiOff } from "lucide-react";
 import { memo, useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
 
 import type { PlanSearchHit } from "@/shared/plans";
 
@@ -9,11 +8,11 @@ import { api, ApiFailure } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { Button, Spinner } from "../../ui";
-import { planKeys, planPaths } from "./data";
+import { planKeys } from "./data";
 import { filterSheets, type IndexedSheet } from "./logic";
 import { Highlight, PlanThumb } from "./parts";
 import type { PlanView } from "./prefs";
-import { SheetList, type ListProps } from "./sheets";
+import { SheetLink, SheetList, type ListProps } from "./sheets";
 
 // Searching the plans: what was typed, and what it finds.
 
@@ -174,8 +173,9 @@ const DrawnHit = memo(function DrawnHit({
 }) {
   return (
     <li>
-      <Link
-        href={planPaths.sheet(projectId, hit.sheetId)}
+      <SheetLink
+        projectId={projectId}
+        sheetId={hit.sheetId}
         className="hover:bg-canvas active:bg-canvas flex min-h-[4.75rem] items-center gap-3 py-2.5 pr-2 pl-3 -outline-offset-2 transition-colors"
       >
         <PlanThumb url={hit.thumbUrl} className="h-14 w-19" />
@@ -191,7 +191,7 @@ const DrawnHit = memo(function DrawnHit({
           </span>
         </span>
         <ChevronRight className="text-dim/70 size-5 shrink-0" aria-hidden />
-      </Link>
+      </SheetLink>
     </li>
   );
 });

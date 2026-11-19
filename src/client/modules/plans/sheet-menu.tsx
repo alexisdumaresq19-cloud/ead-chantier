@@ -16,12 +16,11 @@ import type { PlanFolder, Sheet as PlanSheet, SheetRevision } from "@/shared/pla
 
 import { errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { count, formatDay } from "../../lib/format";
+import { count, formatDay, formatTime } from "../../lib/format";
 import {
   Badge,
   Button,
   ButtonLink,
-  confirmAction,
   Field,
   FormError,
   Input,
@@ -30,6 +29,7 @@ import {
   Spinner,
   toast,
 } from "../../ui";
+import { confirmDeliberately } from "./confirm";
 import {
   planPaths,
   useArchiveSheet,
@@ -67,7 +67,7 @@ export function SheetMenu({
   const folder = folders.find((candidate) => candidate.id === sheet.folderId);
 
   const archiveSheet = async () => {
-    const confirmed = await confirmAction({
+    const confirmed = await confirmDeliberately({
       title: `Archiver la feuille ${sheet.number}?`,
       text: "Elle ne sera plus visible au chantier. Pour la remettre plus tard, importez de nouveau son PDF.",
       confirmLabel: "Archiver",
@@ -383,9 +383,9 @@ function Revisions({ projectId, sheet }: { projectId: string; sheet: PlanSheet }
 
   const show = async (revision: SheetRevision) => {
     const name = revisionTitle(revision);
-    const confirmed = await confirmAction({
+    const confirmed = await confirmDeliberately({
       title: `Montrer « ${name} » au chantier?`,
-      text: `Tout le monde verra cette révision de la feuille ${sheet.number}. Les autres révisions restent ici.`,
+      text: `Tout le monde verra cette révision de la feuille ${sheet.number}, ajoutée le ${addedOn(revision)}. Les autres révisions restent ici.`,
       confirmLabel: "Montrer au chantier",
     });
     if (!confirmed) return;
@@ -464,10 +464,17 @@ function Revisions({ projectId, sheet }: { projectId: string; sheet: PlanSheet }
 const revisionTitle = (revision: SheetRevision) =>
   revisionName(revision.label) ?? `Révision du ${formatDay(revision.addedAt)}`;
 
+/**
+ * To the minute: two revisions added the same day, left unnamed, are told
+ * apart by it. The time stays in one piece at the end of a line.
+ */
+const addedOn = (revision: SheetRevision) =>
+  `${formatDay(revision.addedAt)} à\u00a0${formatTime(revision.addedAt).replace(/\s/g, "\u00a0")}`;
+
 const revisionDates = (revision: SheetRevision) =>
   [
     revision.issuedOn ? `Émise le ${formatDay(revision.issuedOn)}` : null,
-    `Ajoutée le ${formatDay(revision.addedAt)}`,
+    `Ajoutée le ${addedOn(revision)}`,
   ]
     .filter(Boolean)
     .join(" · ");

@@ -8,6 +8,7 @@ import { badRequest, notFound } from "../http";
 import { newId, newPublicKey } from "../ids";
 import { storage } from "../storage";
 import type { Upload } from "../uploads";
+import { lockPlanNames } from "./lock";
 import { sheetsByNumber } from "./queries";
 import { openPdf, renderPage, TILE_OVERLAP, TILE_SIZE } from "./render";
 import { suggestSheetName } from "./suggest";
@@ -30,25 +31,43 @@ const STALE_MS = 5 * 60_000;
 export const MAX_WORKERS = 3;
 const UPLOADS_AT_ONCE = 16;
 
+/**
+ * Starts the import of an uploaded PDF. One import per PDF sent: asked twice
+ * (the answer was lost on a bad connection and the app tried again), the
+ * second request finds the import the first one started.
+ */
 export async function createImport(
   user: SessionUser,
   upload: Upload,
   options: { folderId?: string | null; revisionLabel?: string | null; issuedOn?: string | null },
 ): Promise<Import> {
-  const [created] = await db
-    .insert(schema.planImports)
-    .values({
-      id: newId(),
-      projectId: upload.projectId!,
-      uploadId: upload.id,
-      filename: upload.filename,
-      folderId: options.folderId ?? null,
-      revisionLabel: options.revisionLabel || null,
-      issuedOn: options.issuedOn || null,
-      createdBy: user.id,
-    })
-    .returning();
-  return created;
+  return db.transaction(async (tx) => {
+    await tx
+      .select({ id: schema.uploads.id })
+      .from(schema.uploads)
+      .where(eq(schema.uploads.id, upload.id))
+      .for("update");
+    const [existing] = await tx
+      .select()
+      .from(schema.planImports)
+      .where(eq(schema.planImports.uploadId, upload.id))
+      .limit(1);
+    if (existing) return existing;
+    const [created] = await tx
+      .insert(schema.planImports)
+      .values({
+        id: newId(),
+        projectId: upload.projectId!,
+        uploadId: upload.id,
+        filename: upload.filename,
+        folderId: options.folderId ?? null,
+        revisionLabel: options.revisionLabel || null,
+        issuedOn: options.issuedOn || null,
+        createdBy: user.id,
+      })
+      .returning();
+    return created;
+  });
 }
 
 /** True if a worker should be started for this import. */
@@ -410,13 +429,13 @@ export async function publishImport(
   await db.transaction(async (tx) => {
     // One publication at a time per project: two imports of the same set
     // published together must end up as revisions of the same sheets.
-    await tx.execute(raw`select pg_advisory_xact_lock(hashtext(${current.projectId}))`);
+    await lockPlanNames(tx, current.projectId);
     const claimed = await tx
       .update(schema.planImports)
       .set({ status: "published", publishedAt: new Date() })
       .where(and(eq(schema.planImports.id, current.id), eq(schema.planImports.status, "review")))
       .returning({ id: schema.planImports.id });
-    if (!claimed.length) throw badRequest("Cet import est déjà publié.");
+    if (!claimed.length) throw badRequest("Cet import a déjà été publié ou annulé.");
 
     const existing = await sheetsByNumber(current.projectId, tx);
     const [{ next }] = await tx
@@ -459,21 +478,63 @@ export async function publishImport(
   return { sheetIds };
 }
 
-/** Abandons an import that was not published, with its images. */
+/** Abandons an import that was not published, with its images and its PDF. */
 export async function cancelImport(importId: string) {
-  const { current, pages } = await importWithPages(importId);
-  if (current.status === "published") throw badRequest("Cet import est déjà publié.");
-  await db.delete(schema.planImports).where(eq(schema.planImports.id, importId));
-  await discardPages(pages);
+  const { pages, upload } = await db.transaction(async (tx) => {
+    // The import is locked first: a publication under way finishes before
+    // this looks at it, and its pages are then no longer there to take.
+    const [current] = await tx
+      .select()
+      .from(schema.planImports)
+      .where(eq(schema.planImports.id, importId))
+      .for("update");
+    if (!current) throw notFound("Import introuvable.");
+    if (current.status === "published") throw badRequest("Cet import est déjà publié.");
+    const pages = await tx
+      .delete(schema.sheetRevisions)
+      .where(
+        and(eq(schema.sheetRevisions.importId, importId), isNull(schema.sheetRevisions.sheetId)),
+      )
+      .returning({ tileKey: schema.sheetRevisions.tileKey });
+    // The PDF was sent for this import alone; the import goes with it.
+    const [upload] = await tx
+      .delete(schema.uploads)
+      .where(eq(schema.uploads.id, current.uploadId))
+      .returning({ storageKey: schema.uploads.storageKey });
+    return { pages, upload };
+  });
+  await removeTiles(pages);
+  if (upload) {
+    const folder = upload.storageKey.slice(0, upload.storageKey.lastIndexOf("/"));
+    await storage()
+      .removePrefix("private", folder)
+      .catch(() => {});
+  }
 }
 
+/** Removes pages that belong to no sheet, with their images. */
 async function discardPages(pages: Revision[]) {
-  for (const page of pages) {
-    if (page.sheetId) continue;
-    await db.delete(schema.sheetRevisions).where(eq(schema.sheetRevisions.id, page.id));
-    if (page.tileKey)
+  if (!pages.length) return;
+  const removed = await db
+    .delete(schema.sheetRevisions)
+    .where(
+      and(
+        inArray(
+          schema.sheetRevisions.id,
+          pages.map((page) => page.id),
+        ),
+        isNull(schema.sheetRevisions.sheetId),
+      ),
+    )
+    .returning({ tileKey: schema.sheetRevisions.tileKey });
+  await removeTiles(removed);
+}
+
+async function removeTiles(pages: { tileKey: string | null }[]) {
+  for (const { tileKey } of pages) {
+    if (tileKey)
       await storage()
-        .removePrefix("public", page.tileKey)
+        .removePrefix("public", tileKey)
         .catch(() => {});
   }
 }
