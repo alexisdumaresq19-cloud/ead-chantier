@@ -18,7 +18,7 @@ const url =
   "postgres://ead:ead@127.0.0.1:54329/ead";
 
 async function main() {
-  const sql = postgres(url, { max: 1, prepare: false });
+  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
   await migrate(drizzle(sql), { migrationsFolder: "./drizzle" });
   await sql.end();
   console.log("Base de données à jour.");
