@@ -11,10 +11,10 @@ import {
   type ProjectDocument,
 } from "@/shared/documents";
 
-import { api, errorMessage } from "../../lib/api";
+import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { Button, Field, FormError, Input, Sheet, Spinner, toast } from "../../ui";
-import { changeDocuments } from "./data";
+import { changeDocuments, refreshProject } from "./data";
 
 // What a manager does to one document: rename it, move it to another
 // category, archive it. One window, which goes from the menu to the form.
@@ -80,6 +80,15 @@ function ActionsSheet({
           : "Document renommé",
       );
       onClose();
+    },
+    onError(error) {
+      // Archived by someone else in the meantime: the list is out of date,
+      // and this window is about a document that is no longer there.
+      if (error instanceof ApiFailure && error.status === 404) {
+        toast.error(errorMessage(error));
+        void refreshProject(projectId);
+        onClose();
+      }
     },
   });
 

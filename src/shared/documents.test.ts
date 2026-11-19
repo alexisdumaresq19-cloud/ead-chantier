@@ -85,6 +85,11 @@ describe("tidyTitle", () => {
   it("makes one line with single spaces", () => {
     expect(tidyTitle("  Devis \n section\t3  ")).toBe("Devis section 3");
   });
+
+  it("reads control characters as spaces, so a title of nothing else is empty", () => {
+    expect(tidyTitle("Devis\u0000section\u0007 3\u007f")).toBe("Devis section 3");
+    expect(tidyTitle("\u0000\u001b")).toBe("");
+  });
 });
 
 describe("downloadName", () => {

@@ -56,8 +56,8 @@ export type DocumentLink = { url: string };
 
 export const DOCUMENT_TITLE_MAX = 120;
 
-/** One line, single spaces. */
-export const tidyTitle = (text: string) => text.replace(/\s+/g, " ").trim();
+/** One line, single spaces. Control characters (a pasted NUL, an escape) count as spaces. */
+export const tidyTitle = (text: string) => text.replace(/[\s\u0000-\u001f\u007f]+/g, " ").trim();
 
 /** "pdf" for "Devis.PDF"; "" when the name has no extension. */
 export function extensionOf(filename: string): string {

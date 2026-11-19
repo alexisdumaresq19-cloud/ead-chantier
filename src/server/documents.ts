@@ -32,7 +32,13 @@ export const documentTitle = z
       .min(1, "le titre est vide")
       .max(DOCUMENT_TITLE_MAX, `${DOCUMENT_TITLE_MAX} caractères au plus`),
   );
-export const documentCategory = z.enum(DOCUMENT_CATEGORIES);
+export const documentCategory = z.enum(DOCUMENT_CATEGORIES, "catégorie inconnue");
+
+/**
+ * Ids are made by the app, of lowercase letters and digits. Anything else
+ * names no record, and some of it (a NUL byte) the database refuses outright.
+ */
+export const isRecordId = (value: string) => /^[a-z0-9]{1,40}$/.test(value);
 
 const rows = () =>
   db
@@ -64,6 +70,7 @@ export async function listDocuments(projectId: string): Promise<ProjectDocument[
 const gone = () => notFound("Ce document n'est plus disponible.");
 
 async function findDocument(id: string): Promise<Row> {
+  if (!isRecordId(id)) throw gone();
   const [row] = await rows()
     .where(and(eq(schema.documents.id, id), isNull(schema.documents.archivedAt)))
     .limit(1);
@@ -109,20 +116,33 @@ export async function createDocument(
   const problem = fileProblem({ name: upload.filename, size: upload.size });
   if (problem) throw badRequest(`${FILE_PROBLEM_LABELS[problem]}. ${ACCEPTED_FILES_LABEL}`);
 
-  // Asked twice for the same file (the answer was lost on a bad signal):
-  // the document made the first time is the answer.
-  const [existing] = await rows().where(eq(schema.documents.uploadId, upload.id)).limit(1);
-  if (existing) return documentDto(existing);
-
-  const id = newId();
-  await db.insert(schema.documents).values({
-    id,
-    projectId,
-    category: input.category,
-    title: input.title,
-    uploadId: upload.id,
-    createdBy: user.id,
+  // Asked twice for the same file (the answer was lost on a bad signal, or a
+  // retry crossed the first try): the document made the first time is the
+  // answer. The second request waits on the upload's row for the first to end.
+  const id = await db.transaction(async (tx) => {
+    await tx
+      .select({ id: schema.uploads.id })
+      .from(schema.uploads)
+      .where(eq(schema.uploads.id, upload.id))
+      .for("update");
+    const [existing] = await tx
+      .select({ id: schema.documents.id })
+      .from(schema.documents)
+      .where(eq(schema.documents.uploadId, upload.id))
+      .limit(1);
+    if (existing) return existing.id;
+    const created = newId();
+    await tx.insert(schema.documents).values({
+      id: created,
+      projectId,
+      category: input.category,
+      title: input.title,
+      uploadId: upload.id,
+      createdBy: user.id,
+    });
+    return created;
   });
+  // A document archived since then stays archived: the answer is that it is gone.
   return documentDto(await findDocument(id));
 }
 

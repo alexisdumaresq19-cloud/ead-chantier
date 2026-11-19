@@ -23,6 +23,11 @@ function openWaitingTab(): Window | null {
   if (!tab) return null;
   try {
     tab.document.title = "Ouverture du document";
+    // Without it a phone lays the blank page out a desktop wide, and the text is lost.
+    const viewport = tab.document.createElement("meta");
+    viewport.name = "viewport";
+    viewport.content = "width=device-width, initial-scale=1";
+    tab.document.head.append(viewport);
     const text = tab.document.createElement("p");
     text.textContent = "Ouverture du document…";
     text.style.cssText =

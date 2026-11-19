@@ -47,6 +47,10 @@ import { FileIcon } from "./file-icon";
 import { addDrafts, sameTitle, type Draft } from "./logic";
 import { summarize, type UploadItem, type UploadsState } from "./upload-queue";
 
+// What was chosen and typed, by project. It outlives the screen: a stray tap
+// on a tab or a swipe back must not cost files picked one by one on a phone.
+const chosen = new Map<string, { drafts: Draft[]; category: DocumentCategory | "" }>();
+
 /**
  * Adding documents, in two moments: choosing the files, their titles and
  * their category; then watching them go, one at a time.
@@ -54,7 +58,13 @@ import { summarize, type UploadItem, type UploadsState } from "./upload-queue";
 export function AddDocumentsScreen() {
   const project = useCurrentProject();
   const sending = useUploads(project.id);
-  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [drafts, setDrafts] = useState<Draft[]>(() => chosen.get(project.id)?.drafts ?? []);
+  const [category, setCategory] = useState<DocumentCategory | "">(
+    () => chosen.get(project.id)?.category ?? "",
+  );
+  useEffect(() => {
+    chosen.set(project.id, { drafts, category });
+  }, [project.id, drafts, category]);
   const composing = sending.items.length === 0;
   const dragging = useFileDrop((files) => {
     const { active, failed } = summarize(sending.items);
@@ -77,6 +87,8 @@ export function AddDocumentsScreen() {
           projectId={project.id}
           drafts={drafts}
           setDrafts={setDrafts}
+          category={category}
+          setCategory={setCategory}
           dragging={dragging}
         />
       ) : (
@@ -138,18 +150,21 @@ function Composer({
   projectId,
   drafts,
   setDrafts,
+  category,
+  setCategory,
   dragging,
 }: {
   projectId: string;
   drafts: Draft[];
   setDrafts: (change: (drafts: Draft[]) => Draft[]) => void;
+  category: DocumentCategory | "";
+  setCategory: (category: DocumentCategory | "") => void;
   dragging: boolean;
 }) {
   const online = useOnline();
   const existing = useDocuments(projectId).data;
   const picker = useRef<HTMLInputElement>(null);
   const form = useRef<HTMLFormElement>(null);
-  const [category, setCategory] = useState<DocumentCategory | "">("");
   /** How many times "Envoyer" was pressed with something missing, which is then pointed out. */
   const [refusals, setRefusals] = useState(0);
   const checked = refusals > 0;
@@ -183,6 +198,7 @@ function Composer({
       })),
     );
     setDrafts(() => []);
+    setCategory("");
     // The progress of the files takes the place of the list, from its top.
     window.scrollTo(0, 0);
   };
@@ -483,9 +499,12 @@ function SendingRow({ item }: { item: UploadItem }) {
     if (!sure) return;
     // The question may have stayed open long enough for the file to arrive.
     const now = uploads.getState().items.find((current) => current.id === item.id);
-    if (now?.status === "done")
+    if (now?.status === "saving" || now?.status === "done") {
       toast.info("L'envoi venait de se terminer : le document est ajouté.");
-    else uploads.remove(item.id);
+    } else {
+      uploads.remove(item.id);
+      toast.info("Envoi annulé");
+    }
   };
 
   return (
@@ -541,7 +560,12 @@ function SendingRow({ item }: { item: UploadItem }) {
           </>
         ) : null}
       </div>
-      {item.status === "done" ? null : onItsWay ? (
+      {item.status === "done" ? null : item.status === "saving" ? (
+        // The file has arrived and its document is being made: stopping now
+        // could no longer promise that it will not be added. The button's
+        // place is kept, so the row does not move for that short moment.
+        <span className="size-11 shrink-0" aria-hidden />
+      ) : onItsWay ? (
         <IconButton label={`Annuler l'envoi de ${item.title}`} onClick={cancel}>
           <X aria-hidden />
         </IconButton>

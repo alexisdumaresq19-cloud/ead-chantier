@@ -21,7 +21,7 @@ import {
   type ProjectDocument,
 } from "@/shared/documents";
 
-import { api, errorMessage } from "../../lib/api";
+import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { count, formatSize } from "../../lib/format";
 import { useOnline } from "../../lib/online";
@@ -311,7 +311,17 @@ function useArchive(projectId: string) {
       );
     },
     onSuccess: () => toast.success("Document archivé"),
-    onError: (error) => toast.error(errorMessage(error)),
+    onError(error, document) {
+      // Still on the project (no network, a refusal): back in the list, where
+      // archiving can be tried again. Already gone for the server: it stays out.
+      if (!(error instanceof ApiFailure && error.status === 404))
+        queryClient.setQueryData<ProjectDocument[]>(key, (documents) =>
+          documents?.some((current) => current.id === document.id)
+            ? documents
+            : documents && [...documents, document],
+        );
+      toast.error(errorMessage(error));
+    },
     onSettled: () => refreshProject(projectId),
   });
 }
