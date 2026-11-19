@@ -21,6 +21,7 @@ import { isAdmin } from "@/shared/roles";
 import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
+import { OfflineProject } from "../../pwa/offline-project";
 import { Page, Section } from "../../shell/page";
 import {
   Badge,
@@ -262,6 +263,8 @@ export function ProjectHomeScreen() {
             />
           ) : null}
         </div>
+
+        <OfflineProject project={project} />
 
         {project.description ? (
           <Section title="À propos du projet">

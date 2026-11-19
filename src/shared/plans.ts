@@ -83,3 +83,35 @@ export type PlanSearchHit = {
   /** Where the words were found in the sheet's text, if not in its name. */
   excerpt: string | null;
 };
+
+// --- The tile pyramid -------------------------------------------------------
+
+/** Size of a sheet's image at a level of its pyramid. */
+export function levelSize(tiles: Tiles, level: number): { width: number; height: number } {
+  const scale = 2 ** (tiles.maxLevel - level);
+  return {
+    width: Math.max(1, Math.ceil(tiles.width / scale)),
+    height: Math.max(1, Math.ceil(tiles.height / scale)),
+  };
+}
+
+/** How many tiles a level has across and down. */
+export function levelGrid(tiles: Tiles, level: number): { columns: number; rows: number } {
+  const { width, height } = levelSize(tiles, level);
+  return { columns: Math.ceil(width / tiles.tileSize), rows: Math.ceil(height / tiles.tileSize) };
+}
+
+export const tileUrl = (tiles: Tiles, level: number, column: number, row: number) =>
+  `${tiles.url}/${level}/${column}_${row}.webp`;
+
+/** Every tile of a sheet, smallest levels first: what keeping it offline takes. */
+export function allTileUrls(tiles: Tiles): string[] {
+  const urls: string[] = [];
+  for (let level = tiles.minLevel; level <= tiles.maxLevel; level++) {
+    const { columns, rows } = levelGrid(tiles, level);
+    for (let row = 0; row < rows; row++)
+      for (let column = 0; column < columns; column++)
+        urls.push(tileUrl(tiles, level, column, row));
+  }
+  return urls;
+}

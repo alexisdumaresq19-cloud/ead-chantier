@@ -13,6 +13,7 @@ import {
   queryClient,
 } from "./lib/query";
 import { handleSignedOut } from "./lib/session";
+import { PwaHost } from "./pwa/host";
 import { registerPwa } from "./pwa/register";
 import { AppRoutes } from "./routes";
 import { Splash } from "./shell/splash";
@@ -36,6 +37,8 @@ export function AppRoot() {
   useEffect(() => {
     window.addEventListener(SIGNED_OUT_EVENT, handleSignedOut);
     registerPwa();
+    // Loaded apart from the first screen: it is only needed once photos wait.
+    void import("./modules/photos/outbox").then((outbox) => outbox.startPhotoOutbox());
     return () => window.removeEventListener(SIGNED_OUT_EVENT, handleSignedOut);
   }, []);
 
@@ -53,6 +56,7 @@ export function AppRoot() {
       >
         <AppRoutes />
         <ConfirmHost />
+        <PwaHost />
         <Toaster
           position="top-center"
           richColors
