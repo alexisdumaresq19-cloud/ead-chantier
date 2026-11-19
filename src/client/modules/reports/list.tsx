@@ -21,7 +21,6 @@ import { useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
 import {
   Button,
-  Card,
   confirmAction,
   EmptyState,
   Field,
@@ -101,16 +100,17 @@ export function ReportListScreen() {
           <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
         </Link>
 
-        <Card className="px-3 pt-2 pb-3">
-          <div className="flex items-center justify-between gap-2 pl-1">
+        {/* Seven days across a 360 px phone leave no room for a frame: there, they sit on the page. */}
+        <section className="sm:border-line sm:bg-surface sm:rounded-2xl sm:border sm:px-3 sm:pt-1.5 sm:pb-3 sm:shadow-xs">
+          <div className="flex items-center justify-between gap-2 sm:pl-1">
             <h2 className="font-display text-dim text-sm font-bold tracking-wider uppercase">
               7 derniers jours
             </h2>
-            <Button variant="ghost" size="sm" onClick={() => setChoosingDate(true)}>
+            <Button variant="ghost" onClick={() => setChoosingDate(true)} className="-mr-2 px-3">
               <CalendarDays aria-hidden /> Autre date
             </Button>
           </div>
-          <ul className="mt-1 grid grid-cols-7 gap-1 sm:gap-2">
+          <ul className="grid grid-cols-7 gap-0.5 min-[390px]:gap-1 sm:gap-2">
             {lastDays(today, 7).map((day) => (
               <li key={day}>
                 <DayCell
@@ -130,7 +130,7 @@ export function ReportListScreen() {
               </li>
             ))}
           </ul>
-        </Card>
+        </section>
       </div>
 
       {drafts.length > 0 ? (
@@ -234,8 +234,8 @@ function DayCell({
         state === "done" && "border-ead/30 bg-ead-tint text-ead-dark hover:border-ead/60",
         state === "draft" && "border-warn/30 bg-warn-tint text-warn hover:border-warn/60",
         state === "none" &&
-          "border-line text-dim hover:border-ead/60 hover:text-text border-dashed",
-        state === "unknown" && "border-line text-dim",
+          "border-line bg-surface text-dim hover:border-ead/60 hover:text-text border-dashed",
+        state === "unknown" && "border-line bg-surface text-dim",
         isToday && "ring-ead/40 ring-2 ring-offset-1",
       )}
     >

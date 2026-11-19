@@ -381,12 +381,7 @@ function Editor({
               {authorHas(takenBy, me.id)} déjà enregistré un rapport pour cette journée. Une journée
               n&apos;a qu&apos;un rapport.
             </p>
-            <ButtonLink
-              href={`${base}/${takenBy.id}`}
-              variant="secondary"
-              size="sm"
-              className="mt-2"
-            >
+            <ButtonLink href={`${base}/${takenBy.id}`} variant="secondary" className="mt-2">
               Voir ce rapport
             </ButtonLink>
           </Notice>

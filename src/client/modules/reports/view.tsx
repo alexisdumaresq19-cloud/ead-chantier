@@ -273,7 +273,7 @@ function DayPhotos({ photos, project }: { photos: Photo[]; project: ProjectDetai
       action={
         <Link
           href={`/projets/${project.id}/photos`}
-          className="no-print text-ead-dark hover:bg-ead-tint -mr-2 inline-flex h-9 items-center rounded-lg px-2 text-sm font-semibold"
+          className="no-print text-ead-dark hover:bg-ead-tint -my-1 -mr-2 inline-flex h-11 items-center rounded-lg px-2 text-sm font-semibold"
         >
           Toutes les photos
         </Link>

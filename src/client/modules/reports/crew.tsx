@@ -156,12 +156,12 @@ export function CrewEditor({
             )
           ) : toAdd.length > 0 ? (
             <div className="mt-4">
-              <div className="mb-2 flex min-h-9 items-center justify-between gap-2">
+              <div className="mb-1 flex min-h-11 items-center justify-between gap-2">
                 <p className="text-sm font-semibold">Personnes du projet</p>
                 {toAdd.length > 1 ? (
                   <Button
                     variant="ghost"
-                    size="sm"
+                    className="-mr-2 px-3"
                     onClick={() =>
                       setForm((current) => toAdd.reduce((next, m) => addMember(next, m), current))
                     }
