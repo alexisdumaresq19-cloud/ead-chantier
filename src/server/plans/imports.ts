@@ -1,4 +1,6 @@
-import { and, asc, eq, isNull, lt, sql as raw } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, sql as raw } from "drizzle-orm";
+
+import { sheetNumberKey, type PlanImportSummary } from "@/shared/plans";
 
 import type { SessionUser } from "../auth";
 import { db, schema, sql } from "../db/client";
@@ -6,8 +8,9 @@ import { badRequest, notFound } from "../http";
 import { newId, newPublicKey } from "../ids";
 import { storage } from "../storage";
 import type { Upload } from "../uploads";
+import { sheetsByNumber } from "./queries";
 import { openPdf, renderPage, TILE_OVERLAP, TILE_SIZE } from "./render";
-import { sheetNumberKey, suggestSheetName } from "./suggest";
+import { suggestSheetName } from "./suggest";
 
 // Bringing a PDF of plans in. The PDF is read, then each page is drawn and
 // cut into tiles ("processing"); the office checks the sheet names
@@ -261,15 +264,9 @@ async function processPage(
     });
 
     const name = suggestSheetName(rendered.text, revision.pageIndex, current.filename);
-    const existing = await db
-      .select({ id: schema.sheets.id, number: schema.sheets.number })
-      .from(schema.sheets)
-      .where(and(eq(schema.sheets.projectId, current.projectId), isNull(schema.sheets.archivedAt)));
-    const match = existing.find(
-      (sheet) => sheetNumberKey(sheet.number) === sheetNumberKey(name.number),
-    );
+    const match = (await sheetsByNumber(current.projectId)).get(sheetNumberKey(name.number));
 
-    await db
+    const saved = await db
       .update(schema.sheetRevisions)
       .set({
         status: "ready",
@@ -284,13 +281,53 @@ async function processPage(
         draftTitle: name.title,
         draftSheetId: match?.id ?? null,
       })
-      .where(eq(schema.sheetRevisions.id, revision.id));
+      .where(eq(schema.sheetRevisions.id, revision.id))
+      .returning({ id: schema.sheetRevisions.id });
+    // The import was cancelled while this page was being drawn.
+    if (!saved.length) await store.removePrefix("public", tileKey).catch(() => {});
   } finally {
     await rendered.dispose();
   }
 }
 
 // --- Review and publication -------------------------------------------------
+
+/** The imports of a project that are not published yet, newest first. */
+export async function pendingImports(projectId: string): Promise<PlanImportSummary[]> {
+  const rows = await db
+    .select()
+    .from(schema.planImports)
+    .where(
+      and(eq(schema.planImports.projectId, projectId), ne(schema.planImports.status, "published")),
+    )
+    .orderBy(desc(schema.planImports.createdAt));
+  if (!rows.length) return [];
+  const counts = await db
+    .select({
+      importId: schema.sheetRevisions.importId,
+      ready: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} = 'ready')::int`,
+      failed: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} = 'failed')::int`,
+    })
+    .from(schema.sheetRevisions)
+    .where(
+      inArray(
+        schema.sheetRevisions.importId,
+        rows.map((row) => row.id),
+      ),
+    )
+    .groupBy(schema.sheetRevisions.importId);
+  const byImport = new Map(counts.map((count) => [count.importId, count]));
+  return rows.map((row) => ({
+    id: row.id,
+    filename: row.filename,
+    status: row.status,
+    error: row.error,
+    pageCount: row.pageCount,
+    readyCount: byImport.get(row.id)?.ready ?? 0,
+    failedCount: byImport.get(row.id)?.failed ?? 0,
+    createdAt: row.createdAt.toISOString(),
+  }));
+}
 
 export async function importWithPages(
   importId: string,
@@ -309,9 +346,46 @@ export async function importWithPages(
   return { current, pages };
 }
 
+export type PageDraft = {
+  id: string;
+  draftNumber?: string;
+  draftTitle?: string;
+  draftSkip?: boolean;
+};
+
+/**
+ * Saves what the office corrects on the pages of an import. A corrected
+ * number is matched again with the project's sheets.
+ */
+export async function saveDrafts(current: Import, drafts: PageDraft[]) {
+  const sheets = drafts.some((draft) => draft.draftNumber !== undefined)
+    ? await sheetsByNumber(current.projectId)
+    : null;
+  for (const { id, ...draft } of drafts) {
+    if (!Object.keys(draft).length) continue;
+    await db
+      .update(schema.sheetRevisions)
+      .set(
+        draft.draftNumber === undefined
+          ? draft
+          : {
+              ...draft,
+              draftSheetId: sheets?.get(sheetNumberKey(draft.draftNumber))?.id ?? null,
+            },
+      )
+      .where(
+        and(
+          eq(schema.sheetRevisions.id, id),
+          eq(schema.sheetRevisions.importId, current.id),
+          isNull(schema.sheetRevisions.sheetId),
+        ),
+      );
+  }
+}
+
 /**
  * Publishes a checked import: each page becomes a new sheet, or the new
- * current revision of the sheet it replaces. All or nothing.
+ * current revision of the sheet that carries its number. All or nothing.
  */
 export async function publishImport(
   user: SessionUser,
@@ -322,52 +396,42 @@ export async function publishImport(
   const kept = pages.filter((page) => !page.draftSkip && page.status === "ready");
   if (!kept.length) throw badRequest("Aucune feuille à publier.");
 
-  const fresh = kept.filter((page) => !page.draftSheetId);
-  for (const page of fresh) {
-    if (!page.draftNumber?.trim())
-      throw badRequest(`La page ${page.pageIndex + 1} n'a pas de numéro de feuille.`);
-  }
   const numbers = new Set<string>();
-  for (const page of fresh) {
-    const key = sheetNumberKey(page.draftNumber!);
-    if (numbers.has(key))
-      throw badRequest(`Deux feuilles portent le numéro ${page.draftNumber}. Corrigez-en une.`);
-    numbers.add(key);
-  }
-  const replaced = new Set<string>();
   for (const page of kept) {
-    if (!page.draftSheetId) continue;
-    if (replaced.has(page.draftSheetId))
-      throw badRequest("Deux pages remplacent la même feuille. Corrigez-en une.");
-    replaced.add(page.draftSheetId);
+    const number = page.draftNumber?.trim();
+    if (!number) throw badRequest(`La page ${page.pageIndex + 1} n'a pas de numéro de feuille.`);
+    const key = sheetNumberKey(number);
+    if (numbers.has(key))
+      throw badRequest(`Deux pages portent le numéro ${number}. Corrigez-en une.`);
+    numbers.add(key);
   }
 
   const sheetIds: string[] = [];
   await db.transaction(async (tx) => {
+    // One publication at a time per project: two imports of the same set
+    // published together must end up as revisions of the same sheets.
+    await tx.execute(raw`select pg_advisory_xact_lock(hashtext(${current.projectId}))`);
+    const claimed = await tx
+      .update(schema.planImports)
+      .set({ status: "published", publishedAt: new Date() })
+      .where(and(eq(schema.planImports.id, current.id), eq(schema.planImports.status, "review")))
+      .returning({ id: schema.planImports.id });
+    if (!claimed.length) throw badRequest("Cet import est déjà publié.");
+
+    const existing = await sheetsByNumber(current.projectId, tx);
     const [{ next }] = await tx
       .select({ next: raw<number>`coalesce(max(${schema.sheets.sort}), 0)::int` })
       .from(schema.sheets)
       .where(eq(schema.sheets.projectId, current.projectId));
     let sort = next;
     for (const page of kept) {
-      let sheetId = page.draftSheetId;
+      const number = page.draftNumber!.trim();
+      const title = page.draftTitle?.trim() ?? "";
+      let sheetId = existing.get(sheetNumberKey(number))?.id;
       if (sheetId) {
-        const [sheet] = await tx
-          .select()
-          .from(schema.sheets)
-          .where(and(eq(schema.sheets.id, sheetId), eq(schema.sheets.projectId, current.projectId)))
-          .limit(1);
-        if (!sheet)
-          throw badRequest(
-            `La feuille à remplacer par la page ${page.pageIndex + 1} n'existe plus.`,
-          );
         await tx
           .update(schema.sheets)
-          .set({
-            currentRevisionId: page.id,
-            archivedAt: null,
-            ...(page.draftTitle?.trim() ? { title: page.draftTitle.trim() } : {}),
-          })
+          .set({ currentRevisionId: page.id, ...(title ? { title } : {}) })
           .where(eq(schema.sheets.id, sheetId));
       } else {
         sheetId = newId();
@@ -375,8 +439,8 @@ export async function publishImport(
           id: sheetId,
           projectId: current.projectId,
           folderId: current.folderId,
-          number: page.draftNumber!.trim(),
-          title: page.draftTitle?.trim() ?? "",
+          number,
+          title,
           sort: ++sort,
           currentRevisionId: page.id,
           createdBy: user.id,
@@ -388,10 +452,6 @@ export async function publishImport(
         .where(eq(schema.sheetRevisions.id, page.id));
       sheetIds.push(sheetId);
     }
-    await tx
-      .update(schema.planImports)
-      .set({ status: "published", publishedAt: new Date() })
-      .where(eq(schema.planImports.id, current.id));
   });
 
   // Pages left out were never shown to anyone: their images can go.

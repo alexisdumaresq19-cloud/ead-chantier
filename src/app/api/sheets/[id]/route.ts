@@ -6,7 +6,8 @@ import { projectFor, projectToManage } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
-import { sheetDetail, sheetRow } from "@/server/plans/queries";
+import { sheetDetail, sheetRow, sheetsByNumber } from "@/server/plans/queries";
+import { sheetNumberKey } from "@/shared/plans";
 
 export const GET = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
@@ -34,6 +35,12 @@ const patch = z
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   const sheet = await sheetToManage(request, id);
   const input = await body(request, patch);
+  if (input.number !== undefined) {
+    // Two sheets with one number could not be told apart, here or at the next import.
+    const other = (await sheetsByNumber(sheet.projectId)).get(sheetNumberKey(input.number));
+    if (other && other.id !== id)
+      throw badRequest(`Une autre feuille porte déjà le numéro ${other.number}.`);
+  }
   if (input.folderId) {
     const [folder] = await db
       .select({ id: schema.planFolders.id })

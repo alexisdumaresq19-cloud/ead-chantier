@@ -115,3 +115,36 @@ export function allTileUrls(tiles: Tiles): string[] {
   }
   return urls;
 }
+
+// --- Lists, search and imports ----------------------------------------------
+
+/** An import not yet published, as the plan list shows it to those who manage. */
+export type PlanImportSummary = {
+  id: string;
+  filename: string;
+  status: PlanImport["status"];
+  error: string | null;
+  pageCount: number | null;
+  /** Pages converted so far, and pages that could not be. */
+  readyCount: number;
+  failedCount: number;
+  createdAt: string;
+};
+
+/** What the import endpoints answer: the import and the project it belongs to. */
+export type PlanImportDetail = PlanImport & { projectId: string };
+
+/**
+ * "C-101", "c 101" and "C101" are the same sheet. A page imported with the
+ * number of a sheet the project already has becomes its new revision.
+ */
+export function sheetNumberKey(number: string): string {
+  const upper = number.trim().toUpperCase();
+  // A number made only of separators ("-") still has to compare as itself.
+  return upper.replace(/[\s._-]+/g, "") || upper;
+}
+
+/** Lowercase, without accents: "Égout" is found by typing "egout". */
+export function plainText(text: string): string {
+  return text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+}

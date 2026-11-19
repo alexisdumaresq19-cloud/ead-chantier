@@ -53,8 +53,3 @@ export function suggestSheetName(
     title: title.slice(0, 160) || `${base} — page ${pageIndex + 1}`,
   };
 }
-
-/** "C-101", "c 101" and "C101" are the same sheet. */
-export function sheetNumberKey(number: string): string {
-  return number.toUpperCase().replace(/[\s._-]+/g, "");
-}

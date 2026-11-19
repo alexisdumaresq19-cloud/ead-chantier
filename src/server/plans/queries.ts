@@ -1,10 +1,19 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql as raw } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, sql as raw, type AnyColumn } from "drizzle-orm";
 
-import type { Plans, PlanSearchHit, Sheet, SheetDetail, SheetRevision } from "@/shared/plans";
+import {
+  plainText,
+  sheetNumberKey,
+  type Plans,
+  type PlanSearchHit,
+  type Sheet,
+  type SheetDetail,
+  type SheetRevision,
+} from "@/shared/plans";
 
 import { db, schema } from "../db/client";
 import { notFound } from "../http";
 import { revisionDto, thumbOf } from "./dto";
+import { excerptAround } from "./excerpt";
 
 type SheetRow = typeof schema.sheets.$inferSelect;
 type RevisionRow = typeof schema.sheetRevisions.$inferSelect;
@@ -73,6 +82,21 @@ export async function listPlans(projectId: string): Promise<Plans> {
   };
 }
 
+/**
+ * The project's sheets by number, as the site sees them. A page imported with
+ * the number of one of them is its new revision; any other is a new sheet.
+ */
+export async function sheetsByNumber(
+  projectId: string,
+  executor: Pick<typeof db, "select"> = db,
+): Promise<Map<string, { id: string; number: string }>> {
+  const rows = await executor
+    .select({ id: schema.sheets.id, number: schema.sheets.number })
+    .from(schema.sheets)
+    .where(and(eq(schema.sheets.projectId, projectId), isNull(schema.sheets.archivedAt)));
+  return new Map(rows.map((sheet) => [sheetNumberKey(sheet.number), sheet]));
+}
+
 export async function sheetRow(sheetId: string): Promise<SheetRow> {
   const [sheet] = await db
     .select()
@@ -95,9 +119,16 @@ export async function sheetDetail(sheet: SheetRow): Promise<SheetDetail> {
   };
 }
 
+// Search ignores case and accents: plans are lettered in capitals, with or
+// without accents, and nobody types them on a phone. Postgres folds the
+// stored text the same way plainText() folds the words typed.
+const ACCENTED = "àâäáãåçéèêëíìîïñóòôöõúùûüýÿÀÂÄÁÃÅÇÉÈÊËÍÌÎÏÑÓÒÔÖÕÚÙÛÜÝŸ";
+const UNACCENTED = "aaaaaaceeeeiiiinooooouuuuyyaaaaaaceeeeiiiinooooouuuuyy";
+const folded = (column: AnyColumn) => raw`translate(lower(${column}), ${ACCENTED}, ${UNACCENTED})`;
+
 /** Finds sheets by number, by title, or by the words drawn on them. */
 export async function searchPlans(projectId: string, query: string): Promise<PlanSearchHit[]> {
-  const words = query.trim().slice(0, 80);
+  const words = plainText(query.trim().slice(0, 80));
   if (words.length < 2) return [];
   const like = `%${words.replace(/[\\%_]/g, "\\$&")}%`;
   const rows = await db
@@ -109,34 +140,24 @@ export async function searchPlans(projectId: string, query: string): Promise<Pla
         eq(schema.sheets.projectId, projectId),
         isNull(schema.sheets.archivedAt),
         isNotNull(schema.sheets.currentRevisionId),
-        raw`(${schema.sheets.number} ilike ${like} or ${schema.sheets.title} ilike ${like} or ${schema.sheetRevisions.text} ilike ${like})`,
+        raw`(${folded(schema.sheets.number)} like ${like} or ${folded(schema.sheets.title)} like ${like} or ${folded(schema.sheetRevisions.text)} like ${like})`,
       ),
     )
     .limit(60);
 
-  const lower = words.toLowerCase();
   const inName = (r: (typeof rows)[number]) =>
-    r.sheet.number.toLowerCase().includes(lower) || r.sheet.title.toLowerCase().includes(lower);
+    plainText(r.sheet.number).includes(words) || plainText(r.sheet.title).includes(words);
   return rows
     .sort(
       (a, b) =>
         Number(inName(b)) - Number(inName(a)) ||
         a.sheet.number.localeCompare(b.sheet.number, "fr", { numeric: true }),
     )
-    .map((r) => {
-      let excerpt: string | null = null;
-      if (!inName(r) && r.revision.text) {
-        const flat = r.revision.text.replace(/\s+/g, " ");
-        const at = flat.toLowerCase().indexOf(lower);
-        if (at >= 0)
-          excerpt = `${at > 40 ? "…" : ""}${flat.slice(Math.max(0, at - 40), at + words.length + 60).trim()}…`;
-      }
-      return {
-        sheetId: r.sheet.id,
-        number: r.sheet.number,
-        title: r.sheet.title,
-        thumbUrl: thumbOf(r.revision),
-        excerpt,
-      };
-    });
+    .map((r) => ({
+      sheetId: r.sheet.id,
+      number: r.sheet.number,
+      title: r.sheet.title,
+      thumbUrl: thumbOf(r.revision),
+      excerpt: inName(r) || !r.revision.text ? null : excerptAround(r.revision.text, words),
+    }));
 }
