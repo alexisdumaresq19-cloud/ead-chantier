@@ -49,10 +49,22 @@ export const useProject = (id: string | undefined) =>
     enabled: Boolean(id),
   });
 
-export async function signOut() {
-  await api("/api/logout", { method: "POST" }).catch(() => {});
+/**
+ * Signs this device out, then opens `to` (the welcome screen).
+ *
+ * Only the server can sign a device out: it ends the session and removes the
+ * cookie, which the page cannot touch. So nothing is cleared and the page is
+ * not left until the server has confirmed. Without a network, or on any
+ * refusal or server error, this rejects with the ApiFailure and changes
+ * nothing: the person is still signed in on this device. The caller must say
+ * so (call it from a mutation and show errorMessage(error)), never show a
+ * signed-out screen: the next person to pick up the device would be let in
+ * as soon as the network returns.
+ */
+export async function signOut(to = "/bienvenue") {
+  await api("/api/logout", { method: "POST" });
   await clearStoredData();
-  window.location.assign("/bienvenue");
+  window.location.assign(to);
 }
 
 /**

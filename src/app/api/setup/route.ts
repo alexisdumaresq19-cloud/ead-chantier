@@ -1,9 +1,9 @@
+import { sql as raw } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { startSession } from "@/server/auth";
+import { isSetupCode, startSession } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { env } from "@/server/env";
 import { body, forbidden, route } from "@/server/http";
 import { newId } from "@/server/ids";
 
@@ -15,6 +15,8 @@ async function hasUsers() {
   return Boolean(any);
 }
 
+const alreadyDone = () => forbidden("L'application est déjà configurée.");
+
 export const GET = route(async () => ({ needed: !(await hasUsers()) }));
 
 export const POST = route(async (request) => {
@@ -22,11 +24,24 @@ export const POST = route(async (request) => {
     request,
     z.object({ code: z.string(), name: z.string().trim().min(2).max(80) }),
   );
-  if (!env.setupCode || input.code !== env.setupCode)
-    throw forbidden("Code de démarrage invalide.");
-  if (await hasUsers()) throw forbidden("L'application est déjà configurée.");
+  // Asked before the code is looked at: once the office exists, every code
+  // gets the same answer, so the answers cannot be used to find the code.
+  if (await hasUsers()) throw alreadyDone();
+  if (!isSetupCode(input.code)) throw forbidden("Code de démarrage invalide.");
+
+  // One account, even if two people send the right code at the same moment:
+  // the lock makes them take turns, and the second finds the first's account.
+  // (A lock held for the transaction only: the hosted database is reached
+  // through a transaction pooler.)
   const id = newId();
-  await db.insert(schema.users).values({ id, name: input.name, role: "admin" });
+  const created = await db.transaction(async (tx) => {
+    await tx.execute(raw`select pg_advisory_xact_lock(hashtext('ead:setup'))`);
+    const [any] = await tx.select({ id: schema.users.id }).from(schema.users).limit(1);
+    if (any) return false;
+    await tx.insert(schema.users).values({ id, name: input.name, role: "admin" });
+    return true;
+  });
+  if (!created) throw alreadyDone();
   const response = NextResponse.json({ ok: true });
   await startSession(id, request, response);
   return response;

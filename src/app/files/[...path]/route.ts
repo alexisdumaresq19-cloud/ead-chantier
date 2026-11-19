@@ -7,8 +7,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/server/env";
 import { verifySignature } from "@/server/ids";
-import { fsPath } from "@/server/storage/fs";
-import type { Bucket } from "@/server/storage";
+import { plainType } from "@/server/storage";
+import { fsPath, fsUploadPayload } from "@/server/storage/fs";
 
 // Serves and receives files when they are kept on disk (development). With
 // hosted storage these addresses do not exist: files go straight to it.
@@ -69,18 +69,61 @@ export async function GET(request: NextRequest, { params }: Context) {
   return new NextResponse(Readable.toWeb(createReadStream(path)) as ReadableStream, { headers });
 }
 
+/**
+ * Receives one file sent with an upload link. Like a hosted link, it writes
+ * once. Unlike one, it also holds the sender to what was announced when the
+ * link was made: that type, and not a byte more than that size (a shorter
+ * file is caught when the upload is confirmed).
+ */
 export async function PUT(request: NextRequest, { params }: Context) {
   if (env.storageDriver !== "fs") return gone();
   const [action, bucket, ...rest] = (await params).path;
   const key = rest.join("/");
   if (action !== "upload" || (bucket !== "public" && bucket !== "private") || !key) return gone();
-  const expires = Number(request.nextUrl.searchParams.get("e"));
-  const signature = request.nextUrl.searchParams.get("s") ?? "";
-  if (!(expires > Date.now()) || !verifySignature(`put:${bucket}:${key}:${expires}`, signature)) {
+  const query = request.nextUrl.searchParams;
+  const expires = Number(query.get("e"));
+  const size = Number(query.get("z"));
+  const type = query.get("t") ?? "";
+  const payload = fsUploadPayload(bucket, key, expires, size, type);
+  if (!(expires > Date.now()) || !verifySignature(payload, query.get("s") ?? "")) {
     return new NextResponse(null, { status: 403 });
   }
-  const path = fsPath(bucket as Bucket, key);
+  if (plainType(request.headers.get("content-type") ?? "") !== plainType(type)) {
+    return new NextResponse(null, { status: 415 });
+  }
+  // Refused on its announced length when there is one, and in any case no
+  // more than `size` bytes are ever read.
+  if (Number(request.headers.get("content-length") ?? 0) > size) return tooLarge();
+  const data = await readUpTo(request, size);
+  if (!data) return tooLarge();
+
+  const path = fsPath(bucket, key);
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, Buffer.from(await request.arrayBuffer()));
+  try {
+    await writeFile(path, data, { flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    return new NextResponse(null, { status: 409 });
+  }
   return NextResponse.json({ ok: true });
+}
+
+const tooLarge = () => new NextResponse(null, { status: 413 });
+
+/** The request's body, or null as soon as it runs past `limit` bytes. */
+async function readUpTo(request: NextRequest, limit: number): Promise<Buffer | null> {
+  if (!request.body) return Buffer.alloc(0);
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return Buffer.concat(chunks);
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(value);
+  }
 }

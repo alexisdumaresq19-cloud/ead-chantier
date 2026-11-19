@@ -6,7 +6,7 @@ import { Redirect, useParams } from "wouter";
 import type { InvitePreview } from "@/shared/api";
 
 import { api, errorMessage } from "../../lib/api";
-import { enterApp, useMe } from "../../lib/session";
+import { enterApp, signOut, useMe } from "../../lib/session";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 
@@ -167,6 +167,8 @@ export function InviteScreen() {
     event.preventDefault();
     accept.mutate();
   };
+  // Signing out comes back to this same link, which then offers to enter.
+  const leave = useMutation({ mutationFn: () => signOut(window.location.pathname) });
 
   if (invite.isPending) {
     return (
@@ -194,6 +196,31 @@ export function InviteScreen() {
   }
 
   const preview = invite.data;
+  if (preview.kind === "personal" && preview.signedInAs) {
+    // Someone else's link on a device in use: its owner decides, knowingly.
+    return (
+      <PublicLayout>
+        <Heading title="Cet appareil est déjà connecté">
+          Il est connecté sous le nom de {preview.signedInAs}. Ce lien est celui de {preview.name}.
+          Pour entrer avec ce lien, déconnectez d&apos;abord cet appareil.
+        </Heading>
+        <div className="mt-6 flex flex-col gap-2">
+          <FormError>{leave.isError ? errorMessage(leave.error) : null}</FormError>
+          <Button
+            size="lg"
+            block
+            loading={leave.isPending || leave.isSuccess}
+            onClick={() => leave.mutate()}
+          >
+            Se déconnecter de cet appareil
+          </Button>
+          <ButtonLink href="/" variant="ghost" block>
+            Ouvrir l&apos;application
+          </ButtonLink>
+        </div>
+      </PublicLayout>
+    );
+  }
   if (preview.kind === "personal") {
     return (
       <PublicLayout>

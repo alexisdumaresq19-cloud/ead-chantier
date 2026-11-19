@@ -59,7 +59,15 @@ export type Device = {
 
 /** What an invitation link or a site QR code opens, before it is accepted. */
 export type InvitePreview =
-  | { kind: "personal"; name: string }
+  | {
+      kind: "personal";
+      name: string;
+      /**
+       * Someone else is signed in on this device: their name. They sign out
+       * before the link can be used (it is refused until then).
+       */
+      signedInAs: string | null;
+    }
   | {
       kind: "project";
       projectName: string;

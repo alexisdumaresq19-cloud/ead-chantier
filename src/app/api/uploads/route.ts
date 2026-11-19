@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { projectFor, projectToManage } from "@/server/access";
+import { projectToAddTo, projectToChange } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { body, route } from "@/server/http";
 import { beginUpload } from "@/server/uploads";
@@ -18,9 +18,10 @@ const input = z.object({
 export const POST = route(async (request) => {
   const user = await requireUser(request);
   const data = await body(request, input);
-  // Anyone on the project adds photos; plans and documents are for those who manage it.
-  if (data.kind === "photo") await projectFor(user, data.projectId);
-  else await projectToManage(user, data.projectId);
+  // Anyone on the project adds photos; plans and documents are for those who
+  // manage it. Nothing is added to an archived project, except by the office.
+  if (data.kind === "photo") await projectToAddTo(user, data.projectId);
+  else await projectToChange(user, data.projectId);
   const { upload, target } = await beginUpload(user, data);
   return { uploadId: upload.id, target } satisfies UploadTicket;
 });
