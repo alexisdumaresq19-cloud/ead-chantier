@@ -14,6 +14,10 @@ export const keys = {
   projects: ["projects"] as const,
   project: (id: string) => ["projects", id] as const,
   members: (id: string) => ["projects", id, "members"] as const,
+  /** GET /api/projects/:id/plans — the plan list (`Plans`). */
+  plans: (id: string) => ["projects", id, "plans"] as const,
+  /** GET /api/sheets/:sheetId — one sheet with its revisions (`SheetDetail`). */
+  sheet: (id: string, sheetId: string) => ["projects", id, "sheet", sheetId] as const,
 };
 
 /**
