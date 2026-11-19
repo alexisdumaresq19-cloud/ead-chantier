@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "format": "prettier --write .",
     "test": "vitest run",
+    "e2e": "scripts/e2e.sh",
     "db:start": "scripts/db.sh start",
     "db:stop": "scripts/db.sh stop",
     "db:reset": "scripts/db.sh reset && tsx scripts/migrate.ts",

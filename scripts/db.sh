@@ -50,7 +50,7 @@ fresh() {
   name="${url##*/}"
   name="${name%%\?*}"
   psql "${url%/*}/postgres" -qc "CREATE DATABASE \"$name\"" >/dev/null 2>&1 || true
-  psql "$url" -qc "DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null
+  PGOPTIONS="-c client_min_messages=warning" psql "$url" -qc "DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null
   echo "Base vidée : $name"
 }
 

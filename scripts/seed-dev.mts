@@ -6,7 +6,7 @@
  *   npm run db:fresh && npm run dev        (in another terminal)
  *   BASE=http://localhost:3200 npm run seed
  *
- * It leaves in .data/dev/ a browser session per role (Playwright storage
+ * It leaves in .data/dev/ (or SEED_OUT) a browser session per role (Playwright storage
  * states: admin.json, foreman.json, worker.json) and seed.json with the ids.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- loose JSON in a dev script */
@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const BASE = process.env.BASE ?? "http://localhost:3200";
-const OUT = ".data/dev";
+const OUT = process.env.SEED_OUT ?? ".data/dev";
 const PDF = `${OUT}/plans-exemple.pdf`;
 
 class Client {
