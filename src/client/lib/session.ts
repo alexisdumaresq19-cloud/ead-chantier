@@ -1,0 +1,89 @@
+import { useQuery } from "@tanstack/react-query";
+import { createContext, useContext } from "react";
+
+import type { Me, ProjectDetail, ProjectSummary } from "@/shared/api";
+
+import { api, ApiFailure } from "./api";
+import { clearStoredData, queryClient } from "./query";
+
+// Who is signed in, and the projects they see. The keys are shared: any
+// screen that changes a project invalidates ["projects"].
+
+export const keys = {
+  me: ["me"] as const,
+  projects: ["projects"] as const,
+  project: (id: string) => ["projects", id] as const,
+  members: (id: string) => ["projects", id, "members"] as const,
+};
+
+/**
+ * The signed-in person; null when the server says nobody is. Without a
+ * network, the person stored on the device is kept, so the app still opens.
+ */
+export function useMe() {
+  return useQuery({
+    queryKey: keys.me,
+    queryFn: async () => {
+      try {
+        return await api<Me>("/api/me");
+      } catch (error) {
+        if (error instanceof ApiFailure && error.status === 401) return null;
+        throw error;
+      }
+    },
+    staleTime: 60_000,
+  });
+}
+
+export const useProjects = () =>
+  useQuery({ queryKey: keys.projects, queryFn: () => api<ProjectSummary[]>("/api/projects") });
+
+export const useProject = (id: string | undefined) =>
+  useQuery({
+    queryKey: keys.project(id ?? ""),
+    queryFn: () => api<ProjectDetail>(`/api/projects/${id}`),
+    enabled: Boolean(id),
+  });
+
+export async function signOut() {
+  await api("/api/logout", { method: "POST" }).catch(() => {});
+  await clearStoredData();
+  window.location.assign("/bienvenue");
+}
+
+/**
+ * After the server has signed this device in (an accepted invitation, the
+ * first setup): drop whatever a previous person left on the device and start
+ * the app afresh at `path`.
+ */
+export async function enterApp(path = "/") {
+  await clearStoredData();
+  window.location.replace(path);
+}
+
+/** The server no longer knows this device: back to the welcome screen. */
+export function handleSignedOut() {
+  if (queryClient.getQueryData(keys.me) == null) return;
+  queryClient.setQueryData(keys.me, null);
+  queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== "me" });
+}
+
+// Inside the signed-in part of the app, the person and the open project are
+// already loaded: screens read them here and never handle their absence.
+
+export const MeContext = createContext<Me | null>(null);
+export const ProjectContext = createContext<ProjectDetail | null>(null);
+
+/** The signed-in person. */
+export function useCurrentUser(): Me {
+  const me = useContext(MeContext);
+  if (!me) throw new Error("useCurrentUser is for signed-in screens.");
+  return me;
+}
+
+/** The project of the current screen (any address under /projets/:projectId). */
+export function useCurrentProject(): ProjectDetail {
+  const project = useContext(ProjectContext);
+  if (!project) throw new Error("useCurrentProject is for a project's screens.");
+  return project;
+}

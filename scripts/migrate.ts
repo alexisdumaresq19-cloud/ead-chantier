@@ -3,6 +3,13 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+// Scripts read the same local settings as the app.
+try {
+  process.loadEnvFile(".env.local");
+} catch {
+  // No .env.local: the environment or the defaults apply.
+}
+
 const url =
   process.env.DATABASE_URL_UNPOOLED ??
   process.env.POSTGRES_URL_NON_POOLING ??

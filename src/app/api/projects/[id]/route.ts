@@ -32,7 +32,8 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
     longitude: project.longitude,
     documentCount: await count(schema.documents, id),
     photoCount: await count(schema.photos, id),
-    reportCount: await count(schema.dailyReports, id),
+    // Daily reports are for foremen and the office.
+    reportCount: canManageProject(user.role) ? await count(schema.dailyReports, id) : 0,
     canManage: canManageProject(user.role),
   } satisfies ProjectDetail;
 });

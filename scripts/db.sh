@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # A local Postgres for development, kept in .data/pg (not committed).
-#   scripts/db.sh start | stop | reset
+#   scripts/db.sh start | stop | reset | fresh
+# "fresh" empties the one database named by DATABASE_URL (default: ead),
+# creating it if needed, and leaves the others alone.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PGBIN="$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)"
@@ -34,11 +36,30 @@ start() {
   echo "Postgres: postgres://ead:ead@127.0.0.1:$PORT/ead"
 }
 
+# Reads DATABASE_URL from the environment or from .env.local.
+database_url() {
+  if [ -z "${DATABASE_URL:-}" ] && [ -f .env.local ]; then
+    DATABASE_URL="$(grep -E '^DATABASE_URL=' .env.local | tail -1 | cut -d= -f2- | tr -d '"')"
+  fi
+  echo "${DATABASE_URL:-postgres://ead:ead@127.0.0.1:$PORT/ead}"
+}
+
+fresh() {
+  local url name
+  url="$(database_url)"
+  name="${url##*/}"
+  name="${name%%\?*}"
+  psql "${url%/*}/postgres" -qc "CREATE DATABASE \"$name\"" >/dev/null 2>&1 || true
+  psql "$url" -qc "DROP SCHEMA IF EXISTS drizzle CASCADE; DROP SCHEMA public CASCADE; CREATE SCHEMA public;" >/dev/null
+  echo "Base vidée : $name"
+}
+
 stop() { run pg_ctl -D "$(pwd)/$DIR" -m fast stop >/dev/null 2>&1 || true; }
 
 case "${1:-start}" in
   start) start ;;
   stop) stop ;;
   reset) stop; rm -rf "$DIR"; start ;;
-  *) echo "usage: scripts/db.sh start|stop|reset" >&2; exit 1 ;;
+  fresh) fresh ;;
+  *) echo "usage: scripts/db.sh start|stop|reset|fresh" >&2; exit 1 ;;
 esac

@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  devIndicators: false,
   // Native and WebAssembly packages are loaded from node_modules at run time.
   serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres"],
   outputFileTracingIncludes: {
@@ -16,7 +17,7 @@ const nextConfig: NextConfig = {
   },
   // The app is a single-page app: its one page (the shell at "/") is served
   // for every address that is not an API route or a file, and the client
-  // router (src/client/router.tsx) takes it from there. That is what lets
+  // router (src/client/routes.tsx) takes it from there. That is what lets
   // the service worker open any screen without a network.
   async rewrites() {
     return {

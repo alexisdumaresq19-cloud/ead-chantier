@@ -13,9 +13,11 @@
     "db:start": "scripts/db.sh start",
     "db:stop": "scripts/db.sh stop",
     "db:reset": "scripts/db.sh reset && tsx scripts/migrate.ts",
+    "db:fresh": "scripts/db.sh fresh && tsx scripts/migrate.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
-    "sample:plans": "tsx scripts/make-sample-plans.ts"
+    "sample:plans": "tsx scripts/make-sample-plans.ts",
+    "seed": "tsx scripts/seed-dev.mts"
   },
   "dependencies": {
     "@hyzyla/pdfium": "^3.0.0",
@@ -24,6 +26,7 @@
     "@tanstack/react-query-persist-client": "^5.108.1",
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.4",
+    "exif-reader": "^2.0.3",
     "idb-keyval": "^6.3.0",
     "lucide-react": "^1.76.0",
     "next": "16.4.6",
@@ -35,7 +38,6 @@
     "sharp": "^0.35.5",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
-    "vaul": "^1.1.2",
     "wouter": "^3.13.0",
     "zod": "^4.6.7"
   },

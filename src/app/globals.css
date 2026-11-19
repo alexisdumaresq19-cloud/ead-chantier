@@ -1,26 +1,108 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@theme {
+  /* EAD's colours, from its logo. The lighter blue is for accents and for
+   * anything on black; the darker one carries text and buttons on light
+   * backgrounds, where it stays readable in full sun (6:1 on white). */
+  --color-ead: #1e8bc0;
+  --color-ead-dark: #226995;
+  --color-ead-darker: #1b5378;
+  --color-ead-tint: #e8f4fa;
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-ink: #0b0d10; /* bars and the sidebar, as the logo's black */
+  --color-canvas: #f2f4f6; /* the page */
+  --color-surface: #ffffff; /* cards */
+  --color-line: #dfe3e8;
+  --color-text: #12161b;
+  --color-dim: #5a6572;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --color-good: #17803d;
+  --color-good-tint: #e6f4ea;
+  --color-warn: #a15c07;
+  --color-warn-tint: #fdf3dc;
+  --color-bad: #c62828;
+  --color-bad-tint: #fdecec;
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-archivo), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --animate-rise: rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade: fade 0.2s ease-out both;
+  --animate-sheet: sheet 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pop: pop 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes sheet {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  html {
+    color-scheme: light;
+    -webkit-text-size-adjust: 100%;
+    /* The app paints its own bars under the notch and the home indicator. */
+    background: var(--color-ink);
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-canvas);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  /* A visible focus ring for keyboards, none for fingers. */
+  :focus-visible {
+    outline: 3px solid color-mix(in srgb, var(--color-ead) 55%, transparent);
+    outline-offset: 2px;
+  }
+  button,
+  [role="button"],
+  a {
+    touch-action: manipulation;
+  }
+  /* 16px inputs: iOS zooms the page on anything smaller. */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
 }

@@ -8,13 +8,13 @@ import type { Bucket, Storage } from "./index";
 // Development storage: a folder on disk, served by src/app/files.
 
 export function fsRoot(): string {
-  return resolve(process.cwd(), env.storageDir);
+  return resolve(/* turbopackIgnore: true */ process.cwd(), env.storageDir);
 }
 
 /** The file's path on disk; refuses keys that would climb out of the folder. */
 export function fsPath(bucket: Bucket, key: string): string {
-  const root = resolve(fsRoot(), bucket);
-  const path = resolve(root, key);
+  const root = resolve(/* turbopackIgnore: true */ fsRoot(), bucket);
+  const path = resolve(/* turbopackIgnore: true */ root, key);
   if (!path.startsWith(root + sep)) throw new Error("Clé de fichier invalide.");
   return path;
 }
