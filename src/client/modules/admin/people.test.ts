@@ -1,0 +1,194 @@
+import { describe, expect, it } from "vitest";
+
+import type { Person } from "@/shared/api";
+
+import {
+  daysLeft,
+  firstName,
+  formatPhone,
+  inviteMessage,
+  lastSeenText,
+  mailHref,
+  matchesPerson,
+  smsHref,
+  sortByName,
+  sortMembers,
+  sortPeople,
+  telHref,
+  titleOrRole,
+  validUntilText,
+} from "./people";
+
+describe("phone numbers", () => {
+  it("writes a ten-digit number as in Québec, however it was typed", () => {
+    expect(formatPhone("4185550142")).toBe("418 555-0142");
+    expect(formatPhone("418-555-0142")).toBe("418 555-0142");
+    expect(formatPhone("(418) 555.0142")).toBe("418 555-0142");
+    expect(formatPhone("+1 418 555 0142")).toBe("418 555-0142");
+    expect(formatPhone(" 1-418-555-0142 ")).toBe("418 555-0142");
+  });
+
+  it("keeps an extension", () => {
+    expect(formatPhone("418 555-0142 poste 23")).toBe("418 555-0142, poste 23");
+    expect(formatPhone("418-555-0142 x23")).toBe("418 555-0142, poste 23");
+    expect(formatPhone("4185550142 #7")).toBe("418 555-0142, poste 7");
+  });
+
+  it("leaves alone what is not a ten-digit number", () => {
+    expect(formatPhone("555-0142")).toBe("555-0142");
+    expect(formatPhone("+33 6 12 34 56 78")).toBe("+33 6 12 34 56 78");
+    expect(formatPhone("418 555-0142 (cell. de sa conjointe)")).toBe(
+      "418 555-0142 (cell. de sa conjointe)",
+    );
+    expect(formatPhone("")).toBe("");
+  });
+
+  it("makes a link that dials the number", () => {
+    expect(telHref("418 555-0142")).toBe("tel:+14185550142");
+    expect(telHref("1 (418) 555-0142 poste 23")).toBe("tel:+14185550142");
+    expect(telHref("418 555-0142 (cell.)")).toBe("tel:+14185550142");
+    expect(telHref("+33 6 12 34 56 78")).toBe("tel:+33612345678");
+    expect(telHref("555-0142")).toBe("tel:5550142");
+    expect(telHref("au bureau")).toBeNull();
+    expect(telHref("")).toBeNull();
+  });
+});
+
+describe("sending an invitation", () => {
+  it("opens the messages app with the number and the text", () => {
+    expect(smsHref("418 555-0142", "Bonjour & bienvenue")).toBe(
+      "sms:+14185550142?&body=Bonjour%20%26%20bienvenue",
+    );
+  });
+
+  it("leaves the recipient empty when there is no number", () => {
+    expect(smsHref(null, "Allo")).toBe("sms:?&body=Allo");
+    expect(smsHref("à demander", "Allo")).toBe("sms:?&body=Allo");
+  });
+
+  it("opens an email with the subject and the text", () => {
+    expect(mailHref("julie.cyr@exemple.ca", "Votre accès", "Ligne 1\nLigne 2")).toBe(
+      "mailto:julie.cyr@exemple.ca?subject=Votre%20acc%C3%A8s&body=Ligne%201%0ALigne%202",
+    );
+    expect(mailHref(null, "S", "T")).toBe("mailto:?subject=S&body=T");
+  });
+
+  it("greets by the first name and says how long the link works", () => {
+    expect(firstName("  Jean-Philippe St-Onge Bélanger")).toBe("Jean-Philippe");
+    const text = inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14);
+    expect(text).toContain("Bonjour Julie,");
+    expect(text).toContain("\nhttps://exemple.ca/i/abc\n");
+    expect(text).toContain("Il sert une seule fois, pendant 14 jours.");
+    expect(inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 1)).toContain("jusqu'à demain.");
+  });
+
+  it("counts the days a link has left", () => {
+    const now = new Date(2026, 10, 19, 9, 0);
+    expect(daysLeft(new Date(2026, 11, 3, 9, 0).toISOString(), now)).toBe(14);
+    expect(daysLeft(new Date(2026, 10, 19, 15, 0).toISOString(), now)).toBe(1);
+  });
+
+  it("says until when a code works", () => {
+    const now = new Date(2026, 10, 19, 9, 0);
+    expect(validUntilText(new Date(2026, 10, 19, 14, 5).toISOString(), now)).toMatch(
+      /^Valide aujourd'hui jusqu'à 14 h 05$/,
+    );
+    expect(validUntilText(new Date(2026, 10, 20, 9, 0).toISOString(), now)).toMatch(
+      /^Valide jusqu'à demain, 9 h 00$/,
+    );
+    expect(validUntilText(new Date(2026, 11, 3, 9, 0).toISOString(), now)).toBe(
+      "Valide jusqu'au jeudi 3 décembre",
+    );
+  });
+});
+
+describe("the office's list", () => {
+  const person = (name: string, more: Partial<Person> = {}) => ({
+    name,
+    title: null,
+    role: "travailleur" as const,
+    phone: null,
+    email: null,
+    unreviewed: false,
+    ...more,
+  });
+
+  it("shows the title, or the role when there is none", () => {
+    expect(titleOrRole({ title: "Opérateur de pelle", role: "travailleur" })).toBe(
+      "Opérateur de pelle",
+    );
+    expect(titleOrRole({ title: null, role: "admin" })).toBe("Bureau");
+    expect(titleOrRole({ title: "  ", role: "contremaitre" })).toBe("Contremaître");
+  });
+
+  it("says when someone was last seen", () => {
+    const now = new Date(2026, 10, 19, 9, 0);
+    expect(lastSeenText(null, now)).toBe("Jamais connecté");
+    expect(lastSeenText(new Date(2026, 10, 19, 7, 0).toISOString(), now)).toBe("Vu aujourd'hui");
+    expect(lastSeenText(new Date(2026, 10, 18, 7, 0).toISOString(), now)).toBe("Vu hier");
+    expect(lastSeenText(new Date(2026, 10, 16, 7, 0).toISOString(), now)).toBe("Vu il y a 3 jours");
+    expect(lastSeenText(new Date(2026, 8, 1, 12, 0).toISOString(), now)).toBe(
+      "Vu le 1 septembre 2026",
+    );
+  });
+
+  it("puts people to check first, then sorts by name whatever the accents", () => {
+    const sorted = sortPeople([
+      person("Zoé Arsenault"),
+      person("Éric Bujold"),
+      person("Marc Lévesque", { unreviewed: true }),
+      person("eric allard"),
+    ]);
+    expect(sorted.map((p) => p.name)).toEqual([
+      "Marc Lévesque",
+      "eric allard",
+      "Éric Bujold",
+      "Zoé Arsenault",
+    ]);
+  });
+
+  it("sorts a plain list by name", () => {
+    expect(
+      sortByName([person("Zoé Roy"), person("Élise Cyr"), person("alain Roy")]).map((p) => p.name),
+    ).toEqual(["alain Roy", "Élise Cyr", "Zoé Roy"]);
+  });
+
+  it("lists a site's foremen before the office and the crew", () => {
+    const sorted = sortMembers([
+      person("Simon Arsenault"),
+      person("Camille Roy", { role: "admin" }),
+      person("Julie Cyr", { role: "contremaitre" }),
+      person("Alain Bernard"),
+    ]);
+    expect(sorted.map((p) => p.name)).toEqual([
+      "Julie Cyr",
+      "Camille Roy",
+      "Alain Bernard",
+      "Simon Arsenault",
+    ]);
+  });
+
+  it("finds by name without accents, by title, role and email", () => {
+    const marc = person("Marc Lévesque", {
+      title: "Opérateur de pelle",
+      email: "marc@exemple.ca",
+      phone: "418 555-0177",
+    });
+    expect(matchesPerson(marc, "levesque")).toBe(true);
+    expect(matchesPerson(marc, "LÉVESQUE marc")).toBe(true);
+    expect(matchesPerson(marc, "pelle")).toBe(true);
+    expect(matchesPerson(marc, "travailleur")).toBe(true);
+    expect(matchesPerson(marc, "exemple.ca")).toBe(true);
+    expect(matchesPerson(marc, "cyr")).toBe(false);
+    expect(matchesPerson(marc, "  ")).toBe(true);
+  });
+
+  it("finds by phone digits, however they are typed", () => {
+    const marc = person("Marc Lévesque", { phone: "(418) 555-0177" });
+    expect(matchesPerson(marc, "5550177")).toBe(true);
+    expect(matchesPerson(marc, "555-0177")).toBe(true);
+    expect(matchesPerson(marc, "418 555")).toBe(true);
+    expect(matchesPerson(marc, "0199")).toBe(false);
+    expect(matchesPerson(person("Sans Numéro"), "555")).toBe(false);
+  });
+});

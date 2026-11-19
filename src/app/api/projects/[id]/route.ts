@@ -50,15 +50,15 @@ const patch = z
   })
   .partial();
 
+/** The office corrects a project's details, archives it or reopens it. */
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   await requireAdmin(request);
   const input = await body(request, patch);
   const clean = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v === "" ? null : v]));
-  const [project] = await db
-    .update(schema.projects)
-    .set(clean)
-    .where(eq(schema.projects.id, id))
-    .returning();
+  // An update with nothing to set is an error for the database.
+  const [project] = Object.keys(clean).length
+    ? await db.update(schema.projects).set(clean).where(eq(schema.projects.id, id)).returning()
+    : await db.select().from(schema.projects).where(eq(schema.projects.id, id)).limit(1);
   if (!project) throw notFound("Projet introuvable.");
   return (await summarize([project]))[0];
 });
