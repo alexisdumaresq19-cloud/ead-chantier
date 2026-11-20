@@ -9,6 +9,58 @@ function required(name: string, devDefault?: string): string {
   return value;
 }
 
+/**
+ * The shortest SETUP_CODE production accepts. Until the office's account
+ * exists, the code is all that stands between the internet and that account,
+ * and nothing slows guesses down: it has to be too long to guess.
+ */
+export const SETUP_CODE_MIN_LENGTH = 16;
+
+type Settings = Record<string, string | undefined>;
+
+/**
+ * Where files are kept, from the settings alone: an explicit STORAGE_DRIVER
+ * wins, else Supabase as soon as its key is there, else the folder on disk.
+ */
+export function storageDriverFrom(settings: Settings): "fs" | "supabase" {
+  const explicit = settings.STORAGE_DRIVER;
+  if (explicit === "fs" || explicit === "supabase") return explicit;
+  return settings.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "fs";
+}
+
+/**
+ * Why a production server may not keep its files the way these settings say,
+ * or null when it may. The folder on disk is the development store, served
+ * by the development file route (src/app/files): production never falls back
+ * to it because a setting is missing or was copied from .env.example. It has
+ * to be asked for with ALLOW_FS_STORAGE=1 (the end-to-end tests do).
+ */
+export function productionStorageProblem(settings: Settings): string | null {
+  if (storageDriverFrom(settings) === "fs") {
+    if (settings.ALLOW_FS_STORAGE === "1") return null;
+    return "Stockage sur disque refusé en production : définir SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY et retirer STORAGE_DRIVER=fs (ou ALLOW_FS_STORAGE=1 pour un serveur d'essai).";
+  }
+  if (!settings.SUPABASE_URL || !settings.SUPABASE_SERVICE_ROLE_KEY)
+    return "Stockage Supabase incomplet : définir SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY.";
+  return null;
+}
+
+/**
+ * What to tell whoever deploys about SETUP_CODE, or null when all is well.
+ * `officeExists`: the first account has been created.
+ */
+export function setupCodeAdvice(code: string | undefined, officeExists: boolean): string | null {
+  if (officeExists)
+    return code
+      ? "SETUP_CODE ne sert plus, le compte du bureau existe : retirez cette variable."
+      : null;
+  if (!code)
+    return `SETUP_CODE n'est pas définie : le compte du bureau ne pourra pas être créé. Générez-la avec « openssl rand -base64 24 » (au moins ${SETUP_CODE_MIN_LENGTH} caractères).`;
+  if (code.length < SETUP_CODE_MIN_LENGTH)
+    return `SETUP_CODE compte moins de ${SETUP_CODE_MIN_LENGTH} caractères : en production elle est ignorée et le compte du bureau ne pourra pas être créé. Générez-la avec « openssl rand -base64 24 ».`;
+  return null;
+}
+
 export const env = {
   dev,
   get databaseUrl() {
@@ -23,9 +75,9 @@ export const env = {
     return required("APP_SECRET", "dev-secret-not-for-production");
   },
   get storageDriver(): "fs" | "supabase" {
-    const explicit = process.env.STORAGE_DRIVER;
-    if (explicit === "fs" || explicit === "supabase") return explicit;
-    return process.env.SUPABASE_SERVICE_ROLE_KEY ? "supabase" : "fs";
+    const problem = dev ? null : productionStorageProblem(process.env);
+    if (problem) throw new Error(problem);
+    return storageDriverFrom(process.env);
   },
   get storageDir() {
     return process.env.STORAGE_DIR ?? ".data/storage";
@@ -36,8 +88,13 @@ export const env = {
   get supabaseServiceKey() {
     return required("SUPABASE_SERVICE_ROLE_KEY");
   },
-  /** Lets the very first administrator in (see /api/setup). */
-  get setupCode() {
-    return process.env.SETUP_CODE ?? (dev ? "dev" : undefined);
+  /**
+   * Lets the very first administrator in (see /api/setup). In production a
+   * code that is missing or too short counts as none: setup stays closed.
+   */
+  get setupCode(): string | undefined {
+    const code = process.env.SETUP_CODE;
+    if (dev) return code ?? "dev";
+    return code && code.length >= SETUP_CODE_MIN_LENGTH ? code : undefined;
   },
 };

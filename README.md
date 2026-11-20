@@ -15,7 +15,7 @@ npm run db:migrate
 npm run dev           # http://localhost:3000
 ```
 
-La première fois, ouvrir `/demarrer?code=dev` pour créer le compte du bureau.
+La première fois, ouvrir `/demarrer` pour créer le compte du bureau. En développement, le code de démarrage est `dev` (voir `SETUP_CODE` plus bas).
 
 | Commande               | Rôle                                                   |
 | ---------------------- | ------------------------------------------------------ |
@@ -28,7 +28,9 @@ La première fois, ouvrir `/demarrer?code=dev` pour créer le compte du bureau.
 | `npm run db:reset`     | Repart d'une base vide                                 |
 | `npm run sample:plans` | Génère un cahier de plans fictif (PDF) pour les essais |
 
-`scripts/smoke-api.mts` vérifie l'API de bout en bout sur une base vide (comptes, invitations, import et publication de plans, droits de chaque rôle).
+`scripts/smoke-api.mts` vérifie l'API de bout en bout sur une base vide (comptes, invitations, import et publication de plans, droits de chaque rôle, protections des liens, des codes QR et des envois de fichiers).
+
+`npm run e2e` lance les tests de bout en bout (Playwright) contre un build de production, sur sa propre base de données.
 
 ## Comment c'est fait
 
@@ -49,3 +51,23 @@ La première fois, ouvrir `/demarrer?code=dev` pour créer le compte du bureau.
 ## Variables d'environnement
 
 Voir `.env.example`. En production : `DATABASE_URL` (ou `POSTGRES_URL`), `APP_SECRET`, `SETUP_CODE`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+- **`SETUP_CODE`** : le code de démarrage, demandé une seule fois à l'adresse `/demarrer` pour créer le premier compte du bureau. Tant que ce compte n'existe pas, ce code est la seule protection de l'application : en production il doit compter **au moins 16 caractères**, sinon il est ignoré et la configuration reste fermée. Pour en générer un : `openssl rand -base64 24`. Une fois le compte du bureau créé, **retirez la variable** des réglages : elle ne sert plus (le déploiement le rappelle).
+- **Stockage des fichiers** : en production, les fichiers vont dans Supabase Storage (`SUPABASE_URL` et `SUPABASE_SERVICE_ROLE_KEY`). Le dossier sur disque (`STORAGE_DRIVER=fs`) est réservé au développement : un serveur de production le refuse et le déploiement s'arrête si la base de données est configurée sans Supabase. Ne copiez donc pas `STORAGE_DRIVER=fs` en production. Pour un serveur d'essai seulement, `ALLOW_FS_STORAGE=1` l'autorise (les tests de bout en bout s'en servent).
+- Le déploiement (`scripts/deploy-prepare.ts`) fixe aussi, dans Supabase, la taille maximale d'un fichier (500 Mo) et les types de fichiers acceptés. Si le projet Supabase a une limite globale plus basse, il l'indique et continue : augmentez alors cette limite dans les réglages de stockage de Supabase, sans quoi les gros PDF de plans seront refusés.
+
+## Le bureau n'a plus accès à l'application
+
+Personne n'a de mot de passe : on entre par un lien personnel, que seul un compte du bureau peut créer. Si le bureau perd son dernier appareil connecté (téléphone perdu, navigateur vidé), il faut un nouveau lien, créé directement dans la base de données :
+
+```bash
+DATABASE_URL="postgres://…" npx tsx scripts/admin-link.ts https://adresse-du-site "Nom de la personne"
+```
+
+- `DATABASE_URL` est l'adresse de la base de production (celle des réglages de l'hébergeur). Sans elle, le script lit `.env.local`.
+- Le premier argument est l'adresse du site, telle qu'on l'ouvre dans le navigateur.
+- Le second est le nom (ou une partie du nom) ou l'identifiant d'un compte **actif du bureau**. On peut l'omettre si le bureau n'a qu'un compte ; sinon le script affiche la liste des comptes.
+
+Le script affiche un lien `/i/…` à ouvrir sur l'appareil à connecter. Il sert une seule fois, pendant 14 jours, et annule les liens déjà envoyés à cette personne. Ne le transmettez qu'à elle : quiconque l'ouvre entre dans l'application à sa place.
+
+À noter : un lien personnel ouvert sur un appareil où **quelqu'un d'autre** est déjà connecté ne remplace plus cette personne. L'écran le dit et propose de déconnecter l'appareil d'abord.

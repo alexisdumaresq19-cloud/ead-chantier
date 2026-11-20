@@ -2,6 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
+  poweredByHeader: false,
   // Native and WebAssembly packages are loaded from node_modules at run time.
   serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres"],
   outputFileTracingIncludes: {
@@ -28,6 +29,30 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      {
+        // Every answer: the app shell at any address, the API, the files.
+        source: "/:path*",
+        headers: [
+          // Only the app's own pages may show the app in a frame. A session
+          // cookie is SameSite=Lax, which keeps it out of frames on other
+          // sites but not out of a frame on a sister address of the same
+          // domain. (Two headers: old browsers only know the second.)
+          { key: "Content-Security-Policy", value: "frame-ancestors 'self'" },
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          // Invitation links carry their secret in the address: it is never
+          // sent to another site. ("same-origin" rather than "no-referrer",
+          // which would make a plain form post arrive with "Origin: null".)
+          { key: "Referrer-Policy", value: "same-origin" },
+        ],
+      },
+      {
+        // API answers are personal and /api/me re-sends the session cookie:
+        // nothing between the server and the device may keep a copy. Set
+        // here, it wins over a Cache-Control set by a route handler.
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
+      },
       {
         source: "/sw.js",
         headers: [

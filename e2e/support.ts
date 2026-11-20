@@ -38,3 +38,18 @@ export async function post<T = unknown>(
     throw new Error(`POST ${path} → ${response.status()} ${await response.text()}`);
   return (await response.json()) as T;
 }
+
+/**
+ * Any API call, sent the way the app sends it. Unlike `post`, it never
+ * throws: a refusal is an answer, to be looked at.
+ */
+export async function call<T = any>( // eslint-disable-line @typescript-eslint/no-explicit-any -- loose JSON in tests
+  request: APIRequestContext | BrowserContext["request"],
+  method: "GET" | "POST" | "PATCH" | "DELETE",
+  path: string,
+  data?: unknown,
+): Promise<{ status: number; body: T; headers: Record<string, string> }> {
+  const response = await request.fetch(path, { method, data, headers: { origin: seed.base } });
+  const body = await response.json().catch(() => null);
+  return { status: response.status(), body, headers: response.headers() };
+}

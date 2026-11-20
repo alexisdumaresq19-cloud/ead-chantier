@@ -6,7 +6,7 @@ import { Redirect, useParams } from "wouter";
 import type { InvitePreview } from "@/shared/api";
 
 import { api, errorMessage } from "../../lib/api";
-import { enterApp, useMe } from "../../lib/session";
+import { enterApp, signOut, useMe } from "../../lib/session";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 
@@ -167,6 +167,8 @@ export function InviteScreen() {
     event.preventDefault();
     accept.mutate();
   };
+  // Signing out comes back to this same link, which then offers to enter.
+  const leave = useMutation({ mutationFn: () => signOut(window.location.pathname) });
 
   if (invite.isPending) {
     return (
@@ -194,6 +196,38 @@ export function InviteScreen() {
   }
 
   const preview = invite.data;
+  if (preview.kind === "personal" && preview.signedInAs) {
+    // Someone else's link on a device in use: its owner decides, knowingly.
+    // Staying is the large button: nobody has a password, so whoever signs
+    // out needs a new link from the office to come back.
+    return (
+      <PublicLayout>
+        <Heading title="Cet appareil est déjà connecté">
+          Il est connecté sous le nom de {preview.signedInAs}. Ce lien est celui de {preview.name}.
+        </Heading>
+        <div className="mt-6">
+          <ButtonLink href="/" size="lg" block>
+            Ouvrir l&apos;application
+          </ButtonLink>
+        </div>
+        <p className="border-line text-dim mt-6 border-t pt-4 text-sm text-pretty">
+          Pour entrer avec ce lien, déconnectez d&apos;abord cet appareil. Pour revenir ensuite sous
+          le nom de {preview.signedInAs}, il faudra un nouveau lien du bureau.
+        </p>
+        <div className="mt-3 flex flex-col gap-2">
+          <FormError>{leave.isError ? errorMessage(leave.error) : null}</FormError>
+          <Button
+            variant="secondary"
+            block
+            loading={leave.isPending || leave.isSuccess}
+            onClick={() => leave.mutate()}
+          >
+            Se déconnecter de cet appareil
+          </Button>
+        </div>
+      </PublicLayout>
+    );
+  }
   if (preview.kind === "personal") {
     return (
       <PublicLayout>
@@ -214,13 +248,41 @@ export function InviteScreen() {
     );
   }
 
+  const projectNumber = preview.projectNumber ? (
+    <p className="font-display text-ead-dark mb-1 text-xs font-semibold tracking-wider uppercase">
+      Projet {preview.projectNumber}
+    </p>
+  ) : null;
+  if (preview.access !== "join") {
+    // Signed in, and the code has nothing to give: the office and the
+    // project's own people already have access, and a foreman of another
+    // project is put on this one by the office, never by a code.
+    return (
+      <PublicLayout>
+        {projectNumber}
+        <Heading title={preview.projectName}>
+          {preview.access === "open"
+            ? `Vous êtes connecté sous le nom de ${preview.signedInAs}. Vous avez déjà accès à ce projet.`
+            : `Vous êtes connecté sous le nom de ${preview.signedInAs}. Le code QR sert aux travailleurs. Demandez au bureau de vous ajouter à ce projet.`}
+        </Heading>
+        <div className="mt-6">
+          {preview.access === "open" ? (
+            <ButtonLink href={`/projets/${preview.projectId}`} size="lg" block>
+              Ouvrir le projet
+            </ButtonLink>
+          ) : (
+            <ButtonLink href="/" size="lg" block>
+              Ouvrir l&apos;application
+            </ButtonLink>
+          )}
+        </div>
+      </PublicLayout>
+    );
+  }
+
   return (
     <PublicLayout>
-      {preview.projectNumber ? (
-        <p className="font-display text-ead-dark mb-1 text-xs font-semibold tracking-wider uppercase">
-          Projet {preview.projectNumber}
-        </p>
-      ) : null}
+      {projectNumber}
       <Heading title={preview.projectName}>
         {preview.signedInAs
           ? `Vous êtes connecté sous le nom de ${preview.signedInAs}. Ajoutez ce projet à votre liste.`
@@ -256,6 +318,11 @@ export function InviteScreen() {
         <Button type="submit" size="lg" block loading={busy}>
           {preview.signedInAs ? "Ajouter le projet" : "Entrer sur le chantier"}
         </Button>
+        {preview.signedInAs ? (
+          <ButtonLink href="/" variant="ghost" block>
+            Ouvrir l&apos;application
+          </ButtonLink>
+        ) : null}
       </form>
     </PublicLayout>
   );

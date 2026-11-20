@@ -59,12 +59,30 @@ export type Device = {
 
 /** What an invitation link or a site QR code opens, before it is accepted. */
 export type InvitePreview =
-  | { kind: "personal"; name: string }
+  | {
+      kind: "personal";
+      name: string;
+      /**
+       * Someone else is signed in on this device: their name. They sign out
+       * before the link can be used (it is refused until then).
+       */
+      signedInAs: string | null;
+    }
   | {
       kind: "project";
       projectName: string;
       projectNumber: string | null;
       signedInAs: string | null;
+      /**
+       * What the code does for whoever is looking at it. "join": it puts them
+       * on the project (someone new gives their name first). "open": they
+       * already have access (a member, the office), so the project just
+       * opens. "refused": a foreman who is not on the project; only the
+       * office adds a foreman.
+       */
+      access: "join" | "open" | "refused";
+      /** The project to open, when `access` is "open". */
+      projectId: string | null;
     };
 
 export type InviteLink = { url: string; expiresAt: string };
