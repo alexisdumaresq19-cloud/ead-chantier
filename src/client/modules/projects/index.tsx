@@ -17,7 +17,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useState, type ChangeEvent } from "react";
+import { useState } from "react";
 import { Link } from "wouter";
 
 import type { ProjectDetail, ProjectSummary } from "@/shared/api";
@@ -28,10 +28,10 @@ import { isAdmin } from "@/shared/roles";
 import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
-import { navigate } from "../../lib/location";
 import { projectsOpenedAt, recentSheetIds } from "../../lib/recents";
 import { useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
 import { planPaths, usePlans, warmSheet } from "../plans/data";
+import { TakePhotoButton } from "../photos/take";
 import { PlanThumb } from "../plans/parts";
 import { useDayReport, useToday } from "../reports/data";
 import { formatHours } from "../reports/lib";
@@ -45,8 +45,6 @@ import {
   QueryState,
   SearchInput,
   Skeleton,
-  Spinner,
-  toast,
 } from "../../ui";
 
 // The list of projects, and a project's home.
@@ -380,50 +378,19 @@ function Today({ project }: { project: ProjectDetail }) {
 }
 
 /**
- * Opens the phone's camera at once. The photo is handed to the photos module,
- * which keeps it on the device and sends it when it can; the gallery then
- * shows it, ready for a caption.
+ * Opens the phone's camera at once, from the home. The photos module does the
+ * rest on the same screen: the photo goes to its outbox, and a window offers
+ * a description and the next photo.
  */
 function PhotoAction({ projectId }: { projectId: string }) {
-  const me = useCurrentUser();
-  const [busy, setBusy] = useState(false);
-
-  async function take(event: ChangeEvent<HTMLInputElement>) {
-    const files = [...(event.target.files ?? [])];
-    // So that choosing the same file again is still a change.
-    event.target.value = "";
-    if (!files.length) return;
-    setBusy(true);
-    try {
-      // Loaded when needed: the home does not carry the photos' code.
-      const { addPhotos } = await import("../photos/outbox");
-      const { ids, refused } = await addPhotos(projectId, me.id, files);
-      if (refused) toast.error("Ce fichier n'est pas une image. Il n'a pas été ajouté.");
-      if (ids.length) {
-        toast.success(ids.length === 1 ? "Photo ajoutée" : `${ids.length} photos ajoutées`);
-        navigate(`/projets/${projectId}/photos`);
-      }
-    } catch {
-      toast.error("La photo n'a pas pu être ajoutée. Réessayez.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   return (
-    <label
-      className={cn(
-        "group border-line bg-surface hover:border-ead/60 active:bg-canvas flex min-h-19 cursor-pointer items-center gap-3.5 rounded-2xl border p-3.5 shadow-xs transition active:scale-[0.99]",
-        "has-focus-visible:outline-ead/55 has-focus-visible:outline-3 has-focus-visible:outline-offset-2",
-        busy && "pointer-events-none opacity-70",
-      )}
+    <TakePhotoButton
+      projectId={projectId}
+      label="Prendre une photo"
+      className="group border-line bg-surface hover:border-ead/60 active:bg-canvas flex min-h-19 items-center gap-3.5 rounded-2xl border p-3.5 shadow-xs transition active:scale-[0.99]"
     >
       <span className="bg-ead-tint text-ead-dark grid size-12 shrink-0 place-items-center rounded-full">
-        {busy ? (
-          <Spinner className="size-6" label="Ajout en cours" />
-        ) : (
-          <Camera className="size-6" aria-hidden />
-        )}
+        <Camera className="size-6" aria-hidden />
       </span>
       <span className="min-w-0 flex-1">
         <span className="font-display block text-[17px] leading-tight font-bold">
@@ -437,18 +404,7 @@ function PhotoAction({ projectId }: { projectId: string }) {
         className="text-dim size-5 shrink-0 transition-transform group-hover:translate-x-0.5"
         aria-hidden
       />
-      <input
-        type="file"
-        // "image/*" rather than a list of types: an iPhone then hands over a
-        // JPEG even when it keeps its photos as HEIC.
-        accept="image/*"
-        capture="environment"
-        disabled={busy}
-        onChange={take}
-        aria-label="Prendre une photo"
-        className="sr-only"
-      />
-    </label>
+    </TakePhotoButton>
   );
 }
 

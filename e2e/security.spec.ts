@@ -277,7 +277,7 @@ test("an archived project lets nobody in and takes nothing new", async ({ browse
   const device = await browser.newContext({ baseURL });
   const page = await device.newPage();
   await page.goto(path);
-  await expect(page.getByRole("heading", { name: "Ce lien ne fonctionne plus" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Ce code QR ne fonctionne plus" })).toBeVisible();
   await device.close();
 
   // Nothing new is added, except by the office.
