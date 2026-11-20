@@ -176,6 +176,19 @@ export async function forgetKeptProjects() {
   if (canStore()) await Promise.all([KEPT_CACHE, SEEN_CACHE].map((name) => caches.delete(name)));
 }
 
+/**
+ * Takes off the device the kept projects that are not among `openable`, the
+ * projects the server says this person can open. Someone removed from a
+ * project can no longer reach its card to remove it by hand.
+ */
+export async function forgetProjectsNotIn(openable: readonly string[]) {
+  await readRecords();
+  const lost = [...entries].filter(
+    ([projectId, each]) => each.kept && !openable.includes(projectId),
+  );
+  await Promise.all(lost.map(([projectId]) => removeKept(projectId).catch(() => {})));
+}
+
 async function forget(projectId: string) {
   const kept = entry(projectId).kept;
   if (kept) await removeFolders(kept.folders);

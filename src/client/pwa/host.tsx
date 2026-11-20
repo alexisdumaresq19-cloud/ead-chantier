@@ -1,17 +1,20 @@
 import { RefreshCw, X } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
+import type { ProjectSummary } from "@/shared/api";
+
 import { cn } from "../lib/cn";
 import { useAppLocation } from "../lib/location";
 import { queryClient } from "../lib/query";
 import { keys } from "../lib/session";
 import { Button, IconButton } from "../ui";
-import { forgetKeptProjects } from "./kept";
+import { forgetKeptProjects, forgetProjectsNotIn } from "./kept";
 import { applyUpdate, dismissUpdate, useUpdateAvailable } from "./update";
 
 /** Rendered once at the root: what the offline module shows over any screen. */
 export function PwaHost() {
   useForgetOnSignOut();
+  useForgetLostProjects();
   return <UpdateBar />;
 }
 
@@ -82,4 +85,25 @@ function useForgetOnSignOut() {
   useEffect(() => {
     if (signedOut) void forgetKeptProjects();
   }, [signedOut]);
+}
+
+/**
+ * A project this person can no longer open (removed from its team, or the
+ * project deleted) leaves the device too: its card, the only place to remove
+ * it by hand, is out of reach.
+ */
+function useForgetLostProjects() {
+  useEffect(
+    () =>
+      queryClient.getQueryCache().subscribe((event) => {
+        // Only a list the server has just sent: a stored one may be out of date.
+        if (event.type !== "updated" || event.action.type !== "success" || event.action.manual)
+          return;
+        const { queryKey, state } = event.query;
+        if (queryKey.length !== 1 || queryKey[0] !== keys.projects[0]) return;
+        const projects = state.data as ProjectSummary[];
+        void forgetProjectsNotIn(projects.map((project) => project.id));
+      }),
+    [],
+  );
 }

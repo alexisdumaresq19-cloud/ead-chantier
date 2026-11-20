@@ -33,6 +33,23 @@ import {
 
 const NEEDS_NETWORK = "Les documents ont encore besoin du réseau.";
 
+/** The longest pause between the two taps of a double tap. */
+const DOUBLE_TAP = 500;
+let tappedAt = -DOUBLE_TAP;
+
+/**
+ * The card's buttons take each other's place ("Annuler" appears where
+ * "Garder sur cet appareil" was): the second tap of a double tap would undo
+ * the first. A tap that follows another one this closely is ignored.
+ */
+function firstTap(action: () => void) {
+  return (event: { timeStamp: number }) => {
+    if (event.timeStamp - tappedAt < DOUBLE_TAP) return;
+    tappedAt = event.timeStamp;
+    action();
+  };
+}
+
 /** On a project's home: keeping the project on the device for the site. */
 export function OfflineProject({ project }: { project: ProjectDetail }) {
   const { kept, download, problem } = useKeptProject(project.id);
@@ -74,7 +91,7 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
 
   async function remove() {
     const sure = await confirmAction({
-      title: "Retirer ce projet de l'appareil ?",
+      title: "Retirer ce projet de l'appareil?",
       text: "Ses plans ne s'ouvriront plus sans réseau. Vous pourrez le garder de nouveau quand vous voudrez.",
       confirmLabel: "Retirer",
       danger: true,
@@ -95,7 +112,7 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
     <Button
       size="lg"
       disabled={!online || removing}
-      onClick={() => keepProject(project.id)}
+      onClick={firstTap(() => keepProject(project.id))}
       className="w-full sm:w-auto"
     >
       <Icon aria-hidden /> {label}
@@ -106,7 +123,7 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
     <Button
       variant="secondary"
       loading={removing}
-      onClick={remove}
+      onClick={firstTap(remove)}
       className={cn(alone ? "self-start" : "w-full", "sm:w-auto")}
     >
       {label}
@@ -234,7 +251,13 @@ function Layout({
   children?: ReactNode;
 }) {
   return (
-    <Card className="p-4 sm:p-5">
+    <Card
+      className="p-4 sm:p-5"
+      // A double click on a button would select the text that takes its place.
+      onMouseDown={(event) => {
+        if (event.detail > 1) event.preventDefault();
+      }}
+    >
       <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-x-6">
         <div className="flex min-w-0 items-start gap-3.5">
           <span
@@ -271,7 +294,7 @@ function Layout({
 
 function Downloading({ progress, onCancel }: { progress: Progress; onCancel: () => void }) {
   const cancel = (
-    <Button variant="secondary" onClick={onCancel} className="w-full sm:w-auto">
+    <Button variant="secondary" onClick={firstTap(onCancel)} className="w-full sm:w-auto">
       Annuler
     </Button>
   );
