@@ -222,7 +222,7 @@ test("after one visit, every screen of a project opens without a network", async
   await page.goto(sheetPath(2));
   await expect(page.getByText("Ce plan n'est pas encore sur cet appareil")).toBeVisible();
   await page.goto("/moi");
-  await expect(page.getByRole("heading", { name: "Mon compte" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mon compte", exact: true })).toBeVisible();
   await expect(page.getByText(CRASH)).toHaveCount(0);
 
   await context.setOffline(false);
@@ -479,9 +479,11 @@ test("signing out leaves nothing of the person on the device", async ({ browser,
   await expect
     .poll(() => page.evaluate(async () => (await caches.keys()).sort()))
     .toEqual([SHELL, STATIC]);
-  // Of the stored data, only the fact that nobody is signed in.
+  // Of the stored data, only the fact that nobody is signed in, and what the
+  // welcome screen asks of anyone: whether account creation is open.
+  const NOBODYS = ['["me"]', '["signup"]'];
   await expect
-    .poll(async () => (await storedKeys(page)).filter((key) => key !== '["me"]'))
+    .poll(async () => (await storedKeys(page)).filter((key) => !NOBODYS.includes(key)))
     .toEqual([]);
   expect(await call(context.request, "GET", "/api/me")).toMatchObject({ status: 401 });
   const keptRecords = await page.evaluate(
