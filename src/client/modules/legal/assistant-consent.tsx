@@ -3,6 +3,7 @@ import { ShieldCheck, Sparkles } from "lucide-react";
 import { canWriteReports } from "@/shared/roles";
 
 import { errorMessage } from "../../lib/api";
+import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
 import { formatDay } from "../../lib/format";
 import { useCurrentUser } from "../../lib/session";
@@ -12,16 +13,21 @@ import { useAssistantConsent, useSetAssistantConsent } from "./consent-data";
 import { PRIVACY_PATH } from "./links";
 
 // The person's agreement to the report's assistant sending their voice,
-// their texts and the report's photos to an AI service: asked before the
+// their texts, the report's photos and the site's names to AI services: asked before the
 // first use (modules/reports/dictation/consent-step.tsx), shown and taken
 // back here, on the account screen.
 
-/** The assistant's setting on the account screen: only for those who write reports. */
+/**
+ * The assistant's setting on the account screen: only for those who write
+ * reports, where the assistant is offered. An agreement on record stays
+ * shown while the service is off, so that it can still be taken back.
+ */
 export function AssistantConsentSetting() {
   const me = useCurrentUser();
+  const offered = useAssistant().data?.dictation === true;
   const consent = useAssistantConsent();
   const change = useSetAssistantConsent();
-  if (!canWriteReports(me.role)) return null;
+  if (!canWriteReports(me.role) || (!offered && !consent.agreed)) return null;
 
   const takeBack = async () => {
     const ok = await confirmAction({
@@ -58,7 +64,7 @@ export function AssistantConsentSetting() {
             </p>
             <p className="text-dim mt-1 text-[15px] text-pretty">
               {consent.agreed
-                ? "Quand vous l'utilisez, l'assistant envoie votre voix, le texte et les photos du rapport à des services d'intelligence artificielle, aux États-Unis."
+                ? "Quand vous l'utilisez, l'assistant envoie votre voix, le texte et les photos du rapport, et les noms des gens du chantier, à des services d'intelligence artificielle, aux États-Unis."
                 : "La première fois que vous ouvrirez l'assistant, il vous demandera votre accord avant d'envoyer quoi que ce soit."}
             </p>
           </div>

@@ -48,6 +48,13 @@ describe("the company's details as the office sends them", () => {
       false,
     );
     expect(bad({ privacyOfficer: undefined })).toBe(false);
+    // A way to reach nobody in particular.
+    expect(
+      bad({ privacyOfficer: { name: "", title: "", contact: "vieprivee@exemple.test" } }),
+    ).toBe(false);
+    expect(bad({ privacyOfficer: { name: "", title: "Direction générale", contact: "" } })).toBe(
+      true,
+    );
     expect(bad({ phone: "+1 (418) 555-0100" })).toBe(true);
   });
 });

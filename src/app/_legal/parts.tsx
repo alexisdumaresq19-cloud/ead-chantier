@@ -15,11 +15,14 @@ const PRINT = `
 @page { margin: 0.6in 0.7in; }
 @media print {
   html, body { background: #fff !important; }
+  /* Chrome breaks pages poorly inside a flex column: on paper it is a plain one. */
+  [data-legal] { display: block !important; min-height: 0 !important; }
   [data-legal-band] { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   [data-legal] a { color: inherit; text-decoration: none; }
   [data-legal] section { break-inside: auto; }
   [data-legal] h2, [data-legal] h3 { break-after: avoid; }
-  [data-legal] li, [data-legal] p { break-inside: avoid; }
+  [data-legal] li, [data-legal] p { orphans: 2; widows: 2; }
+  [data-legal] address, [data-legal] h1 + div p { break-inside: avoid; }
 }`;
 
 export function LegalPage({
@@ -27,8 +30,11 @@ export function LegalPage({
   lead,
   children,
   other,
+  company,
 }: {
   title: string;
+  /** The company's name, as the office keeps it. */
+  company: string;
   lead: ReactNode;
   children: ReactNode;
   /** The other public page, linked at the foot. */
@@ -76,7 +82,7 @@ export function LegalPage({
           >
             {other.label}
           </a>
-          <p>Les Entreprises Allen Dumaresq · EAD Chantier</p>
+          <p>{company} · EAD Chantier</p>
         </div>
       </footer>
     </div>

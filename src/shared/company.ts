@@ -72,8 +72,23 @@ export function missingDetails(profile: CompanyProfileInput): CompanyDetail[] {
   if (!profile.address.trim()) missing.push("address");
   if (!profile.phone.trim()) missing.push("phone");
   if (!profile.email.trim()) missing.push("email");
-  if (!profile.privacyOfficer.name.trim()) missing.push("privacyOfficer");
+  if (!officerNamed(profile.privacyOfficer)) missing.push("privacyOfficer");
   return missing;
+}
+
+/**
+ * Whether the responsible person is designated. The law asks that their
+ * title and how to reach them be published; a name is welcome, but a title
+ * alone ("Direction générale") designates someone too.
+ */
+export const officerNamed = (officer: PrivacyOfficer) =>
+  officer.name.trim() !== "" || officer.title.trim() !== "";
+
+/** What is wrong with the responsible person as typed, or null: a way to reach nobody. */
+export function officerProblem(officer: PrivacyOfficer): string | null {
+  return officer.contact.trim() !== "" && !officerNamed(officer)
+    ? "Inscrivez aussi son nom ou son titre."
+    : null;
 }
 
 const PHONE = /^[+(]?\d[\d\s().-]{5,}\d(\s*(poste|p\.|ext\.?|x)\s*\d{1,6})?$/i;

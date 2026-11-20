@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { phoneHref, type CompanyProfile } from "@/shared/company";
+import { officerNamed, phoneHref, type CompanyProfile } from "@/shared/company";
 import { POLICY_VERSION, profileForPages } from "@/server/legal/profile";
 
 import {
@@ -37,14 +37,15 @@ export default async function PrivacyPage() {
       lead={
         <>
           <p>
-            L&apos;application EAD Chantier sert aux chantiers de {profile.name}&nbsp;: plans,
-            documents, photos et rapports journaliers. Voici ce qu&apos;elle garde sur vous, à qui
-            elle le montre et ce que vous pouvez demander. Cela vaut pour le site Web comme pour
-            l&apos;app EAD sur iPhone.
+            L&apos;application EAD Chantier sert aux chantiers de l&apos;entreprise {profile.name}
+            &nbsp;: plans, documents, photos et rapports journaliers. Voici ce qu&apos;elle garde
+            sur vous, à qui elle le montre et ce que vous pouvez demander. Cela vaut pour le site
+            Web comme pour l&apos;app EAD sur iPhone.
           </p>
           <p className="mt-3 text-base">Version du {version}</p>
         </>
       }
+      company={profile.name}
       other={{ href: "/soutien", label: "Aide et soutien" }}
     >
       <Part title="Qui est responsable" id="responsable">
@@ -73,8 +74,15 @@ export default async function PrivacyPage() {
           <Point title="Ce que vous ajoutez aux chantiers">
             Les photos, les rapports journaliers, les documents et les plans, avec votre nom et la
             date. C&apos;est le travail de l&apos;entreprise, gardé pour ses dossiers de chantier.
-            Avant de garder une photo, l&apos;application retire ses données cachées, dont la
-            position GPS et le modèle du téléphone.
+            Une photo peut montrer des gens. Avant de garder une photo de chantier,
+            l&apos;application retire ses données cachées, dont la position GPS et le modèle du
+            téléphone. Les documents et les plans sont gardés tels qu&apos;envoyés, avec ce que le
+            fichier contient&nbsp;: une image ajoutée comme document garde ses données cachées.
+          </Point>
+          <Point title="Ce que d'autres inscrivent à votre sujet">
+            Dans le rapport journalier, le contremaître ou le bureau inscrit qui a travaillé ce
+            jour-là et combien d&apos;heures. Ces lignes sont gardées avec le rapport, pour les
+            dossiers du chantier. Les contremaîtres du chantier et le bureau les voient.
           </Point>
           <Point title="Votre voix, si vous dictez un rapport">
             L&apos;enregistrement part au service de transcription au moment où vous dictez (voir
@@ -106,19 +114,25 @@ export default async function PrivacyPage() {
         <p>
           Les contremaîtres et le bureau peuvent dicter le rapport journalier, faire décrire ses
           photos ou mettre son texte au propre. Pour cela, l&apos;assistant envoie à des services
-          d&apos;intelligence artificielle l&apos;enregistrement de votre voix, le texte du rapport,
-          ses photos, et les noms des membres du chantier (pour bien les écrire).
+          d&apos;intelligence artificielle l&apos;enregistrement de votre voix, le texte du rapport
+          (dont les noms et les heures de l&apos;équipe), ses photos, votre nom et ceux des membres
+          du chantier (pour bien les écrire).
+        </p>
+        <p>
+          Ainsi, votre nom et vos heures peuvent partir à ces services quand la personne qui écrit
+          le rapport utilise l&apos;assistant, après avoir elle-même accepté.
         </p>
         <p>
           <strong className="font-semibold">Rien n&apos;est envoyé avant votre accord.</strong>{" "}
           L&apos;application vous le demande la première fois que vous ouvrez l&apos;assistant. Sans
           accord, vous remplissez le rapport à la main, comme d&apos;habitude. Vous pouvez retirer
-          votre accord en tout temps dans Mon compte.
+          votre accord en tout temps dans Mon compte. Si ce que l&apos;assistant envoie change,
+          l&apos;application vous redemande votre accord.
         </p>
         <p>
           Les demandes passent par la passerelle d&apos;intelligence artificielle de Vercel, qui ne
-          garde pas leur contenu. Elles vont ensuite à Anthropic, qui rédige le rapport et décrit
-          les photos, et à OpenAI, qui transcrit la voix. Ces services sont aux États-Unis et
+          garde pas leur contenu. Elle les envoie seulement à Anthropic, qui rédige le rapport et
+          décrit les photos, et à OpenAI, qui transcrit la voix. Ces services sont aux États-Unis et
           traitent les données selon leurs propres conditions.
         </p>
       </Part>
@@ -143,8 +157,10 @@ export default async function PrivacyPage() {
         </Points>
         <p>
           Les photos et les feuilles de plans sont rangées à une adresse impossible à deviner, ce
-          qui les fait s&apos;ouvrir vite, même sans réseau. Le bouton d&apos;itinéraire d&apos;un
-          chantier ouvre Google Maps avec l&apos;adresse du chantier, seulement si vous le touchez.
+          qui les fait s&apos;ouvrir vite, même sans réseau. Quiconque a cette adresse peut ouvrir
+          la photo ou la feuille sans compte&nbsp;; elle cesse de fonctionner seulement quand la
+          photo ou le plan est retiré. Le bouton d&apos;itinéraire d&apos;un chantier ouvre Google
+          Maps avec l&apos;adresse du chantier, seulement si vous le touchez.
         </p>
       </Part>
 
@@ -170,7 +186,8 @@ export default async function PrivacyPage() {
           </Point>
           <Point title="Retirer votre accord">
             Dans Mon compte, à Assistant du rapport, touchez «&nbsp;Retirer mon accord&nbsp;».
-            L&apos;assistant ne reçoit alors plus rien de vous.
+            L&apos;assistant ne reçoit alors plus rien de vous. Ce qui a déjà été envoyé reste
+            soumis aux conditions de ces services.
           </Point>
           <Point title="Supprimer votre compte">
             Dans l&apos;application, à Mon compte, touchez «&nbsp;Supprimer mon compte&nbsp;».
@@ -179,7 +196,8 @@ export default async function PrivacyPage() {
             l&apos;assistant sont effacés. Les rapports, photos, documents et plans que vous avez
             ajoutés restent à l&apos;entreprise, avec votre nom seulement. Si vous n&apos;avez rien
             ajouté, votre compte disparaît au complet. Votre nom peut rester dans l&apos;équipe
-            d&apos;un rapport écrit par quelqu&apos;un d&apos;autre.
+            d&apos;un rapport écrit par quelqu&apos;un d&apos;autre. Si vous ne pouvez plus entrer
+            dans l&apos;application, demandez la suppression à la personne responsable.
           </Point>
         </Points>
       </Part>
@@ -206,7 +224,7 @@ export default async function PrivacyPage() {
 /** The person responsible for personal information, or what the law says while none is named. */
 function Officer({ profile }: { profile: CompanyProfile }) {
   const officer = profile.privacyOfficer;
-  if (!officer.name)
+  if (!officerNamed(officer))
     return (
       <p>
         La personne responsable de la protection des renseignements personnels n&apos;est pas encore
@@ -227,8 +245,10 @@ function Officer({ profile }: { profile: CompanyProfile }) {
         Responsable de la protection des renseignements personnels
       </p>
       <p className="mt-1 font-semibold">
-        {officer.name}
-        {officer.title ? <span className="font-normal">, {officer.title}</span> : null}
+        {officer.name || officer.title}
+        {officer.name && officer.title ? (
+          <span className="font-normal">, {officer.title}</span>
+        ) : null}
       </p>
       {reach ? (
         <p className="mt-1">

@@ -1,6 +1,7 @@
 import { aiAvailable } from "@/server/ai/gateway";
 import { requireUser } from "@/server/auth";
 import { route } from "@/server/http";
+import { consentInForce } from "@/server/legal/consent";
 import type { AssistantStatus } from "@/shared/dictation";
 
 /**
@@ -11,6 +12,6 @@ export const GET = route(async (request) => {
   const user = await requireUser(request);
   return {
     dictation: await aiAvailable(),
-    consentAt: user.assistantConsentAt?.toISOString() ?? null,
+    consentAt: consentInForce(user.assistantConsentAt)?.toISOString() ?? null,
   } satisfies AssistantStatus;
 });

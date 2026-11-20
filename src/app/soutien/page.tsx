@@ -30,9 +30,11 @@ export default async function SupportPage() {
       lead={
         <p>
           EAD Chantier rassemble les plans, les documents, les photos et les rapports journaliers
-          des chantiers de {profile.name}. Voici comment y entrer et qui joindre au besoin.
+          des chantiers de l&apos;entreprise {profile.name}. Voici comment y entrer et qui joindre
+          au besoin.
         </p>
       }
+      company={profile.name}
       other={{ href: "/confidentialite", label: "Politique de confidentialité" }}
     >
       <Part title="Entrer dans l'application" id="entrer">
@@ -47,13 +49,15 @@ export default async function SupportPage() {
             et vous êtes connecté. Un lien sert une seule fois&nbsp;: pour un autre appareil,
             demandez-en un nouveau.
           </Point>
-          <Point title="Avec un code à taper">
-            Dans l&apos;app, touchez «&nbsp;J&apos;ai déjà un compte&nbsp;» et inscrivez votre
-            cellulaire et le code que le bureau vous a donné.
+          <Point title="Avec un code du bureau">
+            Dans l&apos;app, touchez «&nbsp;J&apos;ai déjà un compte&nbsp;», puis «&nbsp;Avec un
+            code du bureau&nbsp;». Inscrivez votre cellulaire et le code que le bureau vous a
+            envoyé.
           </Point>
           <Point title="Avec le code QR d'un chantier">
-            Visez le code QR affiché au chantier avec l&apos;appareil photo du téléphone. Vous
-            entrez dans ce chantier, et le contremaître ou le bureau confirme votre accès.
+            Au chantier, le contremaître ou le bureau vous montre le code QR. Scannez-le avec
+            l&apos;appareil photo du téléphone et inscrivez votre nom. Vous entrez dans ce chantier,
+            et le contremaître ou le bureau confirme votre accès.
           </Point>
         </Points>
         <p>
@@ -97,7 +101,8 @@ export default async function SupportPage() {
         <p>
           Dans l&apos;application, allez à Mon compte et touchez «&nbsp;Supprimer mon compte&nbsp;».
           C&apos;est immédiat. Ce que vous avez ajouté aux chantiers reste à l&apos;entreprise, avec
-          votre nom. Le détail est dans la{" "}
+          votre nom. Si vous ne pouvez plus entrer dans l&apos;application, demandez la suppression
+          au bureau. Le détail est dans la{" "}
           <a href="/confidentialite#droits" className={linkClass}>
             politique de confidentialité
           </a>

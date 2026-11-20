@@ -5,6 +5,7 @@ import {
   emailProblem,
   frenchList,
   missingDetails,
+  officerProblem,
   phoneHref,
   phoneProblem,
 } from "./company";
@@ -25,6 +26,20 @@ describe("the company's details", () => {
         privacyOfficer: { name: "Prénom Nom", title: "", contact: "" },
       }),
     ).toEqual(["address", "email"]);
+  });
+
+  it("take a title alone for the responsible person, never a contact alone", () => {
+    const officer = (name: string, title: string, contact: string) => ({ name, title, contact });
+    // The law asks for the title and the contact; a name is welcome.
+    expect(
+      missingDetails({
+        ...EMPTY_COMPANY_PROFILE,
+        privacyOfficer: officer("", "Direction générale", ""),
+      }),
+    ).not.toContain("privacyOfficer");
+    expect(officerProblem(officer("", "Direction générale", "vieprivee@exemple.test"))).toBeNull();
+    expect(officerProblem(officer("", "", ""))).toBeNull();
+    expect(officerProblem(officer("", " ", "vieprivee@exemple.test"))).toMatch(/nom ou son titre/);
   });
 
   it("are listed the way it is said", () => {

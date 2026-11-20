@@ -5,6 +5,7 @@ import {
   COMPANY_LIMITS as L,
   emailProblem,
   EMPTY_COMPANY_PROFILE,
+  officerProblem,
   phoneProblem,
   type CompanyProfile,
   type CompanyProfileInput,
@@ -61,11 +62,16 @@ export const companyProfileInput = z.object({
   address,
   phone,
   email,
-  privacyOfficer: z.object({
-    name: line(L.officerName),
-    title: line(L.officerTitle),
-    contact: line(L.officerContact),
-  }),
+  privacyOfficer: z
+    .object({
+      name: line(L.officerName),
+      title: line(L.officerTitle),
+      contact: line(L.officerContact),
+    })
+    .refine((officer) => officerProblem(officer) === null, {
+      message: "Inscrivez aussi son nom ou son titre.",
+      path: ["title"],
+    }),
 }) satisfies z.ZodType<CompanyProfileInput, unknown>;
 
 /**

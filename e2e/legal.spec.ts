@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
 
 import { freeDay, newForeman, put } from "./privacy-support";
 import { call, contextAs, seed } from "./support";
@@ -33,13 +33,22 @@ test("the privacy policy and the support page are the server's, open to anyone, 
 
   await page.goto("/confidentialite");
   await expect(page.getByText(/Version du \d+(er)? \w+ 20\d\d/).first()).toBeVisible();
-  await expect(page.getByText("Les Entreprises Allen Dumaresq").first()).toBeVisible();
+  // The name never follows a bare "de" ("de Les Entreprises"), whatever the office calls it.
+  await expect(
+    page.getByText("sert aux chantiers de l'entreprise Les Entreprises Allen Dumaresq"),
+  ).toBeVisible();
+  await expect(page.getByText(/\bde Les\b/)).toHaveCount(0);
+  // The providers the gateway is held to, and what others write about a person.
+  await expect(page.getByText(/Elle les envoie seulement à Anthropic/)).toBeVisible();
+  await expect(page.getByText("Ce que d'autres inscrivent à votre sujet.")).toBeVisible();
+  await expect(page.getByText(/Quiconque a cette adresse peut ouvrir/)).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Commission d'accès à l'information du Québec" }),
   ).toBeVisible();
   // While the office has not named anyone, the page says who it is by law.
   await expect(page.getByText(/la personne qui a la plus haute autorité/)).toBeVisible();
   await page.goto("/soutien");
+  await expect(page.getByText(/\bde Les\b/)).toHaveCount(0);
   await expect(page.getByText("adressez-vous au bureau de votre entreprise")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Politique de confidentialité", exact: true }),
@@ -59,6 +68,21 @@ test("the office keeps the company's details, and the public pages show them", a
   const before = (await call(api, "GET", "/api/company/profile")).body;
   // Nothing is ever filled in but the name.
   expect(before).toMatchObject({ name: "Les Entreprises Allen Dumaresq", phone: "", email: "" });
+  // The specs that follow, at the other size too, read the details as they were.
+  try {
+    await officeFillsIn(browser, context, before);
+  } finally {
+    expect((await put(api, "/api/company/profile", before)).status).toBe(200);
+    await context.close();
+  }
+});
+
+async function officeFillsIn(
+  browser: Browser,
+  context: BrowserContext,
+  before: Record<string, unknown>,
+) {
+  const api = context.request;
   const refused = await put(api, "/api/company/profile", {
     ...before,
     email: "bureau@",
@@ -83,6 +107,10 @@ test("the office keeps the company's details, and the public pages show them", a
   await expect(sheet.getByText("Ce courriel n'est pas valide.")).toBeVisible();
   await sheet.getByRole("textbox", { name: /^Courriel Facultatif/ }).fill("  Bureau@Exemple.test ");
   await sheet.getByLabel("Adresse postale").fill("100, rue Exemple\nVille Exemple (Québec)");
+  // A way to reach the responsible person, but nobody named: the window asks who.
+  await sheet.getByLabel("Pour la joindre").fill("vieprivee@exemple.test");
+  await sheet.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(sheet.getByText("Inscrivez aussi son nom ou son titre.")).toBeVisible();
   await sheet
     .getByRole("textbox", { name: "Nom Facultatif", exact: true })
     .fill("Personne Exemple");
@@ -102,17 +130,32 @@ test("the office keeps the company's details, and the public pages show them", a
     "href",
     "tel:+14185550100",
   );
+  await expect(pub.getByRole("link", { name: "vieprivee@exemple.test" })).toBeVisible();
   await pub.goto("/soutien");
   await expect(pub.getByRole("link", { name: "bureau@exemple.test" })).toHaveAttribute(
     "href",
     "mailto:bureau@exemple.test",
   );
-  await visitor.close();
 
-  // Put back as it was, for the specs that follow.
-  expect((await put(api, "/api/company/profile", before)).status).toBe(200);
-  await context.close();
-});
+  // The office renames the company: the pages follow, their foot included.
+  const renamed = { ...before, name: "Entreprise Exemple inc." };
+  // The law asks for a title and a way to reach; a name is not required.
+  const titled = { name: "", title: "Direction générale", contact: "vieprivee@exemple.test" };
+  expect(
+    (await put(api, "/api/company/profile", { ...renamed, privacyOfficer: titled })).status,
+  ).toBe(200);
+  await pub.goto("/confidentialite");
+  await expect(
+    pub.getByText("sert aux chantiers de l'entreprise Entreprise Exemple inc."),
+  ).toBeVisible();
+  await expect(pub.getByRole("contentinfo")).toContainText(
+    "Entreprise Exemple inc. · EAD Chantier",
+  );
+  await expect(pub.getByText("Les Entreprises Allen Dumaresq")).toHaveCount(0);
+  await expect(pub.getByText("Direction générale", { exact: true })).toBeVisible();
+  await expect(pub.getByText(/plus haute autorité/)).toHaveCount(0);
+  await visitor.close();
+}
 
 test("the assistant asks first, takes no for an answer, and the agreement can be taken back", async ({
   browser,
@@ -135,11 +178,23 @@ test("the assistant asks first, takes no for an answer, and the agreement can be
   await expect(
     question.getByText("l'enregistrement de votre voix, quand vous dictez;"),
   ).toBeVisible();
-  await expect(question.getByText("les photos du rapport.")).toBeVisible();
+  await expect(question.getByText("les photos du rapport;")).toBeVisible();
+  await expect(
+    question.getByText("votre nom et ceux des gens du chantier, pour bien les écrire."),
+  ).toBeVisible();
+  await expect(
+    question.getByText("Une fois que vous avez accepté, la question ne revient plus.", {
+      exact: false,
+    }),
+  ).toBeVisible();
   await expect(question.getByText(/États-Unis/)).toBeVisible();
   await expect(
     question.getByRole("link", { name: "Politique de confidentialité" }),
   ).toHaveAttribute("href", "/confidentialite");
+  // It opens beside the report, which stays as it is.
+  await expect(
+    question.getByRole("link", { name: "Politique de confidentialité" }),
+  ).toHaveAttribute("target", "_blank");
   // Nothing records while the question is open.
   await expect(page.getByRole("button", { name: "Terminer l'enregistrement" })).toHaveCount(0);
 
@@ -181,6 +236,21 @@ test("the assistant asks first, takes no for an answer, and the agreement can be
   expect((await call(api, "GET", "/api/assistant")).body.consentAt).toBeNull();
   const after = await api.post(dictation, { ...form, headers: { origin: seed.base } });
   expect(after.status()).toBe(403);
+
+  // Where the assistant is not offered, nor agreed to, Mon compte says nothing of it.
+  // A device of its own: this one keeps the assistant's answer it already has.
+  const fresh = await browser.newContext({
+    baseURL: seed.base,
+    storageState: { cookies: (await context.storageState()).cookies, origins: [] },
+  });
+  const off = await fresh.newPage();
+  await off.route("**/api/assistant", (route) =>
+    route.fulfill({ json: { dictation: false, consentAt: null } }),
+  );
+  await off.goto("/moi");
+  await expect(off.getByRole("heading", { name: "Mon compte", exact: true })).toBeVisible();
+  await expect(off.getByText("Assistant du rapport")).toHaveCount(0);
+  await fresh.close();
   await context.close();
 });
 

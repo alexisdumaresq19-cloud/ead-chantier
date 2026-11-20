@@ -1,4 +1,4 @@
-import { Check, FileText, Images, Mic } from "lucide-react";
+import { Check, FileText, Images, Mic, Users } from "lucide-react";
 
 import { errorMessage } from "../../../lib/api";
 import { Button, FormError } from "../../../ui";
@@ -14,7 +14,8 @@ export const CONSENT_TITLE = "Avant d'utiliser l'assistant";
 const SENT = [
   { icon: Mic, text: "l'enregistrement de votre voix, quand vous dictez;" },
   { icon: FileText, text: "le texte du rapport;" },
-  { icon: Images, text: "les photos du rapport." },
+  { icon: Images, text: "les photos du rapport;" },
+  { icon: Users, text: "votre nom et ceux des gens du chantier, pour bien les écrire." },
 ] as const;
 
 /** The step's content, in the sheet's body. */
@@ -49,9 +50,15 @@ export function ConsentStep() {
       </div>
       <p>Vous pouvez toujours écrire le rapport à la main, sans l&apos;assistant.</p>
       <p className="text-dim text-sm">
-        Une fois accepté, la question ne revient plus. Vous pouvez retirer votre accord en tout
-        temps dans Mon compte.{" "}
-        <a href={PRIVACY_PATH} className="text-ead-dark font-semibold underline underline-offset-4">
+        Une fois que vous avez accepté, la question ne revient plus. Vous pouvez retirer votre
+        accord en tout temps dans Mon compte.{" "}
+        {/* Beside the report, which stays open (in the iPhone app, Safari opens it). */}
+        <a
+          href={PRIVACY_PATH}
+          target="_blank"
+          rel="noopener"
+          className="text-ead-dark font-semibold underline underline-offset-4"
+        >
           Politique de confidentialité
         </a>
       </p>

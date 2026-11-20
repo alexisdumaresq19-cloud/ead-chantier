@@ -8,6 +8,7 @@ import {
   emailProblem,
   frenchList,
   missingDetails,
+  officerProblem,
   phoneProblem,
   type CompanyProfile,
   type CompanyProfileInput,
@@ -102,10 +103,12 @@ export function CompanyProfileCard({ className }: { className?: string }) {
             <Detail label="Téléphone">{data.phone || null}</Detail>
             <Detail label="Courriel">{data.email || null}</Detail>
             <Detail label="Responsable des renseignements personnels">
-              {officer?.name ? (
+              {officer?.name || officer?.title ? (
                 <>
-                  {officer.name}
-                  {officer.title ? <span className="text-dim">, {officer.title}</span> : null}
+                  {officer.name || officer.title}
+                  {officer.name && officer.title ? (
+                    <span className="text-dim">, {officer.title}</span>
+                  ) : null}
                   {officer.contact ? (
                     <span className="text-dim block">{officer.contact}</span>
                   ) : null}
@@ -164,7 +167,7 @@ function PageLink({ href, children }: { href: string; children: ReactNode }) {
   );
 }
 
-type Problems = Partial<Record<"name" | "phone" | "email", string>>;
+type Problems = Partial<Record<"name" | "phone" | "email" | "officer", string>>;
 
 function problemsOf(form: CompanyProfileInput): Problems {
   const problems: Problems = {};
@@ -173,6 +176,8 @@ function problemsOf(form: CompanyProfileInput): Problems {
   if (phone) problems.phone = phone;
   const email = emailProblem(form.email);
   if (email) problems.email = email;
+  const officer = officerProblem(form.privacyOfficer);
+  if (officer) problems.officer = officer;
   return problems;
 }
 
@@ -303,12 +308,13 @@ function ProfileSheet({
               autoComplete="off"
             />
           </Field>
-          <Field label="Titre" optional>
+          <Field label="Titre" optional error={shown.officer}>
             <Input
               value={form.privacyOfficer.title}
               onChange={(event) => setOfficer({ title: event.target.value })}
               maxLength={L.officerTitle}
               autoComplete="off"
+              aria-invalid={Boolean(shown.officer)}
             />
           </Field>
           <Field
