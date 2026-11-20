@@ -85,14 +85,25 @@ The interface is in Québec French only.
   `<Switch>` with full paths, e.g. `/projets/:projectId/plans/import/:importId`).
 - Inside a project (`/projets/:projectId/…`) the project and the person are
   already loaded: `useCurrentProject()`, `useCurrentUser()`
-  (`lib/session.ts`). `project.canManage` says whether to show management
-  buttons; the server decides again on every request.
+  (`lib/session.ts`). `project.canChange` says whether to offer adding and
+  editing (`canManage`: what only managers read, archived or not); the server
+  decides again on every request.
 - Every screen starts with `<Page title=… back=… actions=…>` (`shell/page.tsx`).
   Building blocks come from `@/client/ui` (`Button`, `ButtonLink`,
   `IconButton`, `Card`, `Badge`, `Sheet`, `confirmAction`, `Field`, `Input`,
   `Textarea`, `Select`, `SearchInput`, `FormError`, `EmptyState`,
   `ErrorState`, `QueryState`, `Skeleton`, `Spinner`, `ProgressBar`, `Avatar`,
   `toast`). Reuse them; add a block there only when two modules need it.
+- On a phone there is one way back: the top bar's chevron goes where the
+  screen's `back` prop says, and the in-page back link shows on computers
+  only. Form screens (listed in `shell/shell.tsx`) hide the bottom tabs. The
+  frame sets `--ead-tabs` on `<html>` (the height the tabs take, `0px` when
+  hidden or on a computer): a bar stuck to the bottom of a screen sits at
+  `bottom: var(--ead-tabs)` and adds the safe area itself when it is `0px`.
+- Photos are taken from any screen with `TakePhotoButton`
+  (`modules/photos/take.tsx`): it keeps the photo and opens its window on the
+  same screen. The plan sheets and projects opened last are in
+  `lib/recents.ts` (on the device, cleared at sign-out).
 - Data: `api<T>(path, { method, body })` (`lib/api.ts`) inside `useQuery` /
   `useMutation`. Query keys of a project's data start with
   `keys.project(projectId)` (e.g. `[...keys.project(id), "documents"]`), so
