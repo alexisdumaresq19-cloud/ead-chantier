@@ -16,6 +16,10 @@ describe("what a typeface can draw", () => {
     // An emoji made of several characters goes whole.
     expect(drawable("A \u{1f468}\u200d\u{1f527} B", latin)).toBe("A B");
     expect(drawable("Ok ✔\ufe0f fait", latin)).toBe("Ok fait");
+    // Nor a space before the punctuation that followed it.
+    expect(drawable("Rue Principale \u{1f69c}, Gaspé", latin)).toBe("Rue Principale, Gaspé");
+    expect(drawable("Fini \u{1f477}.", latin)).toBe("Fini.");
+    expect(drawable("Fini \u{1f477} ; suite", latin)).toBe("Fini ; suite");
   });
 
   it("writes a character in its plain form when the typeface has that", () => {

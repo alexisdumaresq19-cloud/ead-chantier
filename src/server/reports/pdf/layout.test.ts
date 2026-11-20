@@ -8,9 +8,11 @@ const RULES: LayoutRules = {
   target: 200,
   min: 110,
   max: 236,
+  minWidth: 150,
   most: 4,
   rowGap: 12,
   page: 682,
+  tallest: 660,
 };
 const LANDSCAPE = 4 / 3;
 const PORTRAIT = 3 / 4;
@@ -83,6 +85,18 @@ describe("the layout of a report's photos", () => {
     expect(shape(rowsOf(aspects, 120))[0]).toEqual([]);
   });
 
+  it("lowers the last photos to follow the text rather than sit alone on a new page", () => {
+    // One row's room under the text, short of the usual height.
+    const [[row]] = rowsOf([LANDSCAPE], 160);
+    expect(row.space).toBeLessThanOrEqual(160);
+    expect(row.height).toBeGreaterThanOrEqual(RULES.min);
+    expect(row.height).toBeLessThan(RULES.target);
+    expect(shape(rowsOf([LANDSCAPE, LANDSCAPE], 160))).toEqual([[2]]);
+    // Never below the smallest height, and never when photos would follow on the next page.
+    expect(shape(rowsOf([LANDSCAPE], 100))).toEqual([[], [1]]);
+    for (const row of rowsOf(Array(9).fill(LANDSCAPE), 160)[0]) expect(row.short).toBe(false);
+  });
+
   it("never puts more on a page than it holds, with the gaps between rows", () => {
     const aspects = Array.from(
       { length: 23 },
@@ -94,6 +108,32 @@ describe("the layout of a report's photos", () => {
         rows.reduce((total, row) => total + row.space, 0) + RULES.rowGap * (rows.length - 1);
       expect(used).toBeLessThanOrEqual(page === 0 ? 300 : RULES.page);
     });
+  });
+
+  it("never squeezes a photo beside others below a useful width", () => {
+    const aspects = [PANORAMA, PORTRAIT, LANDSCAPE, PORTRAIT, 1 / 3, LANDSCAPE, LANDSCAPE, 0.45];
+    for (const row of rowsOf(aspects).flat())
+      if (row.count > 1)
+        row.widths.forEach((width, at) =>
+          // A very tall photo is only held to the width it has alone at the usual height.
+          expect(width).toBeGreaterThanOrEqual(
+            Math.min(RULES.minWidth, aspects[row.start + at] * RULES.target) - 0.01,
+          ),
+        );
+    // A portrait never shares a row with a panorama.
+    const [rows] = rowsOf([PANORAMA, PORTRAIT, PORTRAIT, PORTRAIT]);
+    expect(rows[0].count).toBe(1);
+  });
+
+  it("finds a place for a photo whose captions are taller than a page", () => {
+    // A caption that grows as the photo narrows, past what a page can take.
+    const pages = photoPages([1080 / 2400, LANDSCAPE], (_, width) => 20_000 / width, RULES, 300);
+    const rows = pages.flat();
+    expect(rows.reduce((total, row) => total + row.count, 0)).toBe(2);
+    for (const row of rows) expect(row.space).toBeLessThanOrEqual(RULES.tallest);
+    // And a page that offers a whole row's room always takes one, whatever it holds.
+    const huge = photoPages([LANDSCAPE], () => 5_000, RULES, RULES.page);
+    expect(shape(huge)).toEqual([[1]]);
   });
 
   it("gives the same layout for the same photos", () => {

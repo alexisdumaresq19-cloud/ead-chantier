@@ -121,7 +121,7 @@ describe("a report's PDF", () => {
       "23,5 h",
       "Pelle, rouleau, camion 10 roues.",
       "Pose de 42 m de conduite",
-      "Passage de l'ingénieur vers 14 h.",
+      "Passage de l\u2019ingénieur vers 14 h.",
       "Rédigé le 19 novembre 2026 à 16 h 42",
       "modifié le 20 novembre 2026 à 8 h 10",
       "Produit le 20 novembre 2026 à 10 h 00",
@@ -136,9 +136,11 @@ describe("a report's PDF", () => {
     const pdf = await renderReportPdf(report);
     const info = await PDFDocument.load(pdf, { updateMetadata: false });
     expect(info.getTitle()).toBe(
-      "Rapport journalier — 24-118 · Réfection de la rue Principale (EXEMPLE) — Jeudi 19 novembre 2026",
+      "Rapport journalier — 24-118 · Réfection de la rue Principale (EXEMPLE) — jeudi 19 novembre 2026",
     );
     expect(info.getAuthor()).toBe("Marc Lévesque — Les Entreprises Allen Dumaresq");
+    // The day inside a sentence is written in lower case.
+    expect(info.getSubject()).toBe("Rapport journalier de chantier du jeudi 19 novembre 2026");
     const raw = pdf.toString("latin1");
     expect(raw).toContain("/Lang (fr-CA)");
     expect(raw).toContain("/DisplayDocTitle true");
@@ -187,7 +189,8 @@ describe("a report's PDF", () => {
     const pages = await read(await renderReportPdf({ ...report, photos }));
     const text = pages.map((page) => page.text).join("\n");
     expect(text).toMatch(/1\s+Conduite en place entre R-4 et R-5 · 14 h 05/);
-    expect(text).toMatch(/3\s+14 h 05/);
+    // Without a description, the number and the time stay apart: "3 · 14 h 05".
+    expect(text).toMatch(/3 · 14 h 05/);
     expect(text).not.toContain("Sans description");
     expect(pages.reduce((total, page) => total + page.images, 0)).toBe(3 + pages.length);
   });
@@ -205,6 +208,64 @@ describe("a report's PDF", () => {
     expect(text).toMatch(/2\s+Dernière/);
     expect(text).not.toContain("Perdue");
     expect(text).not.toContain("En panne");
+  });
+
+  it("adds no page for photos that cannot be read", async () => {
+    // Every count of photos whose last ones, alone on a page of their own, cannot be read.
+    for (let count = 4; count <= 17; count++)
+      for (const lost of [1, 2, 3]) {
+        const photos = await Promise.all(
+          Array.from({ length: count }, async (_, index) => {
+            const shown = await photo(...LANDSCAPE, `Photo ${index + 1}`);
+            return index < count - lost ? shown : { ...shown, image: async () => null };
+          }),
+        );
+        const pages = await read(await renderReportPdf({ ...report, photos }));
+        const last = pages.at(-1)!;
+        expect(last.images, `${count} photos, ${lost} lost`).toBeGreaterThan(1);
+        const text = pages.map((page) => page.text).join("\n");
+        expect(text).toMatch(new RegExp(`${count - lost}\\s+Photo ${count - lost}`));
+      }
+  });
+
+  it("holds a tall photo whose description has no space, in three lines", async () => {
+    const tall = await image(1080, 2400);
+    const caption = "W".repeat(500);
+    const started = performance.now();
+    const pages = await read(
+      await renderReportPdf({
+        ...report,
+        photos: [
+          {
+            width: 1080,
+            height: 2400,
+            caption,
+            takenAt: report.writtenAt,
+            image: async () => tall,
+          },
+          { ...(await photo(...PORTRAIT)), caption: `Conduite ${"x".repeat(300)}` },
+        ],
+      }),
+    );
+    expect(performance.now() - started).toBeLessThan(2_000);
+    const lines = pages.flatMap((page) => page.lines);
+    expect(lines.filter((line) => line.includes("WWW")).length).toBeLessThanOrEqual(3);
+    expect(lines.filter((line) => line.includes("xxx")).length).toBeLessThanOrEqual(3);
+    // Shortened with an ellipsis, the time still there.
+    expect(lines.join(" ")).toMatch(/W… · 16 h 42/);
+  });
+
+  it("never squeezes a portrait beside a panorama", async () => {
+    const photos = [
+      await photo(1100, 367),
+      await photo(...PORTRAIT),
+      await photo(...LANDSCAPE),
+      await photo(...PORTRAIT),
+    ];
+    const pages = await read(await renderReportPdf({ ...report, photos }));
+    // The panorama takes a row of its own.
+    const text = pages.map((page) => page.text).join("\n");
+    expect(text).toMatch(/1\s+Conduite en place entre R-4 et R-5 · 14 h 05\s*\r?\n/);
   });
 
   it("fills a page with six landscape photos", async () => {
@@ -247,6 +308,41 @@ describe("a report's PDF", () => {
         expect(counts.length).toBeGreaterThan(0);
         for (const count of counts) expect(count, `${tag} after ${before}`).toBeGreaterThan(1);
       }
+    }
+  });
+
+  it("keeps a part's title with two lines of a list, and no item of a list alone on a page", async () => {
+    // A list of one-line items that starts at every height of a page in turn.
+    for (let before = 30; before <= 46; before++) {
+      const workDone = Array.from({ length: before }, (_, index) => `Ligne ${index + 1}.`).join(
+        "\n\n",
+      );
+      const notes = Array.from({ length: 6 }, (_, index) => `- point ${index + 1}`).join("\n");
+      const pages = await read(await renderReportPdf({ ...report, workDone, notes }));
+      pages.forEach((page, index) => {
+        const lines = body(page, index);
+        const items = lines.filter((line) => /point \d/.test(line)).length;
+        if (items) expect(items, `${before} lines, page ${index + 1}`).toBeGreaterThan(1);
+        const title = lines.findIndex((line) => line.startsWith("NOTES"));
+        if (title >= 0)
+          expect(lines.length - title - 1, `${before} lines, page ${index + 1}`).toBeGreaterThan(1);
+      });
+    }
+  });
+
+  it("keeps a part's title with two lines when its first paragraph has only one", async () => {
+    for (let before = 30; before <= 46; before++) {
+      const workDone = Array.from({ length: before }, (_, index) => `Ligne ${index + 1}.`).join(
+        "\n\n",
+      );
+      const notes = ["Une seule ligne.", words("terme", 60)].join("\n");
+      const pages = await read(await renderReportPdf({ ...report, workDone, notes }));
+      pages.forEach((page, index) => {
+        const lines = body(page, index);
+        const title = lines.findIndex((line) => line.startsWith("NOTES"));
+        if (title >= 0)
+          expect(lines.length - title - 1, `${before} lines, page ${index + 1}`).toBeGreaterThan(1);
+      });
     }
   });
 
@@ -320,6 +416,21 @@ describe("a report's PDF", () => {
     const { faces } = await pdfAssets();
     for (const char of text.replace(/\s/g, ""))
       expect(faces.text.has(char.codePointAt(0)!), char).toBe(true);
+  });
+
+  it("sets typed text as a printed page does", async () => {
+    const pages = await read(
+      await renderReportPdf({
+        ...report,
+        project: { ...report.project, address: "Rue Principale \u{1f69c}" },
+        notes: 'L\'ingénieur a dit "bien" : conduite de 300 mm, essai à 1 035 kPa vers 14 h 30 !',
+      }),
+    );
+    const text = pages[0].text;
+    expect(text).toContain(
+      "L\u2019ingénieur a dit « bien » : conduite de 300 mm, essai à 1 035 kPa vers 14 h 30 !",
+    );
+    expect(text).toContain("Rue Principale, Gaspé");
   });
 
   it("writes a title Archivo cannot draw in Inter Bold", async () => {

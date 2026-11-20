@@ -45,6 +45,8 @@ export function drawable(text: string, has: Coverage): string {
     }
     const kept = drawn(char, has);
     if (kept) {
+      // A space left by what was dropped never stands before a comma, a period or a closing bracket.
+      if (dropped && /^[,.)\]…]/.test(kept)) out = out.replace(/ +$/, "");
       out += kept;
       dropped = false;
     } else dropped = true;

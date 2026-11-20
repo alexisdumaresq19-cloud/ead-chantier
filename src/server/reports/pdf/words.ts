@@ -30,9 +30,12 @@ const momentFormat = new Intl.DateTimeFormat(LOCALE, {
 const withFirst = (text: string) => text.replace(/(^|\s)1(?=\s)/, "$11er");
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
-/** "Jeudi 19 novembre 2026", for a day written "2026-11-19". */
-export const fullDay = (day: string) =>
-  capitalize(withFirst(dayFormat.format(new Date(`${day}T12:00:00Z`))));
+/** "jeudi 19 novembre 2026", for a day written "2026-11-19": as written inside a sentence. */
+export const dayInSentence = (day: string) =>
+  withFirst(dayFormat.format(new Date(`${day}T12:00:00Z`)));
+
+/** "Jeudi 19 novembre 2026": as written at the start of a line. */
+export const fullDay = (day: string) => capitalize(dayInSentence(day));
 
 /** "14 h 05", at the site, in one piece: a line never ends inside it. */
 export const siteTime = (at: Date) => timeFormat.format(at).replace(/\s/g, NBSP);
@@ -68,4 +71,54 @@ export function placeLabel(address: string | null, city: string | null): string 
   if (!town || street.toLocaleLowerCase(LOCALE).includes(town.toLocaleLowerCase(LOCALE)))
     return street;
   return `${street}, ${town}`;
+}
+
+/** Units written after a number; the space between them never ends a line. */
+const UNITS = [
+  "km/h",
+  "m/s",
+  "min",
+  "mm",
+  "cm",
+  "km",
+  "m²",
+  "m³",
+  "m2",
+  "m3",
+  "kg",
+  "kPa",
+  "MPa",
+  "kN",
+  "°C",
+  "°",
+  "%",
+  "\\$",
+  "po",
+  "pi",
+  "h",
+  "m",
+  "t",
+  "L",
+  "s",
+].join("|");
+const AFTER_UNIT = "(?=$|[\\s.,;:!?)\\]»/])";
+
+/**
+ * Text as the person typed it, set as a printed page sets it: the
+ * typewriter apostrophe between two letters becomes ’ (a foot mark after a
+ * number stays), typed "quotes" become « guillemets » with their no-break
+ * spaces, and the spaces that must not end a line become no-break spaces:
+ * before « : ; ! ? », between a number and its unit ("300 mm", "14 h 30")
+ * and inside a number ("1 035 kPa"). No other space is added or taken away.
+ */
+export function typeset(text: string): string {
+  return text
+    .replace(/(?<=\p{L})'(?=\p{L})/gu, "\u2019")
+    .replace(/(^|[\s(\[])"(?=\S)([^"\n]*?\S)"(?=$|[\s.,;:!?)\]])/gu, `$1«${NBSP}$2${NBSP}»`)
+    .replace(/«[ \u00a0]*/g, `«${NBSP}`)
+    .replace(/[ \u00a0]*»/g, `${NBSP}»`)
+    .replace(/ +(?=[:;!?»])/g, NBSP)
+    .replace(new RegExp(`(?<=\\d) +(?=(?:${UNITS})${AFTER_UNIT})`, "gu"), NBSP)
+    .replace(/(?<=\d\u00a0h) +(?=\d)/g, NBSP)
+    .replace(/(?<=\d) (?=\d{3}(?!\d))/g, NBSP);
 }

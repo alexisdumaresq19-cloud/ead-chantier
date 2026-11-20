@@ -71,6 +71,9 @@ test("the foreman gets the report as a PDF, with its words and its photos", asyn
     "Remblai compacté, rue nettoyée (exemple)",
   ])
     expect(text).toContain(said);
+  // Each photo with its number and the hour it was taken on the site's clock; one has no description.
+  expect(text).toContain("Tranchée ouverte entre R-3 et R-4 (exemple) · 9 h 00");
+  expect(text).toContain("3 · 13 h 26");
   pages.forEach((page, index) => expect(page).toContain(`Page ${index + 1} de ${pages.length}`));
 
   // "?download" makes it a file to keep.

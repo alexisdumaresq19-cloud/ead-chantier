@@ -14,6 +14,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
+import { siteTimeToDate } from "../src/shared/photos";
+
 const BASE = process.env.BASE ?? "http://localhost:3200";
 const OUT = process.env.SEED_OUT ?? ".data/dev";
 const PDF = `${OUT}/plans-exemple.pdf`;
@@ -139,15 +141,15 @@ const crew = [
 // (announced, uploaded, then added), each drawn here and stamped "EXEMPLE".
 const sharp = (await import("sharp")).default;
 const samplePhotos = [
-  { width: 1600, height: 1200, hour: 14, caption: "Tranchée ouverte entre R-3 et R-4 (exemple)" },
+  { width: 1600, height: 1200, hour: 9, caption: "Tranchée ouverte entre R-3 et R-4 (exemple)" },
   {
     width: 1200,
     height: 1600,
-    hour: 15,
+    hour: 11,
     caption: "Conduite 200 mm en place sur son assise (exemple)",
   },
-  { width: 1600, height: 1200, hour: 17, caption: null },
-  { width: 1600, height: 1200, hour: 19, caption: "Remblai compacté, rue nettoyée (exemple)" },
+  { width: 1600, height: 1200, hour: 13, caption: null },
+  { width: 1600, height: 1200, hour: 15, caption: "Remblai compacté, rue nettoyée (exemple)" },
 ];
 const photoIds: string[] = [];
 for (const [index, sample] of samplePhotos.entries()) {
@@ -177,9 +179,11 @@ for (const [index, sample] of samplePhotos.entries()) {
   await foreman.call("POST", `/api/uploads/${photoTicket.uploadId}/complete`);
   const added = await foreman.call("POST", `/api/projects/${main.id}/photos`, {
     uploadId: photoTicket.uploadId,
-    // In the site's afternoon of that day, whatever the season.
-    takenAt: new Date(
-      `${siteDay(2)}T${sample.hour}:${String(index * 13).padStart(2, "0")}:00Z`,
+    // At these hours on the site's clock, whatever the season.
+    takenAt: siteTimeToDate(
+      Date.parse(
+        `${siteDay(2)}T${String(sample.hour).padStart(2, "0")}:${String(index * 13).padStart(2, "0")}:00Z`,
+      ),
     ).toISOString(),
     ...(sample.caption ? { caption: sample.caption } : {}),
   });
