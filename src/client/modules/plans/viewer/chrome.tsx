@@ -271,17 +271,18 @@ export function TileNotice({
     >
       <div
         role="status"
-        className="bg-surface text-text animate-rise pointer-events-auto flex w-full max-w-md items-center gap-3 rounded-2xl py-2.5 pr-2.5 pl-3.5 shadow-xl"
+        // On a narrow phone the button goes under the words rather than squeeze them.
+        className="bg-surface text-text animate-rise pointer-events-auto flex w-full max-w-md flex-wrap items-center gap-x-3 gap-y-0.5 rounded-2xl py-2.5 pr-2.5 pl-3.5 shadow-xl"
       >
         <WifiOff className="text-warn size-5 shrink-0" aria-hidden />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-48 flex-1">
           <p className="text-sm leading-snug font-semibold">{title}</p>
           {text ? <p className="text-dim mt-0.5 text-sm leading-snug">{text}</p> : null}
         </div>
         <button
           type="button"
           onClick={onRetry}
-          className="text-ead-dark hover:bg-ead-tint active:bg-ead-tint flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors"
+          className="text-ead-dark hover:bg-ead-tint active:bg-ead-tint ml-auto flex h-11 shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors"
         >
           <RefreshCw className="size-4" aria-hidden />
           Réessayer
