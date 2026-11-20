@@ -10,7 +10,9 @@ Every sentence below was checked against the app as it is now. Three things can 
 - User name: `<DEMO_PHONE>`
 - Password: `<DEMO_CODE>`
 
-The owner reads both in the app, signed in as the office: **Équipe** (the team screen), card **Accès de démonstration**. Its button **Copier pour Apple** copies both, with the way in. The code keeps working as long as the office does not change it, so it stays valid for the whole review and the reviews of later versions.
+The owner reads both in the app, signed in as the office: **Équipe** (the team screen), card **Accès de démonstration**. The **Copier** button beside **Cellulaire** copies the user name, the one beside **Code** the password: paste each in its own field. Nothing of that card goes in the Notes below, which already say how to sign in. The code keeps working as long as the office does not change it, so it stays valid for the whole review and the reviews of later versions.
+
+The account shows only the sample project the office made for Apple (`store/README.md`, «&nbsp;Avant de commencer&nbsp;»): nobody of the team works on it, so the reviewer sees no real site, name or hours, and nothing the reviewer adds reaches the team's records.
 
 ## Contact information
 
@@ -18,19 +20,18 @@ The owner reads both in the app, signed in as the office: **Équipe** (the team 
 
 ## Notes
 
-Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,895 bytes of the 4,000 bytes allowed; recount after any change).
+Paste the text below, from its first line to its last, into the "Notes" field, and nothing else: no line of the demonstration card, which would take the field past Apple's limit. 3,935 bytes of the 4,000 bytes allowed; `src/app/.well-known/apple-app-site-association/guide.test.ts` counts them, and fails when this number or the limit is wrong.
 
-EAD is the private field app of Les Entreprises Allen Dumaresq, a civil-engineering contractor in Quebec, Canada. The office, the foremen and the site workers of the company use it to open construction plans on site, read project documents, take site photos and write daily reports. The interface is in Canadian French only.
+EAD is the private field app of Les Entreprises Allen Dumaresq, a civil-engineering contractor in Quebec, Canada. Its office, foremen and site workers use it to open construction plans on site, read project documents, take site photos and write daily reports. The interface is in Canadian French only.
 
 ACCOUNTS
-There is no public sign-up. Employees get their account from the company: a personal link, the QR code of their site, or a code that the office gives them. That company code is not given to Apple. Instead, a demonstration account is provided. It sees the projects the office chose for it, as a foreman does. It can add photos, documents and reports, changes only what it added itself, and cannot manage the team.
+There is no public sign-up: employees get their account from the company (a personal link, their site's QR code, or a code from the office). Apple gets a demonstration account instead. It sees a sample project the office set up for it, as a foreman does. It can add photos, documents and reports, changes only what it added itself, and cannot manage the team.
 
 HOW TO SIGN IN
 
-1. Open the app. On the first screen, tap "J'ai déjà un compte" (I already have an account).
-2. Tap "Avec un code du bureau" (With a code from the office).
-3. Type the phone number under "Cellulaire" and the code under "Code du bureau", then tap "Entrer".
-4. Tap a project in the list.
+1. Open the app and tap "Avec un code du bureau" (With a code from the office). If the first screen shows "Créer mon compte" instead (it needs the company's code), tap "J'ai déjà un compte" (I already have an account) first.
+2. Type the phone number under "Cellulaire" and the code under "Code du bureau", then tap "Entrer".
+3. Tap the project in the list.
 
 WHERE THINGS ARE
 Inside a project, the tabs at the bottom are Accueil (home), Plans, Documents, Photos and Rapports (daily reports).
@@ -41,13 +42,13 @@ Inside a project, the tabs at the bottom are Accueil (home), Plans, Documents, P
 - Documents: the Documents tab lists them by category. Tap one to open it.
 
 CAMERA
-Tap "Prendre une photo" on a project's home or in the Photos tab. iOS asks for camera access the first time. The photo is added to the project; a window offers to add a description. On a device without a camera, "De la galerie" picks a photo from the library instead.
+Tap "Prendre une photo" on a project's home or in the Photos tab. iOS asks for camera access the first time. The photo is added to the project; a window offers to add a description. Without a camera, "De la galerie" picks one from the library.
 
 MICROPHONE (dictation of the daily report)
-On the project's home, tap "Dicter le rapport du jour", then "Dicter le rapport". Before the first use, the app says what goes to an AI service (the voice, the report's text, its photos, the names of the site's people) and to which companies, and asks for agreement ("J'accepte"). Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". iOS then asks for microphone access. Read aloud, for example: "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc." Then tap the microphone again to stop. The report fills itself; nothing is saved until "Enregistrer" is tapped. "Écrire" sends typed text instead of the voice.
+On the project's home, tap "Dicter le rapport du jour". Once today's report is saved, use "Dicter" in the Rapports tab. The first time, the app says what goes to an AI service (the voice, the report's text, its photos, the names of the site's people) and to which companies, and asks for agreement ("J'accepte"). Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". Recording then starts at once (iOS asks for microphone access the first time). Read aloud, for example: "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc." Then tap the round red button to stop. The report fills itself. "Écrire" sends typed text instead of the voice. Close the window ("Terminé" or ✕) and tap "Enregistrer" to save.
 
 ACCOUNT DELETION
-Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account is deleted at once. Signing in again with the same number and code opens the demonstration account again.
+Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account, its phone number, devices and AI agreement are erased at once. What it added stays in the project under its name only, as the privacy policy says. Signing in again with the same number and code opens the demonstration account again.
 
 PRIVACY AND SUPPORT
 The privacy policy and the support page are linked at the bottom of the first screen and of "Mon compte".
@@ -56,14 +57,14 @@ DISTRIBUTION
 The app is for the company's team only. It will be distributed as an unlisted app; a request for unlisted distribution is filed separately.
 
 NATIVE CAPABILITIES
-The app is a native shell around the company's own web app, and it uses the device for what a site needs:
+Around the company's web app, the native shell uses the device for what a site needs:
 
 - the camera, to take site photos from any project;
 - the microphone, to dictate the daily report;
-- the iOS share sheet, to send a daily report's PDF, a photo or a document by text message, email or another app;
+- the iOS share sheet, to send a report's PDF, a photo or a document;
 - the iOS document viewer, to open PDFs and office documents inside the app;
-- plans kept on the device for use without a network: on a project's home, "Garder sur cet appareil", then the plans open in airplane mode;
-- links that open the app: a personal invitation link or a site's QR code opens the app directly instead of the browser.
+- plans kept on the device ("Garder sur cet appareil" on a project's home) open in airplane mode;
+- a personal invitation link or a site's QR code opens the app directly.
 
 Thank you.
 

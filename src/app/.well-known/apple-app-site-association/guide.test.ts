@@ -91,6 +91,31 @@ describe("the guide for the Mac", () => {
     expect(new Set(skus)).toEqual(new Set(["ead-ios"]));
   });
 
+  it("gives Apple review notes that fit the field and that the owner's page can lift", () => {
+    const review = read("store/review-notes.en.md");
+    const section = review.slice(review.indexOf("## Notes\n"), review.indexOf("\n## Attachment"));
+    // The owner's page copies from the first "EAD is" to the last "Thank you.":
+    // the sentence that introduces the text must not quote either.
+    const from = section.indexOf("EAD is");
+    expect(section.slice(from - 2, from + "EAD is the ".length)).toBe("\n\nEAD is the ");
+    const notes = section.slice(from, section.lastIndexOf("Thank you.") + "Thank you.".length);
+    const bytes = Buffer.byteLength(notes);
+    // Apple's limit is 4,000 bytes, line ends included as the field may keep them (CRLF).
+    expect(bytes + notes.split("\n").length - 1).toBeLessThanOrEqual(4000);
+    expect(section).toContain(`${bytes.toLocaleString("en-US")} bytes of the 4,000 bytes allowed`);
+    // Every label the reviewer is told to tap is one the screens show.
+    const screens = readdirSync(new URL("../../../client/", import.meta.url), { recursive: true })
+      .map(String)
+      .filter((name) => /\.tsx?$/.test(name) && !name.includes(".test."))
+      .map((name) => read(`src/client/${name}`))
+      .join("\n")
+      .replace(/&apos;/g, "'");
+    const said = /^Soleil, /; // what the reviewer reads aloud
+    const labels = [...notes.matchAll(/"([^"]+)"/g)].map((m) => m[1]).filter((l) => !said.test(l));
+    expect(labels.length).toBeGreaterThan(15);
+    for (const label of labels) expect(screens, label).toContain(label);
+  });
+
   it("says how long the launch logo can stay, and the shell's pages hide it", () => {
     const config = read("capacitor.config.ts");
     const ms = Number(/launchShowDuration: (\d+),/.exec(config)![1]);
