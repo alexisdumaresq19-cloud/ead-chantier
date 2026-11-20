@@ -5,8 +5,9 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import type { Member } from "@/shared/api";
 import { isValidHours, REPORT_LIMITS, type CrewLine } from "@/shared/reports";
 
-import { count, formatWeekday } from "../../lib/format";
+import { count } from "../../lib/format";
 import { Avatar, Button, IconButton, Input, Skeleton, toast } from "../../ui";
+import { waitsForNetwork } from "./fetched";
 import {
   addBlankRow,
   addMember,
@@ -20,7 +21,7 @@ import {
   type FormProblem,
   type ReportForm,
 } from "./form";
-import { hoursText, parseHours, shiftDay } from "./lib";
+import { hoursText, parseHours, previousCrewLabel } from "./lib";
 
 // The crew of the day: one line per person, a name and hours. The people of
 // the project are added in one tap, the hours of the day are set once for
@@ -130,11 +131,14 @@ export function CrewEditor({
         </p>
       ) : (
         <>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {/* One column that never grows past the card, whatever a button says. */}
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {previous ? (
               <Button variant="secondary" onClick={takePrevious} className="px-3">
                 <History aria-hidden />
-                <span className="truncate">{previousLabel(previous.day, form.day, today)}</span>
+                <span className="min-w-0 truncate">
+                  {previousCrewLabel(previous.day, form.day, today)}
+                </span>
               </Button>
             ) : null}
             <Button variant="secondary" onClick={addName} className="px-3">
@@ -143,7 +147,7 @@ export function CrewEditor({
           </div>
 
           {members.data === undefined ? (
-            members.isError ? (
+            members.isError || waitsForNetwork(members) ? (
               <p className="text-dim mt-4 text-sm">
                 La liste des personnes du projet n&apos;est pas disponible sans réseau. Ajoutez les
                 noms à la main.
@@ -192,13 +196,6 @@ export function CrewEditor({
   );
 }
 
-/** "Reprendre l'équipe d'hier", or of the day the last report was for. */
-function previousLabel(previousDay: string, day: string, today: string): string {
-  if (previousDay === shiftDay(today, -1) && day === today) return "Reprendre l'équipe d'hier";
-  if (previousDay === shiftDay(day, -1)) return "Reprendre l'équipe de la veille";
-  return `Reprendre l'équipe du ${formatWeekday(previousDay)}`;
-}
-
 function CrewRowLine({
   row,
   problem,
@@ -226,7 +223,10 @@ function CrewRowLine({
         {row.userId ? (
           <span className="flex min-w-0 flex-1 items-center gap-2.5">
             <Avatar name={row.name} className="size-9 text-xs max-[400px]:hidden" />
-            <span className="truncate font-semibold">{row.name}</span>
+            {/* Two people of one family often differ by the end of the name only. */}
+            <span className="line-clamp-2 leading-tight font-semibold wrap-anywhere">
+              {row.name}
+            </span>
           </span>
         ) : (
           <Input
@@ -254,7 +254,7 @@ function CrewRowLine({
             maxLength={8}
             aria-label={`Heures de ${row.name.trim() || "cette personne"}`}
             aria-invalid={Boolean(problem) && Boolean(row.name.trim())}
-            className="w-19 pr-7 pl-2 text-center font-semibold tabular-nums"
+            className="w-21 pr-6 pl-1.5 text-center font-semibold tabular-nums"
           />
           <span className="text-dim pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm">
             h

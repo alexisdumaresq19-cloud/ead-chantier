@@ -17,12 +17,12 @@ import {
   ButtonLink,
   confirmAction,
   IconButton,
-  QueryState,
   Sheet,
   Skeleton,
   toast,
 } from "../../ui";
-import { reportKeys, reportsPath, useDayPhotos, useReport } from "./data";
+import { reportKeys, reportsPath, useDayPhotos, useReport, useStillShown } from "./data";
+import { Fetched } from "./fetched";
 import { capitalize, formatFullDay, formatHours, formatWhen } from "./lib";
 import { ReportMissing } from "./missing";
 import { WeatherLine } from "./weather";
@@ -51,13 +51,14 @@ function ReportView({ reportId }: { reportId: string }) {
   const client = useQueryClient();
   const report = useReport(project.id, reportId);
   const photos = useDayPhotos(project.id, report.data?.day);
+  const stillShown = useStillShown();
   const base = reportsPath(project.id);
 
   const remove = useMutation({
     mutationFn: () => api(`/api/reports/${reportId}`, { method: "DELETE" }),
     onSuccess: () => {
       toast.success("Rapport supprimé");
-      navigate(base, { replace: true });
+      if (stillShown.current) navigate(base, { replace: true });
       client.removeQueries({ queryKey: reportKeys.one(project.id, reportId) });
       void client.invalidateQueries({ queryKey: keys.project(project.id) });
     },
@@ -113,7 +114,7 @@ function ReportView({ reportId }: { reportId: string }) {
       }
     >
       <style>{PRINT_PAGE}</style>
-      <QueryState
+      <Fetched
         query={report}
         loading={
           <div className="space-y-3">
@@ -128,7 +129,7 @@ function ReportView({ reportId }: { reportId: string }) {
             {photos.data?.length ? <DayPhotos photos={photos.data} project={project} /> : null}
           </>
         )}
-      </QueryState>
+      </Fetched>
     </Page>
   );
 }

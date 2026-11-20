@@ -35,14 +35,22 @@ import {
   confirmAction,
   FormError,
   Input,
-  QueryState,
   Textarea,
   toast,
 } from "../../ui";
 import { authorHas, ClashSheet, type Clash } from "./clash";
 import { CrewEditor } from "./crew";
-import { reportKeys, reportsPath, useDayReport, useMembers, useReport, useToday } from "./data";
+import {
+  reportKeys,
+  reportsPath,
+  useDayReport,
+  useMembers,
+  useReport,
+  useStillShown,
+  useToday,
+} from "./data";
 import { canKeepDrafts, draftKey, readDraft, removeDraft, writeDraft, type Draft } from "./drafts";
+import { Fetched } from "./fetched";
 import {
   checkForm,
   emptyForm,
@@ -92,7 +100,7 @@ function EditReport({ reportId }: { reportId: string }) {
     if (report.error instanceof ApiFailure && report.error.status === 404) return <ReportMissing />;
     return (
       <Page title="Modifier le rapport" back={back} narrow>
-        <QueryState query={report}>{() => null}</QueryState>
+        <Fetched query={report}>{() => null}</Fetched>
       </Page>
     );
   }
@@ -131,6 +139,7 @@ function Editor({
   const today = useToday();
   const online = useOnline();
   const client = useQueryClient();
+  const stillShown = useStillShown();
   const base = reportsPath(project.id);
 
   const [form, setForm] = useState<ReportForm>(
@@ -144,6 +153,8 @@ function Editor({
   const [refusedDay, setRefusedDay] = useState<string | null>(null);
   const [savedOffline, setSavedOffline] = useState(false);
   const [clash, setClash] = useState<Clash | null>(null);
+  // The draft the form was filled from, for the notice that says so.
+  const [restored, setRestored] = useState(draft);
 
   // The saved version the form started from. A draft remembers its own; what
   // that version said is known once the report is fetched.
@@ -256,7 +267,7 @@ function Editor({
     removeDraft(key);
     if (latest) client.setQueryData(reportKeys.one(project.id, latest.id), latest);
     void client.invalidateQueries({ queryKey: keys.project(project.id) });
-    navigate(latest ? `${base}/${latest.id}` : base, { replace: true });
+    if (stillShown.current) navigate(latest ? `${base}/${latest.id}` : base, { replace: true });
   }
 
   // What is still being typed in the date field is not a day yet.
@@ -302,13 +313,34 @@ function Editor({
   };
 
   /** In a new report, the day decides where the draft is kept and what the address says. */
-  const changeDay = (text: string) => {
-    setDayText(text);
-    if (!isRealDay(text) || text === form.day) return;
+  const changeDay = async (text: string) => {
+    if (!isRealDay(text) || text === form.day) {
+      setDayText(text);
+      return;
+    }
     if (!reportId) {
+      // That day may have a draft of its own, started earlier on this device:
+      // it is taken up again, or replaced only if the person says so.
+      const waiting = readDraft(draftKey(me.id, project.id, text));
+      if (waiting && dirty) {
+        const replace = await confirmAction({
+          title: `Remplacer le brouillon du ${formatWeekday(text)}?`,
+          text: "Un brouillon existe déjà sur cet appareil pour cette journée. Il sera remplacé par ce que vous avez écrit ici.",
+          confirmLabel: "Remplacer",
+          danger: true,
+        });
+        if (!replace) return;
+      }
       removeDraft(key);
       if (text <= today) navigate(`${base}/nouveau?jour=${text}`, { replace: true });
+      if (waiting && !dirty) {
+        setRestored(waiting);
+        setForm(waiting.form);
+        setDayText(text);
+        return;
+      }
     }
+    setDayText(text);
     setForm((current) => ({ ...current, day: text }));
   };
 
@@ -323,6 +355,7 @@ function Editor({
     });
     if (!sure) return;
     setChecked(false);
+    setRestored(null);
     removeDraft(key);
     if (!reportId) setForm(emptyForm(form.day));
     else if (report && saved) {
@@ -369,7 +402,7 @@ function Editor({
       <form onSubmit={submit} onKeyDown={keepEnterFromSaving} noValidate className="space-y-3">
         <DraftStatus
           dirty={dirty}
-          restored={draft}
+          restored={restored}
           keepsDrafts={keepsDrafts}
           online={online}
           onDiscard={discard}

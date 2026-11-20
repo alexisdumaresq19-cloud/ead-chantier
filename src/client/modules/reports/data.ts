@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
+import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import type { Member } from "@/shared/api";
 import type { Photo } from "@/shared/photos";
@@ -78,6 +78,21 @@ export const useDayPhotos = (projectId: string, day: string | undefined) =>
     retry: false,
     gcTime: KEPT,
   });
+
+/**
+ * Whether the screen is still shown. On a slow network the answer to a save
+ * can come after the person has gone elsewhere: it must not pull them back.
+ */
+export function useStillShown() {
+  const shown = useRef(true);
+  useEffect(() => {
+    shown.current = true;
+    return () => {
+      shown.current = false;
+    };
+  }, []);
+  return shown;
+}
 
 function subscribeToClock(listener: () => void) {
   // The app often stays open for days: the day is read again when the person

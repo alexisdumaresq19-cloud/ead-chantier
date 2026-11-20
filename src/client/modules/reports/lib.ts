@@ -1,6 +1,6 @@
 import { REPORT_LIMITS } from "@/shared/reports";
 
-import { formatTime, formatWeekday, todayKey } from "../../lib/format";
+import { formatShortDay, formatTime, formatWeekday, todayKey } from "../../lib/format";
 
 // Hours, degrees and days, as a foreman types and reads them.
 
@@ -64,6 +64,7 @@ export const lastDays = (today: string, count: number) =>
 const atNoon = (day: string) => new Date(`${day}T12:00:00`);
 const monthFormat = new Intl.DateTimeFormat(LOCALE, { month: "long", year: "numeric" });
 const weekdayFormat = new Intl.DateTimeFormat(LOCALE, { weekday: "short" });
+const weekdayLongFormat = new Intl.DateTimeFormat(LOCALE, { weekday: "long" });
 const fullFormat = new Intl.DateTimeFormat(LOCALE, {
   weekday: "long",
   day: "numeric",
@@ -87,6 +88,19 @@ export function formatWhen(value: string | Date, now = new Date()): string {
   if (day === todayKey(now)) return `aujourd'hui à ${time}`;
   if (day === shiftDay(todayKey(now), -1)) return `hier à ${time}`;
   return `le ${formatWeekday(date)}`;
+}
+
+/**
+ * The button that copies the crew of the last report before `day`. It stays
+ * short enough for one line of a 360 px phone: "d'hier", "de la veille",
+ * "de vendredi" within a week, then "du 28 sept.".
+ */
+export function previousCrewLabel(previousDay: string, day: string, today: string): string {
+  if (previousDay === shiftDay(today, -1) && day === today) return "Reprendre l'équipe d'hier";
+  if (previousDay === shiftDay(day, -1)) return "Reprendre l'équipe de la veille";
+  if (previousDay > shiftDay(day, -7))
+    return `Reprendre l'équipe de ${weekdayLongFormat.format(atNoon(previousDay))}`;
+  return `Reprendre l'équipe du ${formatShortDay(previousDay)}`;
 }
 
 /** Days in the order given, split where the month changes. */

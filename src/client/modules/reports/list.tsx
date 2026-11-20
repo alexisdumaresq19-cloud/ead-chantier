@@ -26,12 +26,12 @@ import {
   Field,
   IconButton,
   Input,
-  QueryState,
   Sheet,
   Skeleton,
 } from "../../ui";
 import { dayQuery, membersQuery, reportsPath, useDrafts, useReports, useToday } from "./data";
 import { removeDraft, type Draft } from "./drafts";
+import { Fetched } from "./fetched";
 import {
   capitalize,
   formatFullDay,
@@ -145,7 +145,7 @@ export function ReportListScreen() {
       ) : null}
 
       <div className="mt-8">
-        <QueryState
+        <Fetched
           query={reports}
           loading={
             <div className="space-y-2">
@@ -186,7 +186,7 @@ export function ReportListScreen() {
               ))
             )
           }
-        </QueryState>
+        </Fetched>
       </div>
 
       <OtherDateSheet
@@ -339,7 +339,7 @@ function ReportRow({ report, href }: { report: ReportSummary; href: string }) {
       </span>
       <span
         className={cn(
-          "text-dim col-span-2 line-clamp-2 text-[15px] leading-snug md:col-span-1 md:col-start-4",
+          "text-dim col-span-2 line-clamp-2 text-[15px] leading-snug wrap-anywhere md:col-span-1 md:col-start-4",
           wide,
           !report.excerpt && "italic",
         )}

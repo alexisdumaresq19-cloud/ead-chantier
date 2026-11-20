@@ -192,13 +192,16 @@ const reportOfDay = async (tx: Transaction, projectId: string, day: string) =>
  * was already on this report: a request cannot give hours to anyone else.
  */
 async function knownCrew(
+  // The transaction, when called inside one: a query through the pool while
+  // each transaction holds a connection can leave them all waiting forever.
+  from: Pick<Transaction, "select">,
   projectId: string,
   crew: CrewLine[],
   already: ReportCrewLine[] = [],
 ): Promise<CrewLine[]> {
   const ids = crew.flatMap((line) => line.userId ?? []);
   if (!ids.length) return crew;
-  const members = await db
+  const members = await from
     .select({ userId: schema.projectMembers.userId })
     .from(schema.projectMembers)
     .where(
@@ -222,7 +225,7 @@ export async function createReport(
   projectId: string,
   input: z.infer<typeof newReport>,
 ): Promise<SavedReport> {
-  const crew = await knownCrew(projectId, input.crew);
+  const crew = await knownCrew(db, projectId, input.crew);
   const { row, created } = await db.transaction(async (tx) => {
     await lockDay(tx, projectId, input.day);
     const existing = await reportOfDay(tx, projectId, input.day);
@@ -270,7 +273,7 @@ export async function changeReport(
         throw new HttpError(409, "day_taken", "Un rapport existe déjà pour cette journée.");
     }
     const crew = change.crew
-      ? await knownCrew(current.projectId, change.crew, current.crew)
+      ? await knownCrew(tx, current.projectId, change.crew, current.crew)
       : crewDto(current.crew);
     const next = {
       weather: change.weather ?? weatherDto(current.weather),

@@ -11,6 +11,7 @@ import {
   monthLabel,
   parseHours,
   parseTemperature,
+  previousCrewLabel,
   shiftDay,
   weekdayShort,
 } from "./lib";
@@ -107,6 +108,21 @@ describe("days", () => {
     expect(formatWhen(new Date(2026, 10, 19, 15, 42), now)).toBe("aujourd'hui à 15\u00a0h\u00a042");
     expect(formatWhen(new Date(2026, 10, 18, 23, 5), now)).toBe("hier à 23\u00a0h\u00a005");
     expect(formatWhen(new Date(2026, 10, 17, 9, 0), now)).toBe("le mardi 17 novembre");
+  });
+
+  it("names the crew to copy in few words", () => {
+    const today = "2026-11-19";
+    expect(previousCrewLabel("2026-11-18", today, today)).toBe("Reprendre l'équipe d'hier");
+    // Monday's report starts from Friday's crew.
+    expect(previousCrewLabel("2026-11-13", "2026-11-16", today)).toBe(
+      "Reprendre l'équipe de vendredi",
+    );
+    expect(previousCrewLabel("2026-11-16", "2026-11-17", today)).toBe(
+      "Reprendre l'équipe de la veille",
+    );
+    // A week back, the weekday alone would be the wrong one.
+    expect(previousCrewLabel("2026-11-12", today, today)).toBe("Reprendre l'équipe du 12 nov.");
+    expect(previousCrewLabel("2026-09-28", today, today)).toBe("Reprendre l'équipe du 28 sept.");
   });
 
   it("splits a list where the month changes, keeping its order", () => {

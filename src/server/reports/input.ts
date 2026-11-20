@@ -15,6 +15,17 @@ import {
 
 const tooLong = (max: number) => `Texte trop long (${max} caractères au plus).`;
 
+/**
+ * A text as it will be stored. Postgres takes neither a NUL character nor
+ * half of a surrogate pair: nobody types them, so they are dropped rather
+ * than failing the save.
+ */
+const text = (max: number) =>
+  z
+    .string()
+    .transform((value) => value.toWellFormed().replaceAll("\u0000", "").trim())
+    .pipe(z.string().max(max, tooLong(max)));
+
 export const reportDay = z
   .string()
   .refine(isRealDay, "Date invalide.")
@@ -32,11 +43,11 @@ const weather = z.object({
     .min(LIMITS.temperatureMin, "Température trop basse.")
     .max(LIMITS.temperatureMax, "Température trop haute.")
     .nullable(),
-  note: z.string().trim().max(LIMITS.weatherNote, tooLong(LIMITS.weatherNote)),
+  note: text(LIMITS.weatherNote),
 });
 
 const crewLine = z.object({
-  name: z.string().trim().min(1, "Nom manquant.").max(LIMITS.name, tooLong(LIMITS.name)),
+  name: text(LIMITS.name).refine((name) => name.length > 0, "Nom manquant."),
   hours: z
     .number("Heures invalides.")
     .refine(isValidHours, "Heures entre 0 et 24, au quart d'heure près."),
@@ -59,9 +70,9 @@ const content = z.object({
   day: reportDay,
   weather,
   crew,
-  equipment: z.string().trim().max(LIMITS.equipment, tooLong(LIMITS.equipment)),
-  workDone: z.string().trim().max(LIMITS.text, tooLong(LIMITS.text)),
-  notes: z.string().trim().max(LIMITS.text, tooLong(LIMITS.text)),
+  equipment: text(LIMITS.equipment),
+  workDone: text(LIMITS.text),
+  notes: text(LIMITS.text),
 });
 
 export const EMPTY_REPORT =
