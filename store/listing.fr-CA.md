@@ -4,18 +4,14 @@ Tout ce qui se colle dans App Store Connect pour la version 1.0, champ par champ
 
 Les textes à coller n'ont volontairement aucun deux-points, sauf dans l'adresse web&nbsp;: App Store Connect ne garde pas l'espace insécable qui doit le précéder en français.
 
-## À vérifier avant de coller
+## Ce qui dépend de l'essai sur iPhone
 
-Ces phrases décrivent des fonctions qui étaient en construction quand cette fiche a été écrite. Avant de coller, ouvrez l'app finale (le build envoyé à Apple) et vérifiez chacune. Si une fonction manque, retirez sa phrase&nbsp;: la fiche ne doit promettre que ce que l'app fait (règle 2.3 d'Apple). Chacune porte la marque `<!-- verify at integration -->` dans ce fichier.
+Deux promesses de cette fiche ne se prouvent que sur un iPhone. Elles sont essayées avec TestFlight avant la soumission (`docs/ios/MAC.md`, étape 4.9). Si l'une échoue dans la version envoyée à Apple, retirez ses phrases&nbsp;: la fiche ne doit promettre que ce que l'app fait (règle 2.3 d'Apple).
 
-1. Texte promotionnel, «&nbsp;même sans réseau&nbsp;»&nbsp;: les plans gardés s'ouvrent en mode avion dans l'app iPhone.
-2. Description, «&nbsp;par un code&nbsp;»&nbsp;: l'entrée avec le cellulaire et un code du bureau existe.
-3. Description, «&nbsp;Gardez un projet sur l'appareil…&nbsp;»&nbsp;: même vérification que le point 1.
-4. Description, «&nbsp;L'assistant demande votre accord…&nbsp;»&nbsp;: l'étape d'accord paraît avant le premier envoi.
-5. Description, «&nbsp;Ouvrez un document sur le téléphone ou envoyez-le…&nbsp;»&nbsp;: le visualiseur et le partage d'iOS s'ouvrent.
-6. Description, dernière ligne, et la section «&nbsp;Adresses&nbsp;»&nbsp;: les pages /soutien et /confidentialite répondent en production.
+1. Les plans gardés s'ouvrent en mode Avion (essai 6). Phrases concernées&nbsp;: «&nbsp;même sans réseau&nbsp;» dans le texte promotionnel, et «&nbsp;Gardez un projet sur l'appareil…&nbsp;» dans la description.
+2. Un document s'ouvre dans l'iPhone et se partage (essai 5). Phrase concernée&nbsp;: «&nbsp;Ouvrez un document sur le téléphone ou envoyez-le à une autre application.&nbsp;»
 
-Les balises `<!-- … -->` restent en dehors des cadres gris&nbsp;: elles ne se collent pas.
+Le reste de la fiche a été vérifié sur l'app telle qu'elle est&nbsp;: l'entrée par un code, l'accord demandé par l'assistant, les pages de soutien et de confidentialité.
 
 ## Nom de l'app
 
@@ -45,8 +41,6 @@ Plans et rapports de chantier
 ```text
 Les plans s'ouvrent vite au chantier, même sans réseau. Le rapport du jour se dicte en quelques phrases. Chaque photo va au bon projet, à la bonne date.
 ```
-
-<!-- verify at integration: plans offline inside the iPhone app -->
 
 152 caractères sur 170. Ce texte peut changer en tout temps, sans nouvelle version.
 
@@ -86,8 +80,6 @@ DOCUMENTS
 Besoin d'un compte ou d'aide? Adressez-vous au bureau d'EAD ou visitez https://ead-chantier.vercel.app/soutien
 ```
 
-<!-- verify at integration: code sign-in (paragraph 2), plans offline, the assistant's agreement step, native viewer and share sheet, /soutien live (see "À vérifier avant de coller") -->
-
 2120 caractères sur 4000.
 
 ## Mots-clés
@@ -120,8 +112,6 @@ Format demandé par Apple&nbsp;: l'année, puis le nom exact du titulaire des dr
 | URL d'assistance (Support URL)                       | https://ead-chantier.vercel.app/soutien         |
 | URL de la politique de confidentialité (Privacy URL) | https://ead-chantier.vercel.app/confidentialite |
 | URL marketing (facultative)                          | à laisser vide                                  |
-
-<!-- verify at integration: both pages answer in production before submitting -->
 
 ## Cote d'âge (questionnaire)
 
@@ -162,19 +152,22 @@ Première version de l'application EAD pour iPhone. Les plans, les documents, le
 
 ## Confidentialité de l'app (questionnaire sur les données)
 
-Ces réponses décrivent ce que l'application garde aujourd'hui. Elles doivent dire la même chose que la page https://ead-chantier.vercel.app/confidentialite. <!-- verify at integration: same facts as the privacy page -->
+La référence est `docs/ios/app-privacy.md`&nbsp;: chaque réponse y est donnée avec le fichier du code qui la prouve. Ce tableau en est le résumé, et il dit la même chose que la page https://ead-chantier.vercel.app/confidentialite.
 
-- Suivi (tracking) d'une app à l'autre&nbsp;: **Non**. Aucune publicité, aucun outil de mesure d'audience.
-- Données collectées, toutes **liées à la personne**, pour les **fonctionnalités de l'app** seulement&nbsp;:
+- À la première question, répondez que l'app collecte des données (Yes, we collect data).
+- Suivi (Tracking)&nbsp;: **Non**, pour chaque type. Aucune publicité, aucun outil de mesure d'audience.
+- Chaque type coché est **lié à la personne** (Linked to the user) et sert au **fonctionnement de l'app** seulement (App Functionality).
 
-| Type de données (libellé d'Apple)                                        | Ce que c'est dans EAD                                                                       |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Coordonnées → Nom (Contact Info → Name)                                  | Le nom de la personne, vu par son équipe                                                    |
-| Coordonnées → Numéro de téléphone (Contact Info → Phone Number)          | Le cellulaire, pour entrer avec un code du bureau et pour que l'équipe joigne la personne   |
-| Coordonnées → Adresse courriel (Contact Info → Email Address)            | Seulement si le bureau l'inscrit                                                            |
-| Contenu utilisateur → Photos ou vidéos (User Content → Photos or Videos) | Les photos de chantier (sans leur position GPS&nbsp;: l'app ne la garde pas)                |
-| Contenu utilisateur → Données audio (User Content → Audio Data)          | La dictée du rapport, envoyée au service d'intelligence artificielle, jamais gardée par EAD |
-| Contenu utilisateur → Autre contenu (User Content → Other User Content)  | Les rapports journaliers, les descriptions de photos, les documents ajoutés                 |
-| Identifiants → Identifiant de l'utilisateur (Identifiers → User ID)      | Le numéro interne du compte                                                                 |
+| Type de données à cocher (libellé d'Apple)                                             | Ce que c'est dans EAD                                                                        |
+| -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Coordonnées → Nom (Contact Info → Name)                                                | Le nom de la personne, vu par son équipe et inscrit dans les rapports                        |
+| Coordonnées → Adresse courriel (Contact Info → Email Address)                          | Facultative, inscrite par le bureau ou par la personne                                       |
+| Coordonnées → Numéro de téléphone (Contact Info → Phone Number)                        | Le cellulaire, pour entrer dans l'app et pour que l'équipe joigne la personne                |
+| Contenu utilisateur → Photos ou vidéos (User Content → Photos or Videos)               | Les photos de chantier. L'app retire leur position GPS avant de les garder                   |
+| Contenu utilisateur → Données audio (User Content → Audio Data)                        | La dictée du rapport, envoyée au service de transcription après l'accord de la personne      |
+| Contenu utilisateur → Autre contenu (User Content → Other User Content)                | Les rapports journaliers, les descriptions de photos, les documents et les plans ajoutés     |
+| Identifiants → Identifiant de l'utilisateur (Identifiers → User ID)                    | Le numéro interne du compte                                                                  |
+| Données d'utilisation → Interaction avec le produit (Usage Data → Product Interaction) | La date de la dernière visite de chaque appareil connecté                                    |
+| Autres données → Autres types de données (Other Data → Other Data Types)               | Le genre d'appareil et de navigateur de chaque appareil connecté, par exemple iPhone, Safari |
 
-- Non collectées&nbsp;: localisation, contacts du téléphone, historique de navigation, données de santé, achats, diagnostics.
+- À ne pas cocher&nbsp;: localisation, contacts du téléphone, historique de navigation et de recherche, données de santé, données financières, achats, diagnostics, identifiant de l'appareil.

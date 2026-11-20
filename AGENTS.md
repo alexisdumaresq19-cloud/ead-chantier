@@ -71,7 +71,7 @@ The interface is in Québec French only.
   text the office sends (`inviteMessage`) gives the code first and the link
   last: a link opened in an iPhone's browser uses up the code the app needs.
 - **The demonstration access** (`access-code/demo.ts`, `/api/company/demo`,
-  Équipe → Compte de démonstration) is what the office hands to Apple's
+  Équipe → Accès de démonstration) is what the office hands to Apple's
   reviewer. The `app_settings` row `demo_access` keeps `{phone, code,
 projectIds}` readable, since the office reads it again; the number is
   fictional and nobody of the team may be given it (`isDemoPhone`). Behind
