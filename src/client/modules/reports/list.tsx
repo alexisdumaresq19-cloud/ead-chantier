@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   ClipboardList,
+  Mic,
   NotebookPen,
   PencilLine,
   Plus,
@@ -15,6 +16,7 @@ import { Link } from "wouter";
 
 import { isRealDay, type ReportSummary } from "@/shared/reports";
 
+import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
 import { navigate } from "../../lib/location";
@@ -94,29 +96,47 @@ export function ReportListScreen() {
       ? "Continuer le rapport d'aujourd'hui"
       : "Rapport d'aujourd'hui";
 
+  const todayHref = todayReport
+    ? `${base}/${todayReport.id}/modifier`
+    : `${base}/nouveau?jour=${today}`;
+  const canDictate = useAssistant().data?.dictation === true && canChange;
+
   return (
     <Page title="Rapports">
       {canChange ? (
         <div className="grid gap-3 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-stretch lg:gap-4">
-          <Link
-            href={
-              todayReport ? `${base}/${todayReport.id}/modifier` : `${base}/nouveau?jour=${today}`
-            }
-            className="bg-ead-dark hover:bg-ead-darker active:bg-ead-darker flex min-h-18 items-center gap-3.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-colors"
-          >
-            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
-              <NotebookPen className="size-6.5" aria-hidden />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="font-display block text-[17px] leading-tight font-bold text-balance">
-                {todayLabel}
+          <div className="flex gap-2.5">
+            <Link
+              href={todayHref}
+              className="bg-ead-dark hover:bg-ead-darker active:bg-ead-darker flex min-h-18 min-w-0 flex-1 items-center gap-3.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-colors"
+            >
+              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                <NotebookPen className="size-6.5" aria-hidden />
               </span>
-              <span className="mt-0.5 block text-sm text-white/85">
-                {capitalize(formatWeekday(today))}
+              <span className="min-w-0 flex-1">
+                <span className="font-display block text-[17px] leading-tight font-bold text-balance">
+                  {todayLabel}
+                </span>
+                <span className="mt-0.5 block text-sm text-white/85">
+                  {capitalize(formatWeekday(today))}
+                </span>
               </span>
-            </span>
-            <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
-          </Link>
+              <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
+            </Link>
+            {canDictate ? (
+              // Talking is the fastest way to write it: one tap and the recording starts.
+              <Link
+                href={`${todayHref}${todayHref.includes("?") ? "&" : "?"}dicter=1`}
+                aria-label="Dicter le rapport d'aujourd'hui"
+                className="bg-ink flex min-h-18 w-19 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl text-white shadow-sm transition active:scale-[0.97]"
+              >
+                <span className="bg-ead grid size-9 place-items-center rounded-full">
+                  <Mic className="size-5" aria-hidden />
+                </span>
+                <span className="text-xs font-semibold">Dicter</span>
+              </Link>
+            ) : null}
+          </div>
 
           {/* Seven days across a 360 px phone leave no room for a frame: there, they sit on the page. */}
           <section className="sm:border-line sm:bg-surface sm:rounded-2xl sm:border sm:px-3 sm:pt-1.5 sm:pb-3 sm:shadow-xs">

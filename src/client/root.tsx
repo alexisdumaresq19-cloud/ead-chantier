@@ -55,6 +55,7 @@ export function AppRoot() {
         }}
       >
         <AppRoutes />
+        <InkFilter />
         <ConfirmHost />
         <PwaHost />
         <Toaster
@@ -65,5 +66,24 @@ export function AppRoot() {
         />
       </PersistQueryClientProvider>
     </ErrorBoundary>
+  );
+}
+
+/**
+ * Darkens the lines of a plan reduced to a thumbnail, leaving the paper white
+ * (a gamma curve: a contrast filter would wash light lines out instead).
+ * Defined once here, used with the class "ink" (globals.css).
+ */
+function InkFilter() {
+  return (
+    <svg aria-hidden width="0" height="0" className="pointer-events-none absolute">
+      <filter id="ead-ink" colorInterpolationFilters="sRGB">
+        <feComponentTransfer>
+          <feFuncR type="gamma" exponent="3" />
+          <feFuncG type="gamma" exponent="3" />
+          <feFuncB type="gamma" exponent="3" />
+        </feComponentTransfer>
+      </filter>
+    </svg>
   );
 }

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end tests: builds the app, starts it on its own database and file
-# folder, fills it with the fictional sample data, then runs Playwright.
+# folder, fills it with the fictional sample data, then runs Playwright, once
+# per screen size, each on fresh data.
 #   scripts/e2e.sh [playwright arguments]      e.g. scripts/e2e.sh --project=phone
 #   E2E_SKIP_BUILD=1 scripts/e2e.sh            reuse the last build
 #   E2E_PORT=3301 E2E_DB=ead_e2e_2 scripts/e2e.sh   beside another run on the same machine
@@ -29,19 +30,48 @@ fi
 
 # The local Postgres is started only if none answers (another checkout's may be running).
 psql "$PG/postgres" -Atqc "select 1" >/dev/null 2>&1 || scripts/db.sh start >/dev/null
-scripts/db.sh fresh
-npx tsx scripts/migrate.ts
-rm -rf "$STORAGE_DIR" "$SEED_OUT"
 [ -n "${E2E_SKIP_BUILD:-}" ] || npx next build >/dev/null
-
 mkdir -p .data
-node_modules/.bin/next start -p "$PORT" >.data/e2e-server.log 2>&1 &
-SERVER=$!
-trap 'kill $SERVER 2>/dev/null || true' EXIT
-for _ in $(seq 1 60); do
-  curl -sf "$BASE/api/setup" >/dev/null && break
-  sleep 1
+
+SERVER=""
+stop_server() {
+  [ -n "$SERVER" ] && kill "$SERVER" 2>/dev/null || true
+  [ -n "$SERVER" ] && wait "$SERVER" 2>/dev/null || true
+  SERVER=""
+}
+trap stop_server EXIT
+
+# An empty database and file folder, the server on them, and the sample data.
+start_fresh() {
+  stop_server
+  scripts/db.sh fresh
+  npx tsx scripts/migrate.ts
+  rm -rf "$STORAGE_DIR" "$SEED_OUT"
+  node_modules/.bin/next start -p "$PORT" >.data/e2e-server.log 2>&1 &
+  SERVER=$!
+  for _ in $(seq 1 60); do
+    curl -sf "$BASE/api/setup" >/dev/null && break
+    sleep 1
+  done
+  npx tsx scripts/seed-dev.mts
+}
+
+# Tests change the sample data (they import plans, archive a sheet, write
+# reports). Each size therefore starts from the same fresh data, unless the
+# caller chose what to run.
+for argument in "$@"; do
+  case "$argument" in
+    --project | --project=*)
+      start_fresh
+      npx playwright test --trace off "$@"
+      exit $?
+      ;;
+  esac
 done
 
-npx tsx scripts/seed-dev.mts
-npx playwright test --trace off "$@"
+STATUS=0
+for project in phone desktop; do
+  start_fresh
+  npx playwright test --trace off --project="$project" "$@" || STATUS=$?
+done
+exit $STATUS

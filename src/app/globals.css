@@ -89,6 +89,11 @@
   }
 }
 
+/* Plan thumbnails: lines darkened, paper left white (the filter is in root.tsx). */
+@utility ink {
+  filter: url("#ead-ink");
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

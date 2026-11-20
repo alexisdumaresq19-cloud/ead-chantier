@@ -133,6 +133,7 @@ screens in a real browser at phone size (390 px wide) and on a desktop, as
 each role.
 
 `npm run e2e` builds the app, starts it on its own database, seeds it and runs
-the Playwright tests of `e2e/` at phone and desktop sizes (`E2E_PORT` and
+the Playwright tests of `e2e/` at phone and desktop sizes, each size on fresh
+sample data, since tests change it (`E2E_PORT` and
 `E2E_DB` let two runs coexist). Every module has a spec there; a change to a
 screen or a route comes with a test that would fail without it.

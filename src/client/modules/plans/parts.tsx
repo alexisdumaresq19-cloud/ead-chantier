@@ -38,7 +38,9 @@ export function PlanThumb({
           crossOrigin="anonymous"
           width={tiles?.width}
           height={tiles?.height}
-          className="size-full object-contain"
+          // Fine lines fade when a sheet is reduced this much: they are
+          // darkened so that a drawing is recognised at a glance.
+          className="ink size-full object-contain"
         />
       ) : (
         <FileImage className="size-6" aria-hidden />

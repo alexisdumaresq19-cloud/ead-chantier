@@ -54,7 +54,7 @@ export function RevisionsSheet({
                       crossOrigin="anonymous"
                       alt=""
                       loading="lazy"
-                      className="border-line h-12 w-17 shrink-0 rounded-md border bg-white object-cover"
+                      className="ink border-line h-12 w-17 shrink-0 rounded-md border bg-white object-cover"
                     />
                     {/* Names and dates are read to pick the right one: on a
                           narrow phone they take a second line, never an ellipsis. */}

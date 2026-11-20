@@ -657,6 +657,8 @@ test("the counter opens the whole set: any sheet is one search and one tap away"
   const found = picker.getByRole("button", { name: /C-301/ });
   await expect(found).toBeVisible();
   await expect(picker.getByRole("button", { name: /C-101/ })).toHaveCount(0);
+  // A window ignores taps for a moment after it opens, against double taps.
+  await page.waitForTimeout(450);
   await found.click();
 
   await expect(picker).toBeHidden();
