@@ -307,7 +307,10 @@ export async function findInvite(token: string): Promise<Invite | null> {
  */
 export function typedLine(text: string): string | null {
   const line = text.replace(/\s+/gu, " ").trim();
-  return /[\p{Cc}\p{Cf}\p{Cs}]/u.test(line) ? null : line;
+  // Beyond control and formatting characters: the invisible "fillers" that
+  // Unicode files as letters (Hangul fillers) or symbols (the blank Braille
+  // cell), which make a name that reads exactly like someone else's.
+  return /[\p{Cc}\p{Cf}\p{Cs}\p{Default_Ignorable_Code_Point}\u2800]/u.test(line) ? null : line;
 }
 
 /** Whether every use of the invitation has been taken. */

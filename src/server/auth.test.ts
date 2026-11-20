@@ -121,6 +121,19 @@ describe("typedLine", () => {
       expect(typedLine(text), JSON.stringify(text)).toBeNull();
   });
 
+  // Invisible, yet letters or symbols to Unicode: "Marc Lévesque" twice in a list.
+  it("refuses the fillers that look like a space", () => {
+    for (const text of [
+      "Marc\u3164Lévesque",
+      "Julie\u115fCyr",
+      "Julie\u1160Cyr",
+      "Jean\uffa0Tremblay",
+      "Jean\u2800Tremblay",
+      "Jean\u180eTremblay",
+    ])
+      expect(typedLine(text), JSON.stringify(text)).toBeNull();
+  });
+
   it("refuses half of a character", () => {
     for (const text of ["Jean\ud800", "\udc00Jean", "Jean\udfff\ud800"])
       expect(typedLine(text), JSON.stringify(text)).toBeNull();

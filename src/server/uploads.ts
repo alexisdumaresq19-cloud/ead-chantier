@@ -122,8 +122,8 @@ export const MAX_PENDING_BYTES = 2048 * MB;
  * What one person may announce in any 24 hours, per kind, whatever became of
  * it: confirmed files stay in storage, so the allowance above alone would
  * only slow a script down. Each is several times a heavy day's work.
- * Counted from the uploads of the day (kept a day even once given up) and,
- * for photos, from the photos made that day (see dailyUsage).
+ * Counted from the uploads of the day: their rows are kept a day, even once
+ * a module gave the upload up (a photo made, an import cancelled).
  */
 export const DAILY_LIMITS: Record<UploadKind, { count: number; bytes: number }> = {
   // A busy site takes a few dozen photos a day, a few MB each.
@@ -251,7 +251,12 @@ export async function beginUpload(
     const again = await retriedUpload(tx, user, { ...input, filename });
     if (again) return { upload: again, retried: true };
 
-    const live = raw`${schema.uploads.status} = 'pending' and ${newerThan(ABANDONED_AFTER)}`;
+    // Unfinished: announced, not confirmed, link still alive. An upload a
+    // module gave up (a photo once made, a cancelled import) is not one:
+    // counted here, it would stop a worker at the thirtieth photo of the
+    // morning. The day's count below still bounds what its link could write.
+    const live = raw`${schema.uploads.status} = 'pending' and ${newerThan(ABANDONED_AFTER)}
+      and not ${keyMarked(DISCARDED)} and not ${keyMarked(REMOVED)}`;
     const [used] = await tx
       .select({
         pending: raw<number>`(count(*) filter (where ${live}))::int`,
@@ -305,9 +310,8 @@ type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * What this person announced of this kind in the last 24 hours, whatever
- * became of it. The photos module deletes an upload's row when it makes the
- * photo, so the photos made that day are counted too. Their size is not
- * kept: they count as one each, for nothing in bytes.
+ * became of it: an upload's row lasts the day, so a photo made from it, or
+ * deleted since, still counts.
  */
 async function dailyUsage(tx: Transaction, user: SessionUser, kind: UploadKind): Promise<Usage> {
   const [uploads] = await tx
@@ -319,17 +323,7 @@ async function dailyUsage(tx: Transaction, user: SessionUser, kind: UploadKind):
     .where(
       and(eq(schema.uploads.createdBy, user.id), eq(schema.uploads.kind, kind), newerThan(DAY)),
     );
-  if (kind !== "photo") return uploads;
-  const [photos] = await tx
-    .select({ count: raw<number>`count(*)::int` })
-    .from(schema.photos)
-    .where(
-      and(
-        eq(schema.photos.createdBy, user.id),
-        raw`${schema.photos.createdAt} > now() - ${seconds(DAY)}::int * interval '1 second'`,
-      ),
-    );
-  return { count: uploads.count + photos.count, bytes: uploads.bytes };
+  return uploads;
 }
 
 /**

@@ -499,7 +499,7 @@ describe.skipIf(!ready)("with a database", () => {
       );
     });
 
-    it("counts the photos made in the day, though making one removes its upload", async () => {
+    it("counts the photos made in the day, deleted or not, and gives their unfinished place back", async () => {
       const worker = person();
       const image = await sharp({
         create: { width: 8, height: 8, channels: 3, background: "#204080" },
@@ -516,15 +516,37 @@ describe.skipIf(!ready)("with a database", () => {
       const [{ photos }] = await sql`select count(*)::int as photos from photos
                                      where created_by = ${worker.id}`;
       expect(photos).toBe(made);
-      expect(await rowsOf(worker)).toHaveLength(0);
+      // The upload's row stays the day, given up: it is what the day counts.
+      const kept = await rowsOf(worker);
+      expect(kept).toHaveLength(made);
+      expect(kept.every((row) => row.storageKey === `u/${row.id}/.discarded`)).toBe(true);
 
       await past(worker, DAILY_LIMITS.photo.count - made - 1, 20, "complete");
       expect(await refusal(beginUpload(worker, photo("la-derniere.jpg")))).toBe("accepted");
       expect(await refusal(beginUpload(worker, photo("de-trop.jpg")))).toBe("429 too_many_uploads");
-      // Photos made more than a day ago no longer count.
-      await sql`update photos set created_at = now() - interval '25 hours'
-                where created_by = ${worker.id}`;
+      // Deleting one's photos gives no place back.
+      await sql`delete from photos where created_by = ${worker.id}`;
+      expect(await refusal(beginUpload(worker, photo("de-trop.jpg")))).toBe("429 too_many_uploads");
+      // What was announced more than a day ago no longer counts.
+      await age(
+        kept.map((row) => row.id),
+        25,
+      );
       expect(await refusal(beginUpload(worker, photo("de-trop.jpg")))).toBe("accepted");
+    });
+
+    it("does not count uploads a module gave up among the unfinished ones", async () => {
+      // A morning of photos: each is confirmed, made into a photo, and its
+      // original given up while its link could still write.
+      const worker = person();
+      for (let i = 0; i < MAX_PENDING_UPLOADS + 1; i++) {
+        const { upload } = await beginUpload(worker, photo(`matin-${i}.jpg`));
+        await send(upload.storageKey, jpeg(100));
+        await completeUpload(worker, upload.id);
+        await discardUpload(upload.id);
+      }
+      expect(await rowsOf(worker)).toHaveLength(MAX_PENDING_UPLOADS + 1);
+      expect(await refusal(beginUpload(worker, photo("la-suivante.jpg")))).toBe("accepted");
     });
 
     it("counts an abandoned upload for the day, but no longer among the unfinished ones", async () => {
@@ -616,7 +638,7 @@ describe.skipIf(!ready)("with a database", () => {
 
       await discardUpload(upload.id);
       expect(state.files.size).toBe(0);
-      // The link is free again: the upload is unfinished again, and counted.
+      // Its row stays for the day's count, marked: no longer an upload to finish.
       expect((await rowOf(upload.id)).status).toBe("pending");
       expect(await refusal(beginUpload(user, photo()))).toBe("accepted");
       // Its owner sends the announced size and type again through the old link:
