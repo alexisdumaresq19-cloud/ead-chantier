@@ -66,7 +66,8 @@ export function ProjectTeamScreen() {
   const office = isAdmin(me.role);
   // An archived project admits nobody new: it has no code to show.
   const open = project.status !== "archive";
-  const showsCode = project.canChange && open;
+  // Nor does the demonstration account let anyone in.
+  const showsCode = project.canChange && open && !me.demo;
   const [codeOpen, setCodeOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const members = useMembers(project.id, { watch: codeOpen });
@@ -259,7 +260,7 @@ function MemberRow({
   // A foreman or the office carries a badge (in their own words when their
   // title says the same): the line under the name is for the job title.
   const { role, title } = roleAndTitle(member);
-  const badge = member.role === "travailleur" ? null : role;
+  const badge = member.demo ? "Démonstration" : member.role === "travailleur" ? null : role;
   const detail = badge ? title : (title ?? role);
   const name = <span className="font-semibold wrap-anywhere">{member.name}</span>;
   return (
@@ -367,7 +368,8 @@ function AddPeopleSheet({
         {(all) => {
           const onProject = new Set(members.map((member) => member.id));
           const available = sortByName(
-            all.filter((person) => person.active && !onProject.has(person.id)),
+            // The demonstration account's projects are on its own card.
+            all.filter((person) => person.active && !person.demo && !onProject.has(person.id)),
           );
           if (available.length === 0) {
             return (

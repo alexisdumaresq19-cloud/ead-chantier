@@ -14,6 +14,7 @@ import {
 } from "@/shared/documents";
 
 import { projectFor, projectToChange } from "./access";
+import { refuseDemoUnlessAuthor } from "./access-code/rules";
 import type { SessionUser } from "./auth";
 import { db, schema } from "./db/client";
 import { badRequest, HttpError, notFound } from "./http";
@@ -104,8 +105,11 @@ export const documentFor = (user: SessionUser, id: string) => withAccess(user, i
  * A document this person may rename, move or archive: they manage its
  * project, and the project is open (or they are the office).
  */
-export const documentToChange = (user: SessionUser, id: string) =>
-  withAccess(user, id, projectToChange);
+export async function documentToChange(user: SessionUser, id: string) {
+  const found = await withAccess(user, id, projectToChange);
+  refuseDemoUnlessAuthor(user, found.row.document.createdBy);
+  return found;
+}
 
 /** Makes a confirmed upload a document of the project. */
 export async function createDocument(

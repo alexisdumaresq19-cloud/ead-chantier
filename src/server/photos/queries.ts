@@ -11,9 +11,12 @@ import { storage } from "../storage";
 
 export type PhotoRow = typeof schema.photos.$inferSelect;
 
-/** Its author, and those who manage the project, may change or remove a photo. */
+/**
+ * Its author, and those who manage the project, may change or remove a
+ * photo; the demonstration account only its own (access-code/rules.ts).
+ */
 export const canEditPhoto = (row: PhotoRow, user: SessionUser) =>
-  row.createdBy === user.id || canManageProject(user.role);
+  row.createdBy === user.id || (canManageProject(user.role) && !user.demo);
 
 /** Whether this person may change what the project holds (see assertOpen). */
 export const projectOpenTo = (project: Pick<Project, "status">, user: SessionUser) =>

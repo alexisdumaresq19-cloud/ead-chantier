@@ -383,7 +383,8 @@ export function ProjectHomeScreen() {
               <ManageLink
                 href={`${base}/equipe`}
                 icon={Users}
-                label="Équipe et code QR"
+                // The demonstration account shows no QR code.
+                label={me.demo ? "Équipe" : "Équipe et code QR"}
                 detail={count(project.memberCount, "personne")}
               />
               <ManageLink href={`${base}/reglages`} icon={Settings} label="Réglages du projet" />

@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { projectFor, projectToChange } from "@/server/access";
+import { refuseDemoOnPlans } from "@/server/access-code/rules";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
@@ -19,6 +20,7 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
 
 async function sheetToChange(request: NextRequest, id: string) {
   const user = await requireUser(request);
+  refuseDemoOnPlans(user);
   const sheet = await sheetRow(id);
   await projectToChange(user, sheet.projectId);
   return sheet;

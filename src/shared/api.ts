@@ -129,7 +129,15 @@ export type InvitePreview =
       projectId: string | null;
     };
 
-export type InviteLink = { url: string; expiresAt: string };
+export type InviteLink = {
+  url: string;
+  expiresAt: string;
+  /**
+   * A personal link's code: typed with the person's cell number, it does
+   * what the link does, once (src/shared/access.ts). A site's QR code has none.
+   */
+  code?: string;
+};
 
 export type UploadTicket = {
   uploadId: string;

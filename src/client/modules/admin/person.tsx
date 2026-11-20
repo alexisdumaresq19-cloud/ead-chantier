@@ -1,10 +1,19 @@
 import { useMutation } from "@tanstack/react-query";
-import { Link2, ShieldAlert, ShieldCheck, UserRoundCheck, UserRoundX, UserX } from "lucide-react";
+import {
+  Link2,
+  Presentation,
+  ShieldAlert,
+  ShieldCheck,
+  UserRoundCheck,
+  UserRoundX,
+  UserX,
+} from "lucide-react";
 import { useState, type FormEvent } from "react";
 
 import type { InviteLink, Person, ProjectSummary } from "@/shared/api";
 
 import { api, errorMessage } from "../../lib/api";
+import { count } from "../../lib/format";
 import { queryClient } from "../../lib/query";
 import { keys, useCurrentUser, useProjects } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
@@ -48,6 +57,7 @@ export function PersonView({ id }: { id: string }) {
   const projects = useProjects();
   const person = people.data?.find((candidate) => candidate.id === id);
 
+  if (person?.demo) return <DemoPersonPage person={person} />;
   if (person)
     return (
       <PersonPage
@@ -293,10 +303,15 @@ function PersonPage({
               <p className="text-dim text-[15px] text-pretty">
                 {person.active
                   ? person.unreviewed
-                    ? "Envoyer un lien personnel confirme aussi la personne. Un nouveau lien remplace celui qui n'a pas encore servi."
-                    : "Pour un nouveau téléphone ou un lien expiré. Un nouveau lien remplace celui qui n'a pas encore servi."
+                    ? "Envoyer un lien personnel confirme aussi la personne. Un nouveau lien remplace celui qui n'a pas encore servi, avec son code."
+                    : "Pour un nouveau téléphone ou un lien expiré. Le lien vient avec un code à taper dans l'application. Un nouveau lien remplace celui qui n'a pas encore servi, avec son code."
                   : "Réactivez l'accès de cette personne pour lui envoyer un lien."}
               </p>
+              {person.active && !person.phone ? (
+                <p className="text-warn mt-2 text-sm font-medium text-pretty">
+                  Sans cellulaire dans sa fiche, le code ne fonctionne pas. Ajoutez son numéro.
+                </p>
+              ) : null}
               <Button
                 variant="secondary"
                 block
@@ -350,16 +365,59 @@ function PersonPage({
         open={link !== null}
         onClose={() => setLink(null)}
         title={`Nouveau lien pour ${first}`}
-        description="Envoyez-le maintenant. Il ne s'affichera plus ensuite."
+        description="Envoyez le lien et le code maintenant. Ils ne s'afficheront plus ensuite."
         footer={<Button onClick={() => setLink(null)}>Terminé</Button>}
       >
         {link ? (
           <InviteLinkPanel
             link={link}
-            person={{ name: person.name, phone: person.phone, email: person.email }}
+            person={{ id: person.id, name: person.name, phone: person.phone, email: person.email }}
           />
         ) : null}
       </Sheet>
+    </Page>
+  );
+}
+
+/**
+ * The demonstration account, for the office: what it is, and the devices on
+ * it. Nothing to change here: its number, code and projects are on its own
+ * card, and the server refuses it any other role or project.
+ */
+function DemoPersonPage({ person }: { person: Person }) {
+  return (
+    <Page
+      title={person.name}
+      subtitle={
+        <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
+          <Badge tone="blue">Démonstration</Badge>
+          <Meta items={[lastSeenText(person.lastSeenAt)]} />
+        </span>
+      }
+      back={BACK}
+    >
+      <div className="grid gap-x-8 gap-y-8 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-start">
+        <Card className="p-4 sm:p-5">
+          <p className="flex items-start gap-2.5 text-[15px] text-pretty">
+            <Presentation className="text-ead-dark mt-0.5 size-5 shrink-0" aria-hidden />
+            <span>
+              <strong className="font-semibold">Ce compte sert aux démonstrations.</strong> Son
+              visiteur voit {count(person.projectIds.length, "projet")} comme un contremaître, sans
+              rien pouvoir changer à l&apos;équipe. Son numéro, son code et ses projets se gèrent
+              dans la carte Accès de démonstration, au bas de l&apos;écran Équipe.
+            </span>
+          </p>
+          <ButtonLink href="/equipe" variant="secondary" className="mt-4">
+            Voir la carte
+          </ButtonLink>
+        </Card>
+        <Section title="Appareils connectés">
+          <DeviceList
+            userId={person.id}
+            empty="Aucun appareil pour l'instant. Chaque connexion dure un jour."
+          />
+        </Section>
+      </div>
     </Page>
   );
 }

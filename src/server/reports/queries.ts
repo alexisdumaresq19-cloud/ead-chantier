@@ -19,6 +19,7 @@ import {
 import type { Photo } from "@/shared/photos";
 
 import { assertOpen, projectToManage, type Project } from "../access";
+import { refuseDemoUnlessAuthor } from "../access-code/rules";
 import type { SessionUser } from "../auth";
 import { db, schema } from "../db/client";
 import type { ReportCrewLine, ReportWeather } from "../db/schema";
@@ -135,6 +136,7 @@ export async function reportToChange(
 ): Promise<{ row: Row; project: Project }> {
   const found = await reportToManage(user, id);
   assertOpen(user, found.project);
+  refuseDemoUnlessAuthor(user, found.row.createdBy);
   return found;
 }
 
