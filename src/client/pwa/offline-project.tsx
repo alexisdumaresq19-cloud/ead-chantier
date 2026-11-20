@@ -83,7 +83,7 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
           icon={WifiOff}
           tone="neutral"
           title="Plans sans réseau indisponibles"
-          text="Dans cette version de l'app, les plans ne peuvent pas être gardés sur le téléphone. Ils s'ouvrent quand le réseau est là."
+          text="Dans cette version de l'application, les plans ne peuvent pas être gardés sur le téléphone. Ils s'ouvrent quand le réseau est là."
         />
       </Section>
     );

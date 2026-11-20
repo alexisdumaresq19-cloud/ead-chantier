@@ -10,11 +10,17 @@ export const SUPPORT_PATH = "/soutien";
 /** "Confidentialité · Soutien", small, at the foot of a screen. */
 export function LegalLinks({ onDark, className }: { onDark?: boolean; className?: string }) {
   const link = cn(
-    "rounded px-1 py-2 underline-offset-4 hover:underline",
+    // Small text, a thumb's target all the same.
+    "inline-flex min-h-11 items-center rounded px-2 underline-offset-4 hover:underline",
     onDark ? "text-white/60 hover:text-white" : "text-dim hover:text-ink",
   );
   return (
-    <p className={cn("text-center text-xs font-medium tracking-wide", className)}>
+    <p
+      className={cn(
+        "flex items-center justify-center text-xs font-medium tracking-wide",
+        className,
+      )}
+    >
       <a href={PRIVACY_PATH} className={link}>
         Confidentialité
       </a>

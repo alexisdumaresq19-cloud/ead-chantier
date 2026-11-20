@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { TriangleAlert } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useParams } from "wouter";
 
@@ -242,6 +243,22 @@ export function InviteScreen() {
           Ce lien ouvre l&apos;application sur cet appareil. Vous y resterez connecté, sans mot de
           passe.
         </Heading>
+        {onIphoneBrowser() ? (
+          // Said before the button, which uses the code up: read first.
+          <div
+            className="bg-warn-tint mt-6 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty"
+            role="note"
+          >
+            <TriangleAlert className="text-warn mt-0.5 size-5 shrink-0" aria-hidden />
+            <p>
+              <span className="font-semibold">
+                Vous avez l&apos;application EAD sur cet iPhone?
+              </span>{" "}
+              N&apos;entrez pas ici&nbsp;: ouvrez l&apos;application et tapez le code reçu par
+              texto. Si vous entrez ici, le code ne marchera plus dans l&apos;application.
+            </p>
+          </div>
+        ) : null}
         <form onSubmit={submit} className="mt-6 space-y-4">
           <FormError>{accept.isError ? errorMessage(accept.error) : null}</FormError>
           <Button type="submit" size="lg" block loading={busy}>
@@ -251,14 +268,6 @@ export function InviteScreen() {
             Le lien sert une seule fois. Ne le partagez pas.
           </p>
         </form>
-        {onIphoneBrowser() ? (
-          <p className="border-line text-dim mt-6 border-t pt-4 text-sm text-pretty">
-            <span className="text-text font-semibold">
-              L&apos;application EAD est sur cet iPhone?
-            </span>{" "}
-            Tapez plutôt votre code dans l&apos;application&nbsp;: ce lien l&apos;utiliserait.
-          </p>
-        ) : null}
       </PublicLayout>
     );
   }

@@ -45,10 +45,13 @@ export function ProjectPicker({
   projects,
   value,
   onChange,
+  detail,
 }: {
   projects: ProjectSummary[];
   value: string[];
   onChange: (projectIds: string[]) => void;
+  /** Something more to say of each project, after its number and city. */
+  detail?: (project: ProjectSummary) => string;
 }) {
   const listed = projects.filter(
     (project) => project.status === "actif" || value.includes(project.id),
@@ -66,7 +69,12 @@ export function ProjectPicker({
               onChange(checked ? [...value, project.id] : value.filter((id) => id !== project.id))
             }
             title={project.name}
-            detail={[project.number, project.city, project.status === "archive" ? "Archivé" : null]
+            detail={[
+              project.number,
+              project.city,
+              detail?.(project),
+              project.status === "archive" ? "Archivé" : null,
+            ]
               .filter(Boolean)
               .join(" · ")}
           />

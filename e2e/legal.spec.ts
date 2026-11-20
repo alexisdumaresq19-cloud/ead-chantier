@@ -34,10 +34,13 @@ test("the privacy policy and the support page are the server's, open to anyone, 
   await page.goto("/confidentialite");
   await expect(page.getByText(/Version du \d+(er)? \w+ 20\d\d/).first()).toBeVisible();
   // The name never follows a bare "de" ("de Les Entreprises"), whatever the office calls it.
+  await expect(page.getByText("sert aux chantiers des Entreprises Allen Dumaresq")).toBeVisible();
+  await expect(page.getByText(/\bde Les\b|entreprise Les Entreprises/)).toHaveCount(0);
+  // The sign-in tries it keeps, and the visitor the office may let in.
   await expect(
-    page.getByText("sert aux chantiers de l'entreprise Les Entreprises Allen Dumaresq"),
+    page.getByText(/et, pour un code du bureau, du numéro de cellulaire tapé/),
   ).toBeVisible();
-  await expect(page.getByText(/\bde Les\b/)).toHaveCount(0);
+  await expect(page.getByText("Un visiteur de démonstration.")).toBeVisible();
   // The providers the gateway is held to, and what others write about a person.
   await expect(page.getByText(/Elle les envoie seulement à Anthropic/)).toBeVisible();
   await expect(page.getByText("Ce que d'autres inscrivent à votre sujet.")).toBeVisible();
@@ -48,7 +51,7 @@ test("the privacy policy and the support page are the server's, open to anyone, 
   // While the office has not named anyone, the page says who it is by law.
   await expect(page.getByText(/la personne qui a la plus haute autorité/)).toBeVisible();
   await page.goto("/soutien");
-  await expect(page.getByText(/\bde Les\b/)).toHaveCount(0);
+  await expect(page.getByText(/\bde Les\b|entreprise Les Entreprises/)).toHaveCount(0);
   await expect(page.getByText("adressez-vous au bureau de votre entreprise")).toBeVisible();
   await expect(
     page.getByRole("link", { name: "Politique de confidentialité", exact: true }),
@@ -101,11 +104,23 @@ async function officeFillsIn(
   const sheet = page.getByRole("dialog", { name: "Coordonnées de l'entreprise" });
   // A window ignores taps in its first instants (src/client/ui/sheet.tsx).
   await page.waitForTimeout(400);
-  await sheet.getByLabel("Téléphone").fill("418 555-0100");
-  await sheet.getByRole("textbox", { name: /^Courriel Facultatif/ }).fill("pas un courriel");
+  // The officer's part is named once, for the eye and for a screen reader alike.
+  await expect(sheet.getByRole("group", { name: /^Responsable de la protection/ })).toBeVisible();
+  await expect(
+    sheet.getByText("Responsable de la protection des renseignements personnels"),
+  ).toHaveCount(1);
+  await sheet.getByLabel("Téléphone").fill("12");
   await sheet.getByRole("button", { name: "Enregistrer" }).click();
-  await expect(sheet.getByText("Ce courriel n'est pas valide.")).toBeVisible();
-  await sheet.getByRole("textbox", { name: /^Courriel Facultatif/ }).fill("  Bureau@Exemple.test ");
+  await expect(
+    sheet.getByText("Vérifiez le numéro\u00a0: 10 chiffres, par exemple 418 555-0123."),
+  ).toBeVisible();
+  await sheet.getByLabel("Téléphone").fill("418 555-0100");
+  await sheet.getByRole("textbox", { name: /^Courriel/ }).fill("pas un courriel");
+  await sheet.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(
+    sheet.getByText("Vérifiez le courriel, par exemple bureau@exemple.ca."),
+  ).toBeVisible();
+  await sheet.getByRole("textbox", { name: /^Courriel/ }).fill("  Bureau@Exemple.test ");
   await sheet.getByLabel("Adresse postale").fill("100, rue Exemple\nVille Exemple (Québec)");
   // A way to reach the responsible person, but nobody named: the window asks who.
   await sheet.getByLabel("Pour la joindre").fill("vieprivee@exemple.test");
@@ -145,9 +160,7 @@ async function officeFillsIn(
     (await put(api, "/api/company/profile", { ...renamed, privacyOfficer: titled })).status,
   ).toBe(200);
   await pub.goto("/confidentialite");
-  await expect(
-    pub.getByText("sert aux chantiers de l'entreprise Entreprise Exemple inc."),
-  ).toBeVisible();
+  await expect(pub.getByText("sert aux chantiers d'Entreprise Exemple inc.")).toBeVisible();
   await expect(pub.getByRole("contentinfo")).toContainText(
     "Entreprise Exemple inc. · EAD Chantier",
   );

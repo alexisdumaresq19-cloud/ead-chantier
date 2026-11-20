@@ -2,7 +2,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 
-import { phoneHref, type CompanyProfile } from "@/shared/company";
+import { ofCompany, phoneHref, type CompanyProfile } from "@/shared/company";
+import { appStoreUrl } from "@/server/app-store";
 import { profileForPages } from "@/server/legal/profile";
 
 import { Aside, LegalPage, linkClass, Part, Point, Points } from "../_legal/parts";
@@ -24,14 +25,14 @@ async function siteAddress(): Promise<string> {
 
 export default async function SupportPage() {
   const [profile, host] = await Promise.all([profileForPages(), siteAddress()]);
+  const store = appStoreUrl();
   return (
     <LegalPage
       title="Aide et soutien"
       lead={
         <p>
           EAD Chantier rassemble les plans, les documents, les photos et les rapports journaliers
-          des chantiers de l&apos;entreprise {profile.name}. Voici comment y entrer et qui joindre
-          au besoin.
+          des chantiers {ofCompany(profile.name)}. Voici comment y entrer et qui joindre au besoin.
         </p>
       }
       company={profile.name}
@@ -50,9 +51,9 @@ export default async function SupportPage() {
             demandez-en un nouveau.
           </Point>
           <Point title="Avec un code du bureau">
-            Dans l&apos;app, touchez «&nbsp;J&apos;ai déjà un compte&nbsp;», puis «&nbsp;Avec un
-            code du bureau&nbsp;». Inscrivez votre cellulaire et le code que le bureau vous a
-            envoyé.
+            Dans l&apos;application, touchez «&nbsp;J&apos;ai déjà un compte&nbsp;», puis
+            «&nbsp;Avec un code du bureau&nbsp;». Inscrivez votre cellulaire et le code que le
+            bureau vous a envoyé.
           </Point>
           <Point title="Avec le code QR d'un chantier">
             Au chantier, le contremaître ou le bureau vous montre le code QR. Scannez-le avec
@@ -69,8 +70,23 @@ export default async function SupportPage() {
       <Part title="Obtenir l'application" id="obtenir">
         <Points>
           <Point title="Sur iPhone">
-            Installez l&apos;app <strong className="font-semibold">EAD</strong> à partir de
-            l&apos;App Store.
+            {store ? (
+              <>
+                Installez l&apos;application <strong className="font-semibold">EAD</strong> avec ce
+                lien&nbsp;:{" "}
+                <a href={store} className={linkClass}>
+                  {store}
+                </a>
+                . Elle ne paraît pas dans les recherches de l&apos;App Store&nbsp;: seul ce lien
+                l&apos;installe.
+              </>
+            ) : (
+              <>
+                L&apos;application <strong className="font-semibold">EAD</strong> ne paraît pas dans
+                les recherches de l&apos;App Store. Demandez au bureau le lien pour
+                l&apos;installer.
+              </>
+            )}
           </Point>
           <Point title="Sur tout autre appareil">
             Ouvrez{" "}
@@ -78,14 +94,14 @@ export default async function SupportPage() {
               {host}
             </a>{" "}
             dans le navigateur. Sur un téléphone, ajoutez-la à l&apos;écran d&apos;accueil pour
-            l&apos;ouvrir comme une app.
+            l&apos;ouvrir comme une application.
           </Point>
         </Points>
       </Part>
 
       <Part title="Appareils qui fonctionnent" id="appareils">
         <Points>
-          <Point>Un iPhone avec iOS 15 ou plus récent, pour l&apos;app EAD.</Point>
+          <Point>Un iPhone avec iOS 15 ou plus récent, pour l&apos;application EAD.</Point>
           <Point>
             Un navigateur récent (Safari, Chrome, Edge ou Firefox) sur un téléphone, une tablette ou
             un ordinateur.

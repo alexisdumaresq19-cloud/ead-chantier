@@ -27,7 +27,7 @@ export function PublicLayout({ children, compact }: { children: ReactNode; compa
       >
         {children}
       </main>
-      <LegalLinks onDark className={compact ? "mt-4" : "mt-6"} />
+      <LegalLinks onDark className={compact ? "mt-2" : "mt-4"} />
       <p className="mt-1 text-xs font-medium tracking-wide text-white/45">EAD Chantier</p>
     </div>
   );

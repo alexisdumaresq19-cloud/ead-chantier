@@ -47,7 +47,8 @@ const { sql } = await import("../db/client");
 const { signInWithCode } = await import("./sign-in");
 const { createDemoAccess, changeDemoAccess, isDemoPhone, readDemoAccess, removeDemoAccess } =
   await import("./demo");
-const { DEMO_REMAKES_PER_DAY } = await import("./door");
+const { DEMO_REMAKES_PER_DAY, demoRemakesPausedUntil } = await import("./door");
+const { setAssistantConsent } = await import("../legal/consent");
 const { createPersonalInvite, currentUser, consumeInvite, findInvite } = await import("../auth");
 const { endAccess } = await import("../people/links");
 const { deleteOwnAccount } = await import("../people/delete");
@@ -217,7 +218,7 @@ describe.skipIf(!ready)("with a database", () => {
       Array.from({ length: limits.wrongPerNumber * 5 }, (_, i) =>
         answer(
           signInWithCode(
-            from(`10.2.${i >> 8}.${i & 255}`),
+            from(`10.2.${i}.1`),
             { phone: "418 555-0142", code: "11112222" },
             { ...fast, now: start },
           ),
@@ -230,12 +231,12 @@ describe.skipIf(!ready)("with a database", () => {
     // A number nobody has is held the same way.
     for (let i = 0; i < limits.wrongPerNumber; i++)
       await signInWithCode(
-        from(`10.3.0.${i}`),
+        from(`10.3.${i}.1`),
         { phone: "418 555-0143", code: "11112222" },
         fast,
       ).catch(() => null);
     const nobody = signInWithCode(
-      from("10.3.1.1"),
+      from("10.3.99.1"),
       { phone: "418 555-0143", code: "11112222" },
       fast,
     );
@@ -283,7 +284,33 @@ describe.skipIf(!ready)("with a database", () => {
         roomy,
       ).catch(() => null);
     expect(
-      await answer(signInWithCode(from("192.0.2.60"), { phone: "418 555-0142", code }, roomy)),
+      await answer(signInWithCode(from("198.51.100.60"), { phone: "418 555-0142", code }, roomy)),
+    ).toBe("accepted");
+  });
+
+  it("counts the addresses of one connection as one network for a number", async () => {
+    const roomy = { ...fast, limits: { triesPerHour: 100, wrongPerNumber: 6 } };
+    const { code } = await createPersonalInvite("julie", "office");
+    // One home's IPv6 block, three /64s; then one phone's carrier, three
+    // addresses of one /24 (airplane mode off and on).
+    const hops = [
+      "2001:db8:0:1::1",
+      "2001:db8:0:2::1",
+      "2001:db8:0:3::1",
+      "192.0.2.1",
+      "192.0.2.2",
+      "192.0.2.3",
+    ];
+    for (const address of hops)
+      for (let i = 0; i < 2; i++)
+        await signInWithCode(
+          from(address),
+          { phone: "418 555-0142", code: "11112222" },
+          roomy,
+        ).catch(() => null);
+    // Two blocks, two wrong codes each (a third of six): Julie still gets in.
+    expect(
+      await answer(signInWithCode(from("198.51.100.50"), { phone: "418 555-0142", code }, roomy)),
     ).toBe("accepted");
   });
 
@@ -485,6 +512,17 @@ describe.skipIf(!ready)("with a database", () => {
       expect([refused.status, refused.code]).toEqual([429, "too_many_demos"]);
       expect(refused.message).toMatch(/^Le compte de démonstration a été supprimé et refait /);
       expect(await demoRows()).toHaveLength(0);
+      expect(await demoRemakesPausedUntil(db, new Date())).not.toBeNull();
+
+      // The way out the refusal names: a new code from the office.
+      await changeDemoAccess("office", { newCode: true });
+      expect(await demoRemakesPausedUntil(db, new Date())).toBeNull();
+      const renewed = (await readDemoAccess())!;
+      expect(
+        await answer(
+          signInWithCode(from("203.0.115.98"), { phone: renewed.phone, code: renewed.code }, fast),
+        ),
+      ).toBe("accepted");
 
       // Nobody of the team is given that number, however typed.
       expect(await isDemoPhone("1 (418) 555-0100")).toBe(true);
@@ -502,6 +540,40 @@ describe.skipIf(!ready)("with a database", () => {
           ),
         ),
       ).toBe("409 phone_taken");
+    });
+
+    it("asks each visitor's device for its own agreement to the assistant", async () => {
+      await createDemoAccess("office", ["p1"]);
+      const setting = (await readDemoAccess())!;
+      const typed = { phone: setting.phone, code: setting.code };
+      const first = await signInWithCode(from("203.0.116.1"), typed, fast);
+      const firstUser = (await currentUser(from("x", first.token)))!;
+      await setAssistantConsent(firstUser, true);
+      expect((await currentUser(from("x", first.token)))?.assistantConsentAt).not.toBeNull();
+
+      // Another visitor, on the same account, is asked again.
+      const second = await signInWithCode(from("203.0.116.2"), typed, fast);
+      const secondUser = (await currentUser(from("x", second.token)))!;
+      expect(secondUser.id).toBe(firstUser.id);
+      expect(secondUser.assistantConsentAt).toBeNull();
+      // Their "no" is theirs alone, and so is their "yes".
+      await setAssistantConsent(secondUser, false);
+      expect((await currentUser(from("x", first.token)))?.assistantConsentAt).not.toBeNull();
+      await setAssistantConsent(secondUser, true);
+      await setAssistantConsent(firstUser, false);
+      expect((await currentUser(from("x", first.token)))?.assistantConsentAt).toBeNull();
+      expect((await currentUser(from("x", second.token)))?.assistantConsentAt).not.toBeNull();
+      // Nothing is written on the account itself.
+      const [row] = await sql`select assistant_consent_at from users where id = ${firstUser.id}`;
+      expect(row.assistant_consent_at).toBeNull();
+      // A session that ends takes its agreement with it.
+      await deleteOwnAccount(firstUser.id);
+      const third = await signInWithCode(from("203.0.116.3"), typed, fast);
+      const thirdUser = (await currentUser(from("x", third.token)))!;
+      expect(thirdUser.assistantConsentAt).toBeNull();
+      await setAssistantConsent(thirdUser, true);
+      const kept = await sql`select key from app_settings where key like 'demo_consent:%'`;
+      expect(kept.map((entry) => entry.key)).toEqual([`demo_consent:${thirdUser.sessionId}`]);
     });
 
     it("makes one account for visitors who come at the same moment", async () => {

@@ -10,6 +10,7 @@ import { db, schema } from "./db/client";
 import { env } from "./env";
 import { forbidden, unauthorized } from "./http";
 import { hashToken, newId, newToken } from "./ids";
+import { demoSessionConsent } from "./legal/consent";
 
 // Sign-in without passwords. A device holds a session cookie it got by
 // opening a personal invitation link or a project's QR code, or by typing a
@@ -91,6 +92,9 @@ export async function currentUser(request: NextRequest): Promise<SessionUser | n
   }
   return {
     ...row.user,
+    // The demonstration account's visitors are many: each device's own
+    // agreement to the assistant, never another visitor's (legal/consent.ts).
+    ...(row.user.demo ? { assistantConsentAt: await demoSessionConsent(row.session.id) } : {}),
     sessionId: row.session.id,
     sessionExpiresAt: renewal?.expiresAt ?? row.session.expiresAt,
   };

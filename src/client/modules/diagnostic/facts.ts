@@ -62,7 +62,7 @@ export function rows(facts: Facts): Row[] {
   const { top, right, bottom, left } = facts.insets;
   const list: Row[] = [
     {
-      label: "Dans l'app iPhone",
+      label: "Dans l'application iPhone",
       value: yesNo(facts.inApp),
       tone: facts.inApp ? "good" : undefined,
     },
@@ -79,7 +79,7 @@ export function rows(facts: Facts): Row[] {
   ];
   if (facts.inApp)
     list.push({
-      label: "Version de l'app",
+      label: "Version de l'application",
       value: facts.shell ? `${facts.shell.version} (${facts.shell.build})` : "Inconnue",
     });
   list.push(
@@ -107,7 +107,7 @@ export function rows(facts: Facts): Row[] {
   );
   if (facts.inApp)
     list.push({
-      label: "Modules de l'app",
+      label: "Modules de l'application",
       value: facts.plugins ? facts.plugins.map(pluginLine).join("\n") : "Vérification…",
       tone:
         facts.plugins && facts.plugins.some((answer) => answer.state !== "answers")

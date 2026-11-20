@@ -94,16 +94,32 @@ export function officerProblem(officer: PrivacyOfficer): string | null {
 const PHONE = /^[+(]?\d[\d\s().-]{5,}\d(\s*(poste|p\.|ext\.?|x)\s*\d{1,6})?$/i;
 const EMAIL = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/;
 
+export const PHONE_PROBLEM = "Vérifiez le numéro\u00a0: 10 chiffres, par exemple 418 555-0123.";
+export const EMAIL_PROBLEM = "Vérifiez le courriel, par exemple bureau@exemple.ca.";
+
 /** What is wrong with a phone number as typed, or null (an empty one is fine). */
 export function phoneProblem(text: string): string | null {
   const value = text.trim();
-  return value === "" || PHONE.test(value) ? null : "Ce numéro de téléphone n'est pas valide.";
+  return value === "" || PHONE.test(value) ? null : PHONE_PROBLEM;
 }
 
 /** What is wrong with an email address as typed, or null (an empty one is fine). */
 export function emailProblem(text: string): string | null {
   const value = text.trim();
-  return value === "" || EMAIL.test(value) ? null : "Ce courriel n'est pas valide.";
+  return value === "" || EMAIL.test(value) ? null : EMAIL_PROBLEM;
+}
+
+/**
+ * "des Entreprises Allen Dumaresq", "du Groupe X", "d'Excavation Y", "de Pavage Z":
+ * the company's name after "de", the way it is said.
+ */
+export function ofCompany(name: string): string {
+  const les = /^les\s+(.+)$/i.exec(name);
+  if (les) return `des ${les[1]}`;
+  const le = /^le\s+(.+)$/i.exec(name);
+  if (le) return `du ${le[1]}`;
+  if (/^(la|l')\s*/i.test(name)) return `de ${name}`;
+  return /^[aeiouyàâéèêëîïôûüh]/i.test(name) ? `d'${name}` : `de ${name}`;
 }
 
 /** "a, b et c": a list the way it is said. */

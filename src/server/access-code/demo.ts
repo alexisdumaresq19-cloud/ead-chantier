@@ -8,7 +8,7 @@ import { HttpError } from "../http";
 import { newId } from "../ids";
 import { deleteOwnAccount } from "../people/delete";
 import { newAccessCode } from "./code";
-import { countDemoRemake, holdDemo } from "./door";
+import { countDemoRemake, forgetDemoRemakes, holdDemo } from "./door";
 
 // The demonstration access: a cell number from the range kept for fiction and
 // a code, that let someone outside the team (Apple's reviewer, a client the
@@ -201,7 +201,9 @@ export async function createDemoAccess(officeId: string, projectIds: string[], n
 
 /**
  * Other projects, or a new code. A new code signs the visitors out: the old
- * one may have gone further than meant.
+ * one may have gone further than meant. It also lets visitors make the
+ * account again at once, if deleting it too often had paused that: the
+ * refusal sends them to the office for a new code.
  */
 export async function changeDemoAccess(
   officeId: string,
@@ -220,6 +222,7 @@ export async function changeDemoAccess(
       projectIds: projectIds ?? setting.projectIds,
     };
     await write(tx, value, officeId, now);
+    if (change.newCode) await forgetDemoRemakes(tx);
     for (const account of await demoAccounts(tx)) {
       if (projectIds) await setProjects(tx, account.id, projectIds);
       if (change.newCode)

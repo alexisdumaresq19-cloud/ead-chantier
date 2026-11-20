@@ -339,7 +339,7 @@ export function ProjectHomeScreen() {
                 href={directionsUrl(address)}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-sm font-semibold transition-colors hover:bg-white/20"
+                className="inline-flex h-11 items-center gap-1.5 rounded-lg bg-white/10 px-3.5 text-sm font-semibold transition-colors hover:bg-white/20"
               >
                 <Navigation className="size-4" aria-hidden /> Itinéraire
               </a>

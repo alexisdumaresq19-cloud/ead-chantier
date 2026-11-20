@@ -154,7 +154,7 @@ export function AccountScreen() {
         </Card>
       </Section>
 
-      <LegalLinks className="mt-10" />
+      <LegalLinks className="mt-8" />
       <p className="text-dim mt-2 text-center text-xs font-medium tracking-wide">EAD Chantier</p>
     </Page>
   );

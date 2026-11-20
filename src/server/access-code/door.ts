@@ -1,5 +1,7 @@
 import { and, desc, gt, lt, sql as raw } from "drizzle-orm";
 
+import { DEMO_REMAKES_PER_DAY } from "@/shared/access";
+
 import type { Executor } from "../auth";
 import { db, schema } from "../db/client";
 import { HttpError } from "../http";
@@ -14,10 +16,11 @@ import { fullUntil, whenText } from "../signup/door";
 // - From one network (an IPv4 address, an IPv6 /64), a handful of wrong
 //   tries an hour, whatever numbers they were for.
 // - For one cell number, a handful of wrong codes a day, from every network
-//   together; a new code for that number starts a new count. One network
+//   together; a new code for that number starts a new count. One
+//   subscriber's block of addresses (an IPv4 /24, an IPv6 /48: see blockOf)
 //   fills a third of it at most (and is then held back for that number
 //   alone): a single stranger who knows someone's number cannot shut that
-//   person out.
+//   person out, even by hopping between the addresses of one connection.
 // - The demonstration's number is held by the network count only. Its code
 //   is no one's secret (it opens sample projects), and it is published to
 //   Apple's reviewer: a count per number would let anyone shut it.
@@ -67,15 +70,32 @@ let limits: AccessLimits | undefined;
 /** Read once: every request of a server holds the same door. */
 export const accessLimits = () => (limits ??= accessLimitsFrom(process.env));
 
-/** The two keys a wrong try is noted under. Addresses are personal data: only keyed digests. */
+/**
+ * The block of addresses one subscriber can move around in, from a network
+ * as networkOf writes it: an IPv4 /24 (turning airplane mode off and on
+ * often gives another address of the same block) and an IPv6 /48 (a home
+ * is often given a /56 or a /48, so 256 or more /64s). A number's count
+ * takes a third at most from each block, so a stranger needs three
+ * connections of their own, not three addresses of one.
+ */
+export function blockOf(network: string): string {
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.\d+$/.exec(network);
+  if (v4) return `${v4[1]}.${v4[2]}.${v4[3]}.0/24`;
+  const v6 = /^([0-9a-f]+):([0-9a-f]+):([0-9a-f]+):[0-9a-f]+::\/64$/.exec(network);
+  if (v6) return `${v6[1]}:${v6[2]}:${v6[3]}::/48`;
+  return network;
+}
+
+/** The keys a wrong try is noted under. Addresses are personal data: only keyed digests. */
 export const networkKey = (network: string) => sign(`access-network:${network}`);
+export const blockKey = (network: string) => sign(`access-block:${blockOf(network)}`);
 export const numberKey = (phoneDigits: string) => sign(`access-number:${phoneDigits}`);
 
 // Account creation's table holds these tries too; its outcomes are its own
 // ("wrong_code", "phone_taken", "created"), so neither door counts the other's.
 const NETWORK = "access_network";
-// Keyed "<number's key>.<network's key>" (base64url has no dot): the number's
-// count is read by its prefix, and each network's part in it by the rest.
+// Keyed "<number's key>.<block's key>" (base64url has no dot): the number's
+// count is read by its prefix, and each block's part in it by the rest.
 const NUMBER = "access_number";
 // One row each time a visitor's sign-in makes the demonstration account again.
 const DEMO_MADE = "access_demo";
@@ -93,26 +113,26 @@ const row = (outcome: Outcome, addressHash: string, now: Date) => ({
 export type AccessCounts = {
   /** Wrong tries from this network in the last hour, newest first. */
   network: Date[];
-  /** Wrong codes for this number since `numberSince`, newest first, with the network each came from. */
-  number: { at: Date; network: string }[];
+  /** Wrong codes for this number since `numberSince`, newest first, with the block each came from. */
+  number: { at: Date; block: string }[];
 };
 
 export type AccessRefusal = { reason: "network" | "number"; retryAt: Date };
 
 /**
- * Whether the door is shut to this network, for this number. `network` is
- * this request's key, to find its own part of the number's count.
+ * Whether the door is shut to this network, for this number. `block` is
+ * this request's block key, to find its own part of the number's count.
  */
 export function accessRefusal(
   counts: AccessCounts,
   limits: AccessLimits,
-  network: string,
+  block: string,
 ): AccessRefusal | null {
   const share = networkShare(limits);
-  // Each network's newest wrong codes, a share at most: what one network
-  // does beyond that is held back below, for that network only.
+  // Each block's newest wrong codes, a share at most: what one block does
+  // beyond that is held back below, for that block only.
   const taken = new Map<string, number>();
-  const capped = counts.number.filter(({ network: from }) => {
+  const capped = counts.number.filter(({ block: from }) => {
     const seen = taken.get(from) ?? 0;
     taken.set(from, seen + 1);
     return seen < share;
@@ -124,7 +144,7 @@ export function accessRefusal(
   );
   if (everyone) return { reason: "number", retryAt: everyone };
   const mine = fullUntil(
-    counts.number.filter((entry) => entry.network === network).map((entry) => entry.at),
+    counts.number.filter((entry) => entry.block === block).map((entry) => entry.at),
     share,
     DAY,
   );
@@ -195,7 +215,7 @@ export async function accessCounts(
           .then((rows) =>
             rows.map((entry) => ({
               at: entry.at,
-              network: entry.key.slice(keys.number!.length + 1),
+              block: entry.key.slice(keys.number!.length + 1),
             })),
           )
       : Promise.resolve([]),
@@ -205,13 +225,13 @@ export async function accessCounts(
 
 /** Notes a wrong try, under the network and under the number, and lets go of old ones. */
 export async function noteWrongTry(
-  keys: { network: string; number: string },
+  keys: { network: string; block: string; number: string },
   now: Date,
   executor: Executor = db,
 ) {
   await executor
     .insert(attempts)
-    .values([row(NETWORK, keys.network, now), row(NUMBER, `${keys.number}.${keys.network}`, now)]);
+    .values([row(NETWORK, keys.network, now), row(NUMBER, `${keys.number}.${keys.block}`, now)]);
   await executor
     .delete(attempts)
     .where(
@@ -226,15 +246,19 @@ export async function noteWrongTry(
 
 /**
  * How many times a day visitors' sign-ins may make the demonstration account
- * again after one deleted it. Each new account starts with its own allowance
- * of the assistant and of uploads: without a bound, deleting and coming back
- * would make them endless.
+ * again after one deleted it (DEMO_REMAKES_PER_DAY, shared with the office's
+ * card and the notes for Apple). Each new account starts with its own
+ * allowance of the assistant and of uploads: without a bound, deleting and
+ * coming back would make them endless.
  */
-export const DEMO_REMAKES_PER_DAY = 5;
+export { DEMO_REMAKES_PER_DAY };
 const DEMO_KEY = "access-demo";
 
-/** Refuses one more demonstration account today, or notes it. Under holdDemo. */
-export async function countDemoRemake(executor: Executor, now: Date) {
+/**
+ * Until when visitors' sign-ins may not make the demonstration account
+ * again, or null when they may now.
+ */
+export async function demoRemakesPausedUntil(executor: Executor, now: Date): Promise<Date | null> {
   const made = await executor
     .select({ at: attempts.createdAt })
     .from(attempts)
@@ -246,11 +270,16 @@ export async function countDemoRemake(executor: Executor, now: Date) {
     )
     .orderBy(desc(attempts.createdAt))
     .limit(DEMO_REMAKES_PER_DAY);
-  const full = fullUntil(
+  return fullUntil(
     made.map((entry) => entry.at),
     DEMO_REMAKES_PER_DAY,
     DAY,
   );
+}
+
+/** Refuses one more demonstration account today, or notes it. Under holdDemo. */
+export async function countDemoRemake(executor: Executor, now: Date) {
+  const full = await demoRemakesPausedUntil(executor, now);
   if (full)
     throw new HttpError(
       429,
@@ -258,6 +287,14 @@ export async function countDemoRemake(executor: Executor, now: Date) {
       `Le compte de démonstration a été supprimé et refait plusieurs fois aujourd'hui. Réessayez ${whenText(new Date(full.getTime() + 60_000), now)}, ou demandez un autre code au bureau.`,
     );
   await executor.insert(attempts).values(row(DEMO_MADE, sign(DEMO_KEY), now));
+}
+
+/**
+ * Starts the day's count again: the office's new code is the way out that
+ * the refusal names, as a new company code is for account creation.
+ */
+export async function forgetDemoRemakes(executor: Executor) {
+  await executor.delete(attempts).where(raw`${attempts.outcome} = ${DEMO_MADE}`);
 }
 
 // --- Locks ----------------------------------------------------------------------

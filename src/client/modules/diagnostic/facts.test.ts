@@ -22,10 +22,10 @@ const value = (facts: Facts, label: string) => rows(facts).find((row) => row.lab
 
 describe("the diagnostic", () => {
   it("says plainly what a browser is and has", () => {
-    expect(value(browser, "Dans l'app iPhone")?.value).toBe("Non");
+    expect(value(browser, "Dans l'application iPhone")?.value).toBe("Non");
     expect(value(browser, "Plateforme")?.value).toBe("Navigateur");
-    expect(value(browser, "Version de l'app")).toBeUndefined();
-    expect(value(browser, "Modules de l'app")).toBeUndefined();
+    expect(value(browser, "Version de l'application")).toBeUndefined();
+    expect(value(browser, "Modules de l'application")).toBeUndefined();
     expect(value(browser, "Mode hors ligne")).toMatchObject({
       value: "Actif sur cette page",
       tone: "good",
@@ -52,15 +52,15 @@ describe("the diagnostic", () => {
         { name: "SplashScreen", state: "silent" },
       ],
     };
-    expect(value(app, "Dans l'app iPhone")).toMatchObject({ value: "Oui", tone: "good" });
+    expect(value(app, "Dans l'application iPhone")).toMatchObject({ value: "Oui", tone: "good" });
     expect(value(app, "Plateforme")?.value).toBe("iOS");
-    expect(value(app, "Version de l'app")?.value).toBe("1.0 (7)");
+    expect(value(app, "Version de l'application")?.value).toBe("1.0 (7)");
     expect(value(app, "Mode hors ligne")).toMatchObject({
       value: "Non disponible ici",
       tone: "bad",
     });
-    expect(value(app, "Modules de l'app")).toEqual({
-      label: "Modules de l'app",
+    expect(value(app, "Modules de l'application")).toEqual({
+      label: "Modules de l'application",
       value: "App\u00a0: répond (1.0 (7))\nSplashScreen\u00a0: ne répond pas",
       tone: "bad",
     });

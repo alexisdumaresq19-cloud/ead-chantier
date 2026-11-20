@@ -100,7 +100,7 @@ export function InviteLinkPanel({
   // A number added here is the one the texts and the code go with.
   const [phone, setPhone] = useState(person.phone);
   const days = daysLeft(link.expiresAt, now);
-  const message = inviteMessage(person.name, link.url, days, link.code, phone);
+  const message = inviteMessage(person.name, link.url, days, link.code, phone, link.appStoreUrl);
   // The way that matches what the office knows about the person comes first.
   const main = phone ? "sms" : person.email ? "mail" : "none";
 
@@ -120,8 +120,10 @@ export function InviteLinkPanel({
         />
         <p className="text-dim text-sm text-pretty">
           <span className="text-text block text-[15px] font-semibold">Sur place?</span>
-          {`Faites scanner ce code avec l'appareil photo du téléphone de ${firstName(person.name)}.`}
-          {link.code ? " Pour l'application iPhone, donnez plutôt le code ci\u2011dessous." : null}
+          {`Faites scanner ce code QR avec l'appareil photo du téléphone de ${firstName(person.name)}.`}
+          {link.code
+            ? " Pour l'application iPhone, donnez plutôt le code du bureau ci\u2011dessous."
+            : null}
         </p>
       </div>
       {link.code ? (
@@ -196,7 +198,7 @@ function TypedCode({
         id={`code-${person.id}`}
         className="font-display text-dim text-xs font-bold tracking-wider uppercase"
       >
-        Code pour l&apos;application
+        Code du bureau, pour l&apos;application
       </p>
       <div className="mt-1 flex items-center justify-between gap-3">
         <p

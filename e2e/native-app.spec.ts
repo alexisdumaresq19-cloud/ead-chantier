@@ -312,11 +312,11 @@ test("inside the app without the offline worker: the project says plainly what i
   await expect(page.getByRole("button", { name: "Garder sur cet appareil" })).toHaveCount(0);
   // The diagnostic says it too, with the plugins that answer.
   await page.goto("/diagnostic");
-  await expect(page.locator('[data-diagnostic="Dans l\'app iPhone"]')).toHaveText("Oui");
+  await expect(page.locator('[data-diagnostic="Dans l\'application iPhone"]')).toHaveText("Oui");
   await expect(page.locator('[data-diagnostic="Mode hors ligne"]')).toHaveText(
     "Non disponible ici",
   );
-  const modules = page.locator('[data-diagnostic="Modules de l\'app"]');
+  const modules = page.locator('[data-diagnostic="Modules de l\'application"]');
   for (const name of ["App", "Share", "Filesystem", "FileViewer", "SplashScreen"])
     await expect(modules).toContainText(`${name}\u00a0: répond`);
   // In the person's words, never the plugin's.
@@ -367,7 +367,7 @@ test("in a browser, the same screens are unchanged", async ({ browser }) => {
     /^https:\/\/www\.google\.com\/maps\/dir\//,
   );
   await page.goto("/diagnostic");
-  await expect(page.locator('[data-diagnostic="Dans l\'app iPhone"]')).toHaveText("Non");
+  await expect(page.locator('[data-diagnostic="Dans l\'application iPhone"]')).toHaveText("Non");
   // No plugin code was ever loaded: @capacitor/core would have set this global.
   expect(await page.evaluate(() => "Capacitor" in window)).toBe(false);
   await context.close();

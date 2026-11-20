@@ -15,7 +15,7 @@ const input = z.object({ agreed: z.boolean() });
 export const PUT = route(async (request) => {
   const user = await requireUser(request);
   const { agreed } = await body(request, input);
-  const at = await setAssistantConsent(user.id, agreed);
+  const at = await setAssistantConsent(user, agreed);
   return {
     dictation: await aiAvailable(),
     consentAt: at?.toISOString() ?? null,

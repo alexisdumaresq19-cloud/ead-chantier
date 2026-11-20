@@ -92,7 +92,7 @@ export function WelcomeScreen() {
           </Link>
           <SetupLink onDark />
         </div>
-        <LegalLinks onDark className="mt-6" />
+        <LegalLinks onDark className="mt-4" />
         <p className="mt-1 text-center text-xs font-medium tracking-wide text-white/45">
           EAD Chantier
         </p>

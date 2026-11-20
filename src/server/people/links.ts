@@ -1,6 +1,7 @@
 import { and, eq, isNull, notInArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
+import { appStoreUrl } from "@/server/app-store";
 import { createPersonalInvite } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { originOf } from "@/server/http";
@@ -46,6 +47,7 @@ export async function personalLink(
     url: `${originOf(request)}/i/${token}`,
     expiresAt: invite.expiresAt.toISOString(),
     code,
+    appStoreUrl: appStoreUrl(),
   };
 }
 

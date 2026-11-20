@@ -38,7 +38,7 @@ test("the office reads the code beside the link; the person types it and is in, 
   const shown = sheet.getByTestId("access-code");
   await expect(shown).toHaveText(/^\d{4}\u00a0\d{4}$/);
   await expect(sheet).toContainText(
-    "Dans l'application, touchez J'ai déjà un compte si ce bouton est là, puis Avec un code du bureau.",
+    "Dans l'application, touchez «\u00a0J'ai déjà un compte\u00a0» si ce bouton est là, puis «\u00a0Avec un code du bureau\u00a0».",
   );
   await expect(sheet).toContainText(`À taper avec son cellulaire, le ${phone}.`);
   const code = (await shown.textContent())!.replace(/\D/g, "");
@@ -62,8 +62,15 @@ test("the office reads the code beside the link; the person types it and is in, 
   const tapped = await safari.newPage();
   await tapped.goto(link);
   await expect(tapped.getByRole("button", { name: "Entrer", exact: true })).toBeVisible();
-  await expect(tapped.getByText("L'application EAD est sur cet iPhone?")).toBeVisible();
-  await expect(tapped.getByText(/Tapez plutôt votre code dans l'application/)).toBeVisible();
+  const warning = tapped.getByRole("note");
+  await expect(warning).toContainText("Vous avez l'application EAD sur cet iPhone?");
+  await expect(warning).toContainText("le code ne marchera plus dans l'application");
+  // Read before the button that uses the code up.
+  const [noteBox, buttonBox] = await Promise.all([
+    warning.boundingBox(),
+    tapped.getByRole("button", { name: "Entrer", exact: true }).boundingBox(),
+  ]);
+  expect(noteBox!.y + noteBox!.height).toBeLessThanOrEqual(buttonBox!.y);
   await safari.close();
 
   const phoneDevice = await device(browser);
