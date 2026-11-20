@@ -6,7 +6,15 @@ import type { LocalPhoto } from "../photos/logic";
 
 // The outbox opens the device's storage as it loads: none of it is used here.
 vi.mock("../photos/outbox", () => ({ useLocalPhotos: () => [] }));
-const { reportPhotos } = await import("./photos");
+const {
+  leftOutText,
+  onTheWayText,
+  photosToOffer,
+  reportPdfUrl,
+  reportPhotos,
+  shortCaption,
+  stillOnDevice,
+} = await import("./photos");
 
 const saved = (id: string, takenAt: string, caption: string | null = null): Photo => ({
   id,
@@ -74,6 +82,82 @@ describe("the photos of a report, found where they are", () => {
     // The report read again afterwards knows better.
     expect(reportPhotos(["a"], { photos: [withReport], at: 3000 }, fetched, [])[0].caption).toBe(
       "Avec le rapport",
+    );
+  });
+});
+
+describe("what the screens say of a report's photos", () => {
+  it("count as still on the device only those the server does not have yet", () => {
+    const found = reportPhotos(
+      ["a", "b", "c", "d"],
+      { photos: [saved("a", "2026-11-19T12:00:00.000Z")], at: 1000 },
+      none,
+      [
+        waiting("b", "2026-11-19T13:00:00.000Z", "waiting"),
+        waiting("c", "2026-11-19T14:00:00.000Z", "sent"),
+        waiting("d", "2026-11-19T15:00:00.000Z", "refused"),
+      ],
+    );
+    expect(ids(stillOnDevice(found))).toEqual(["b", "d"]);
+  });
+
+  it("offer the day's photos not with the report yet, oldest first", () => {
+    const day = [
+      saved("late", "2026-11-19T20:00:00.000Z"),
+      saved("taken", "2026-11-19T15:00:00.000Z"),
+      saved("early", "2026-11-19T11:00:00.000Z"),
+    ];
+    expect(ids(photosToOffer(day, ["taken"]))).toEqual(["early", "late"]);
+    expect(photosToOffer(day, ["late", "taken", "early"])).toEqual([]);
+  });
+
+  it("say how many photos were left out, and that they stay in the project", () => {
+    expect(leftOutText(1)).toBe(
+      "1 photo n'a pas été ajoutée au rapport\u00a0: il en a déjà 40, le maximum. Elle reste dans les photos du projet.",
+    );
+    expect(leftOutText(3)).toMatch(/^3 photos n'ont pas été ajoutées .* Elles restent/);
+  });
+
+  it("give the PDF's address, shown or kept as a file", () => {
+    expect(reportPdfUrl("r1")).toBe("/api/reports/r1/pdf");
+    expect(reportPdfUrl("r1", true)).toBe("/api/reports/r1/pdf?download");
+  });
+});
+
+describe("shortCaption", () => {
+  it("keeps a description that fits", () => {
+    expect(shortCaption("  Regard 3,   côté nord ")).toBe("Regard 3, côté nord");
+  });
+
+  it("cuts between two words, never inside one", () => {
+    const caption = "Tranchée ouverte entre les regards 4 et 5, fond de tranchée compacté";
+    const short = shortCaption(caption, 30);
+    expect(short).toBe("Tranchée ouverte entre les\u2026");
+    expect(caption.startsWith(short.slice(0, -1))).toBe(true);
+    expect(caption[short.length - 1]).toBe(" ");
+  });
+
+  it("leaves no punctuation before the cut", () => {
+    expect(shortCaption("Compaction de l'enrobé, rue Principale, devant le 12", 24)).toBe(
+      "Compaction de l'enrobé\u2026",
+    );
+  });
+
+  it("shows a single word too long for the room whole", () => {
+    expect(shortCaption("Anticonstitutionnellement", 10)).toBe("Anticonstitutionnellement");
+    expect(shortCaption("Anticonstitutionnellement fait", 10)).toBe(
+      "Anticonstitutionnellement\u2026",
+    );
+  });
+});
+
+describe("onTheWayText", () => {
+  it("speaks of one photo or several", () => {
+    expect(onTheWayText(1)).toBe(
+      "1 photo part encore de ce téléphone. Elle sera dans le PDF dès son arrivée.",
+    );
+    expect(onTheWayText(3)).toBe(
+      "3 photos partent encore de ce téléphone. Elles seront dans le PDF dès leur arrivée.",
     );
   });
 });

@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
   CalendarDays,
+  Camera,
   Check,
   ChevronRight,
   ClipboardList,
@@ -177,8 +178,8 @@ export function ReportListScreen() {
         </div>
       ) : (
         <Notice tone="neutral" icon={<Archive aria-hidden />}>
-          Projet archivé&nbsp;: les rapports se lisent et s&apos;impriment, mais ne se modifient
-          plus.
+          Projet archivé&nbsp;: les rapports se lisent et leur PDF se partage, mais ils ne se
+          modifient plus.
         </Notice>
       )}
 
@@ -343,8 +344,11 @@ function DraftList({
               className="group flex min-h-12 min-w-0 flex-1 items-center gap-2 rounded-xl px-1 py-1.5"
             >
               <span className="min-w-0 flex-1">
-                <span className="font-display block truncate font-bold">
-                  {capitalize(formatWeekday(draft.form.day))}
+                <span className="flex items-center gap-2">
+                  <span className="font-display min-w-0 truncate font-bold">
+                    {capitalize(formatWeekday(draft.form.day))}
+                  </span>
+                  <PhotoCount count={draft.form.photoIds.length} />
                 </span>
                 <span className="text-warn block text-sm">
                   Pas encore enregistré. Écrit {formatWhen(draft.savedAt)}.
@@ -380,8 +384,11 @@ function ReportRow({ report, href }: { report: ReportSummary; href: string }) {
       href={href}
       className="group hover:bg-canvas active:bg-canvas grid grid-cols-[minmax(0,1fr)_auto] items-baseline gap-x-3 gap-y-1 px-4 py-3.5 transition-colors md:grid-cols-[12.5rem_9.5rem_10.5rem_minmax(0,1fr)_1.25rem] md:gap-x-5 md:gap-y-0 md:py-3"
     >
-      <span className="font-display truncate text-[17px] leading-snug font-bold md:text-base">
-        {capitalize(formatWeekday(report.day))}
+      <span className="flex min-w-0 items-center gap-2">
+        <span className="font-display min-w-0 truncate text-[17px] leading-snug font-bold md:text-base">
+          {capitalize(formatWeekday(report.day))}
+        </span>
+        <PhotoCount count={report.photoCount} />
       </span>
       <span className={cn("text-sm font-medium md:col-start-2", wide)}>
         <WeatherLine condition={report.condition} temperatureC={report.temperatureC} short />
@@ -415,6 +422,21 @@ function ReportRow({ report, href }: { report: ReportSummary; href: string }) {
         aria-hidden
       />
     </Link>
+  );
+}
+
+/** The photos that go with a report: a small camera and their number. */
+function PhotoCount({ count: photos }: { count: number }) {
+  if (!photos) return null;
+  return (
+    <span
+      title={count(photos, "photo")}
+      className="text-dim inline-flex shrink-0 items-center gap-1 text-sm font-semibold tabular-nums"
+    >
+      <Camera className="size-4" aria-hidden />
+      {photos}
+      <span className="sr-only"> {photos > 1 ? "photos" : "photo"}</span>
+    </span>
   );
 }
 

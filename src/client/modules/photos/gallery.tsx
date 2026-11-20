@@ -6,20 +6,10 @@ import {
   CircleAlert,
   Clock,
   CloudOff,
-  Image as ImageIcon,
   ImagePlus,
   Images,
 } from "lucide-react";
-import {
-  memo,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 
 import { siteDay, type Photo, type PhotoDay } from "@/shared/photos";
@@ -44,35 +34,25 @@ import {
 } from "../../ui";
 import { usePhotoDays, usePhotoList } from "./data";
 import { dayTitle, groupByDay, monthTitle, type DayGroup, type LocalPhoto } from "./logic";
-import {
-  localFile,
-  localPreviewUrl,
-  removeWaiting,
-  retryRefused,
-  sendNow,
-  useLocalPhotos,
-  useSendProgress,
-} from "./outbox";
+import { localFile, localPreviewUrl, removeWaiting, sendNow, useLocalPhotos } from "./outbox";
 import { TakePhotoButton, useJustAdded } from "./take";
+import {
+  localExplanation,
+  LocalImage,
+  localLabel,
+  LocalMark,
+  localTitle,
+  Outline,
+  tileClass,
+  useSendAgain,
+  useTouchDevice,
+} from "./tiles";
 import { PhotoViewer } from "./viewer";
 
 // The gallery: a project's photos by day, newest first, with what is still
 // on its way from this device mixed in; and the buttons that add photos.
 
 const GRID = "grid grid-cols-3 gap-0.5 sm:grid-cols-4 md:grid-cols-5 xl:grid-cols-6";
-
-/** A touch screen: the device has a camera worth a button of its own. */
-function useTouchDevice() {
-  return useSyncExternalStore(
-    (listener) => {
-      const query = window.matchMedia("(pointer: coarse)");
-      query.addEventListener("change", listener);
-      return () => query.removeEventListener("change", listener);
-    },
-    () => window.matchMedia("(pointer: coarse)").matches,
-    () => false,
-  );
-}
 
 export function GalleryScreen({ day }: { day: string | null }) {
   const project = useCurrentProject();
@@ -470,22 +450,6 @@ const DaySection = memo(function DaySection({
   );
 });
 
-const tileClass =
-  "bg-line/70 relative block aspect-square w-full cursor-pointer overflow-hidden focus-visible:z-[1] focus-visible:-outline-offset-3";
-
-/** Drawn over the image: a ring of the tile itself would be hidden under it. */
-function Outline({ shown }: { shown: boolean }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "ring-ead pointer-events-none absolute inset-0 ring-3 transition-opacity duration-500 ring-inset",
-        shown ? "opacity-100" : "opacity-0",
-      )}
-    />
-  );
-}
-
 const PhotoTile = memo(function PhotoTile({
   photo,
   outlined,
@@ -536,91 +500,21 @@ const LocalTile = memo(function LocalTile({
   outlined: boolean;
   onOpen: (id: string) => void;
 }) {
-  const preview = localPreviewUrl(local.id);
-  const label =
-    local.state === "waiting"
-      ? "Photo en attente d'envoi"
-      : local.state === "refused"
-        ? "Photo non envoyée"
-        : local.state === "sent"
-          ? "Photo envoyée"
-          : "Photo en cours d'envoi";
   return (
     <li>
       <button
         type="button"
         onClick={() => onOpen(local.id)}
-        aria-label={label}
+        aria-label={localLabel(local)}
         className={tileClass}
       >
-        {preview ? (
-          <img src={preview} alt="" draggable={false} className="size-full object-cover" />
-        ) : local.state === "preparing" ? null : (
-          // A file the browser could not draw, sent as it is.
-          <span className="text-dim/50 flex size-full items-center justify-center">
-            <ImageIcon className="size-8" aria-hidden />
-          </span>
-        )}
-        {local.state === "preparing" ? (
-          <span className="absolute inset-0 flex items-center justify-center">
-            <Spinner className="text-dim/70 size-7" label="Préparation" />
-          </span>
-        ) : local.state === "sending" ? (
-          <SendingMark id={local.id} />
-        ) : local.state === "waiting" ? (
-          <span className="bg-ink/75 absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 py-1 text-[11px] font-semibold text-white">
-            <Clock className="size-3.5" aria-hidden /> En attente
-          </span>
-        ) : local.state === "refused" ? (
-          <span className="bg-bad absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 py-1 text-[11px] font-semibold text-white">
-            <CircleAlert className="size-3.5" aria-hidden /> Non envoyée
-          </span>
-        ) : null}
+        <LocalImage local={local} />
+        <LocalMark local={local} />
         <Outline shown={outlined} />
       </button>
     </li>
   );
 });
-
-/** A ring that fills as the photo leaves. */
-function SendingMark({ id }: { id: string }) {
-  const sent = useSendProgress(id);
-  const radius = 15;
-  const around = 2 * Math.PI * radius;
-  return (
-    <span className="bg-ink/30 absolute inset-0 flex items-center justify-center">
-      <svg
-        viewBox="0 0 36 36"
-        role="progressbar"
-        aria-label="Envoi"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(sent * 100)}
-        className="size-10 -rotate-90 drop-shadow"
-      >
-        <circle
-          cx="18"
-          cy="18"
-          r={radius}
-          fill="none"
-          strokeWidth="3.5"
-          className="stroke-white/35"
-        />
-        <circle
-          cx="18"
-          cy="18"
-          r={radius}
-          fill="none"
-          strokeWidth="3.5"
-          strokeLinecap="round"
-          strokeDasharray={around}
-          strokeDashoffset={around * (1 - Math.max(0.04, sent))}
-          className="stroke-white transition-[stroke-dashoffset] duration-300"
-        />
-      </svg>
-    </span>
-  );
-}
 
 function GridSkeleton() {
   return (
@@ -767,7 +661,7 @@ function DayLink({
 /** A photo still on the device: what is happening to it, and the way out. */
 function LocalSheet({ local, onClose }: { local: LocalPhoto | undefined; onClose: () => void }) {
   const online = useOnline();
-  const [trying, setTrying] = useState(false);
+  const again = useSendAgain(local);
   const preview = local ? localPreviewUrl(local.id) : null;
   const waiting = local?.state === "waiting";
   const refused = local?.state === "refused";
@@ -797,39 +691,24 @@ function LocalSheet({ local, onClose }: { local: LocalPhoto | undefined; onClose
     setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
   }
 
-  function retry() {
-    if (!local) return;
-    setTrying(true);
-    void (refused ? retryRefused(local.id) : sendNow()).finally(() => setTrying(false));
-  }
-
   return (
     <Sheet
       open={Boolean(local)}
       onClose={onClose}
-      title={
-        refused
-          ? "Photo non envoyée"
-          : waiting
-            ? "Photo en attente d'envoi"
-            : "Photo en cours d'envoi"
-      }
-      description={
-        refused
-          ? `${local?.error ?? "Le serveur l'a refusée."} Elle reste sur cet appareil\u00a0: enregistrez-en une copie ou retirez-la.`
-          : !waiting
-            ? "Elle sera visible par toute l'équipe dans un instant."
-            : online
-              ? (local?.error ?? "L'envoi n'a pas abouti. Un nouvel essai se fera tout seul.")
-              : "Elle est gardée sur cet appareil et partira dès que le réseau reviendra."
-      }
+      title={local ? localTitle(local) : ""}
+      description={local ? localExplanation(local, online) : undefined}
       footer={
         refused ? (
           <>
             <Button variant="secondary" onClick={remove}>
               Retirer
             </Button>
-            <Button variant="secondary" loading={trying} disabled={!online} onClick={retry}>
+            <Button
+              variant="secondary"
+              loading={again.trying}
+              disabled={!online}
+              onClick={again.run}
+            >
               Réessayer
             </Button>
             <Button onClick={save}>Enregistrer une copie</Button>
@@ -839,7 +718,7 @@ function LocalSheet({ local, onClose }: { local: LocalPhoto | undefined; onClose
             <Button variant="secondary" onClick={remove}>
               Retirer la photo
             </Button>
-            <Button loading={trying} disabled={!online} onClick={retry}>
+            <Button loading={again.trying} disabled={!online} onClick={again.run}>
               Envoyer maintenant
             </Button>
           </>

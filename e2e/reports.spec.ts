@@ -81,10 +81,7 @@ async function addPhoto(who: BrowserContext, projectId: string, takenAt?: string
 const hoursOf = (page: Page, name: string) =>
   page.getByRole("button", { name: new RegExp(`^Heures de ${name}`) });
 
-/**
- * Where a saved report's printing and deleting are: in the "…" window on a
- * phone, in the header on a computer.
- */
+/** Where a saved report's deleting is: in the "…" window on a phone, in the header on a computer. */
 async function reportActions(page: Page) {
   const more = page.getByRole("button", { name: "Autres actions" });
   if (!(await more.isVisible())) return page.locator("header");
@@ -94,6 +91,13 @@ async function reportActions(page: Page) {
   await page.waitForTimeout(450);
   return sheet;
 }
+
+/** The report's PDF: a button in the bottom bar on a phone, a link in the header on a computer. */
+const pdfAction = (page: Page) =>
+  page
+    .getByRole("button", { name: "PDF" })
+    .or(page.getByRole("link", { name: "PDF" }))
+    .filter({ visible: true });
 
 /** A window opened by a tap ignores taps for a moment (against double taps). */
 async function choose(page: Page, dialog: string, button: string) {
@@ -365,9 +369,10 @@ test("an archived project's reports are read, not changed, except by the office"
   await page.getByRole("link", { name: /Excavation de la tranchée/ }).click();
   await expect(page.getByRole("heading", { name: "Rapport journalier" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Modifier" })).toHaveCount(0);
-  const actions = await reportActions(page);
-  await expect(actions.getByRole("button", { name: "Imprimer" })).toBeVisible();
-  await expect(actions.getByRole("button", { name: "Supprimer le rapport" })).toHaveCount(0);
+  // The PDF is still offered; there is nothing else to do with it.
+  await expect(pdfAction(page)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Autres actions" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Supprimer le rapport" })).toHaveCount(0);
   for (const path of ["nouveau", `${report.id}/modifier`]) {
     await page.goto(`/projets/${projectId}/rapports/${path}`);
     await expect(
@@ -388,7 +393,7 @@ test("an archived project's reports are read, not changed, except by the office"
   await Promise.all([office.close(), foreman.close()]);
 });
 
-test("the reading screen shows the photos of the site's day, and prints clean", async ({
+test("the reading screen shows the other photos of the site's day, and prints clean", async ({
   browser,
 }) => {
   const office = await contextAs(browser, "admin");
@@ -414,7 +419,7 @@ test("the reading screen shows the photos of the site's day, and prints clean", 
 
   const page = await foreman.newPage();
   await page.goto(`/projets/${projectId}/rapports/${report.id}`);
-  const photos = page.getByRole("region", { name: "Photos du jour" });
+  const photos = page.getByRole("region", { name: "Autres photos de la journée" });
   await expect(page.getByText("Coffrage du regard R-5.")).toBeVisible();
   await expect(photos.getByRole("listitem")).toHaveCount(1);
   await expect(photos.getByRole("link", { name: "Voir la galerie" })).toHaveAttribute(
@@ -430,7 +435,7 @@ test("the reading screen shows the photos of the site's day, and prints clean", 
   await page.goto(`/projets/${projectId}/rapports/${before.id}`);
   await expect(page.getByText("Excavation du regard R-5.")).toBeVisible();
   await expect(
-    page.getByRole("region", { name: "Photos du jour" }).getByRole("listitem"),
+    page.getByRole("region", { name: "Autres photos de la journée" }).getByRole("listitem"),
   ).toHaveCount(1);
 
   // On paper: the company's name as text, none of the app's frame or buttons.
@@ -440,7 +445,7 @@ test("the reading screen shows the photos of the site's day, and prints clean", 
   expect(
     await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor),
   ).toBe("rgb(255, 255, 255)");
-  await expect(page.getByRole("button", { name: "Imprimer" })).toBeHidden();
+  await expect(pdfAction(page)).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Rapports", exact: true })).toHaveCount(0);
   await page.emulateMedia({ media: "screen" });
 
@@ -451,7 +456,7 @@ test("the reading screen shows the photos of the site's day, and prints clean", 
   await fresh.goto(`/projets/${projectId}/rapports/${report.id}`);
   await expect(fresh.getByText("Coffrage du regard R-5.")).toBeVisible();
   await expect(fresh.getByRole("link", { name: "Modifier" })).toBeVisible();
-  await expect(fresh.getByRole("region", { name: "Photos du jour" })).toHaveCount(0);
+  await expect(fresh.getByRole("region", { name: "Autres photos de la journée" })).toHaveCount(0);
   await expect(fresh.getByText("Impossible d'afficher")).toHaveCount(0);
 
   await leave(office, projectId, [foreman]);

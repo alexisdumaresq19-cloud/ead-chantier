@@ -53,6 +53,8 @@ export function ClashSheet({
 
   const { latest, mine } = clash;
   const theirs = crewTotals(latest.crew);
+  // Photos named here and not there: they stay in the project whatever is chosen.
+  const onlyMine = mine.photoIds.filter((id) => !latest.photoIds.includes(id)).length;
   return (
     <Sheet
       open
@@ -80,6 +82,7 @@ export function ClashSheet({
           {theirs.people > 0
             ? `${count(theirs.people, "personne")} · ${formatHours(theirs.hours)}`
             : "Sans équipe"}
+          {` · ${latest.photoIds.length > 0 ? count(latest.photoIds.length, "photo") : "aucune photo"}`}
         </p>
         <p className="text-dim mt-0.5 text-[15px] leading-snug">
           {excerptOf(latest.workDone, 160) || "Travaux non décrits"}
@@ -92,6 +95,9 @@ export function ClashSheet({
       </div>
       <p className="text-dim mt-3 text-sm">
         Si vous gardez la version enregistrée, ce que vous avez écrit sur cet appareil sera effacé.
+        {onlyMine > 0
+          ? ` ${onlyMine > 1 ? `Vos ${onlyMine} photos ajoutées restent` : "Votre photo ajoutée reste"} dans les photos du projet.`
+          : null}
       </p>
     </Sheet>
   );

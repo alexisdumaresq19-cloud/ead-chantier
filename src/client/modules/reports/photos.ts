@@ -2,6 +2,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { Photo } from "@/shared/photos";
+import { REPORT_LIMITS } from "@/shared/reports";
 
 import { api } from "../../lib/api";
 import { photoKeys } from "../photos/data";
@@ -51,6 +52,52 @@ export function reportPhotos(
     a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : a.id < b.id ? -1 : 1,
   );
 }
+
+/** The report's photos that have not reached the server yet: they are not in its PDF. */
+export const stillOnDevice = (photos: ReportPhoto[]) =>
+  photos.filter((photo) => photo.local && photo.local.state !== "sent");
+
+/** The day's photos that do not go with the report yet, oldest first, to choose from. */
+export function photosToOffer(dayPhotos: Photo[], photoIds: string[]): Photo[] {
+  const taken = new Set(photoIds);
+  return dayPhotos
+    .filter((photo) => !taken.has(photo.id))
+    .sort((a, b) => (a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : 0));
+}
+
+/** Said when photos could not go with a report that already has as many as it takes. */
+export function leftOutText(refused: number): string {
+  const one = refused === 1;
+  return `${one ? "1 photo n'a pas été ajoutée" : `${refused} photos n'ont pas été ajoutées`} au rapport\u00a0: il en a déjà ${REPORT_LIMITS.photos}, le maximum. ${one ? "Elle reste" : "Elles restent"} dans les photos du projet.`;
+}
+
+/** What a photo's tile has room for, at most: about four short lines. */
+export const TILE_CAPTION = 48;
+
+/**
+ * A description short enough for a small tile, cut between two words (never
+ * inside one) and marked as cut.
+ */
+export function shortCaption(caption: string, room = TILE_CAPTION): string {
+  const text = caption.trim().replace(/\s+/g, " ");
+  if (text.length <= room) return text;
+  const space = text.lastIndexOf(" ", room);
+  // One word longer than the room: it is shown whole, the tile wraps it.
+  const end = space > 0 ? space : text.indexOf(" ", room);
+  if (end < 0) return text;
+  return `${text.slice(0, end).replace(/[\s,;:.\u2013\u2014-]+$/, "")}\u2026`;
+}
+
+/** Said once a report is saved while some of its photos are still leaving this phone. */
+export function onTheWayText(travelling: number): string {
+  return travelling > 1
+    ? `${travelling} photos partent encore de ce téléphone. Elles seront dans le PDF dès leur arrivée.`
+    : "1 photo part encore de ce téléphone. Elle sera dans le PDF dès son arrivée.";
+}
+
+/** The address of a report's PDF: shown by the browser, or kept as a file. */
+export const reportPdfUrl = (reportId: string, download = false) =>
+  `/api/reports/${reportId}/pdf${download ? "?download" : ""}`;
 
 /**
  * The photos of the report being shown or written.
