@@ -4,6 +4,9 @@ import {
   acceptsUpload,
   BUCKET_RULES,
   exceedsAllowance,
+  exceedsDailyAllowance,
+  MAX_DAILY_BYTES,
+  MAX_DAILY_UPLOADS,
   MAX_PENDING_BYTES,
   MAX_PENDING_UPLOADS,
   uploadProblem,
@@ -81,6 +84,17 @@ describe("exceedsAllowance", () => {
     expect(MAX_PENDING_BYTES).toBe(2048 * MB);
     expect(exceedsAllowance({ count: 3, bytes: 1500 * MB }, 500 * MB)).toBe(false);
     expect(exceedsAllowance({ count: 4, bytes: 2000 * MB }, 500 * MB)).toBe(true);
+  });
+});
+
+describe("exceedsDailyAllowance", () => {
+  it("stops at 500 uploads or 5 GB in a day, far above a day's work", () => {
+    expect(MAX_DAILY_UPLOADS).toBeGreaterThan(MAX_PENDING_UPLOADS * 10);
+    expect(MAX_DAILY_BYTES).toBe(5 * 1024 * MB);
+    expect(exceedsDailyAllowance({ count: MAX_DAILY_UPLOADS - 1, bytes: 0 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance({ count: MAX_DAILY_UPLOADS, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance({ count: 10, bytes: 5000 * MB }, 100 * MB)).toBe(false);
+    expect(exceedsDailyAllowance({ count: 10, bytes: 5000 * MB }, 500 * MB)).toBe(true);
   });
 });
 

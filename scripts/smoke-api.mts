@@ -12,6 +12,7 @@
  * environment or .env.local.
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- loose JSON in a test script */
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 
 import postgres from "postgres";
@@ -268,9 +269,26 @@ check(
   r.json?.kind === "project" && r.json?.projectNumber === "2026-014",
   r.json,
 );
+check(
+  "the preview tells someone new that the code lets them join",
+  r.json?.access === "join" && r.json?.projectId === null && r.json?.signedInAs === null,
+  r.json,
+);
+const usesOf = async (token: string) => {
+  const hash = createHash("sha256").update(token).digest("base64url");
+  const [row] = await sql`select uses, revoked_at from invites where token_hash = ${hash}`;
+  return row as { uses: number; revoked_at: Date | null };
+};
 r = await worker.call("POST", `/api/invites/${qrToken}`, {});
 check("QR join needs a name", r.status === 400, r.json);
-r = await worker.call("POST", `/api/invites/${qrToken}`, { name: "Luc Travailleur" });
+// A name the database cannot store used to take a place and create nobody.
+r = await worker.call("POST", `/api/invites/${qrToken}`, { name: "Luc\u0000Travailleur" });
+check(
+  "a name with a control character is refused, and takes no place of the code",
+  r.status === 400 && !worker.cookie && (await usesOf(qrToken)).uses === 0,
+  { status: r.status, json: r.json, ...(await usesOf(qrToken)) },
+);
+r = await worker.call("POST", `/api/invites/${qrToken}`, { name: "  Luc\t Travailleur\n" });
 check("worker joins with the QR code", r.status === 200 && !!worker.cookie, r.json);
 r = await worker.call("GET", "/api/projects");
 check("worker sees the project", r.json?.length === 1, r.json);
@@ -285,9 +303,9 @@ check("worker cannot upload plans", r.status === 403, r.json);
 r = await admin.call("GET", "/api/users");
 const luc = r.json.find((u: any) => u.name === "Luc Travailleur");
 check(
-  "office sees the new worker as unreviewed",
+  "office sees the new worker as unreviewed, the name tidied as typed",
   luc?.unreviewed === true && luc?.deviceCount === 1,
-  luc,
+  r.json.map((u: any) => u.name),
 );
 
 // A QR-code session ends by itself until someone confirms the person.
@@ -357,8 +375,31 @@ check("a worker already on the project opens it", r.status === 200, r.json);
 const [{ uses }] = await sql`select uses from invites where kind = 'project' and revoked_at is null
                              and project_id = ${projectId}`;
 check("none of them used one of the code's places", uses === 2, uses);
-r = await paul.call("POST", `/api/invites/${qrToken}`, {});
-check("a worker of another project joins with his own account", r.status === 200, r.json);
+r = await admin.call("GET", `/api/invites/${qrToken}`);
+const memberPreview = await worker.call("GET", `/api/invites/${qrToken}`);
+check(
+  "the preview tells the office and the project's people that the project just opens",
+  r.json?.access === "open" &&
+    r.json?.projectId === projectId &&
+    memberPreview.json?.access === "open" &&
+    memberPreview.json?.projectId === projectId,
+  [r.json, memberPreview.json],
+);
+r = await paul.call("GET", `/api/invites/${qrToken}`);
+check(
+  "and a worker of another project that he can join, without naming the project's id",
+  r.json?.access === "join" && r.json?.projectId === null,
+  r.json,
+);
+// Forty requests of one person at the same moment are one person.
+const eager = await Promise.all(
+  Array.from({ length: 40 }, () => paul.call("POST", `/api/invites/${qrToken}`, {})),
+);
+check(
+  "a worker of another project joins with his own account, taking one place however often he asks",
+  eager.every((answer) => answer.status === 200) && (await usesOf(qrToken)).uses === 3,
+  { statuses: [...new Set(eager.map((answer) => answer.status))], ...(await usesOf(qrToken)) },
+);
 r = await paul.call("GET", "/api/projects");
 check("and sees both projects", r.json?.length === 2, r.json);
 
@@ -371,6 +412,12 @@ r = await admin.call("POST", "/api/users", {
 const anneId = r.json.id;
 const anne = new Client();
 await anne.call("POST", `/api/invites/${r.json.invite.url.split("/i/")[1]}`, {});
+r = await anne.call("GET", `/api/invites/${qrToken}`);
+check(
+  "the preview tells a foreman of another project that the code is not for her",
+  r.status === 200 && r.json?.access === "refused" && r.json?.projectId === null,
+  r.json,
+);
 r = await anne.call("POST", `/api/invites/${qrToken}`, {});
 check(
   "a foreman of another project is refused by the QR code",
@@ -384,7 +431,7 @@ check("and stays out of the project", r.status === 404, r.json);
 r = await admin.call("POST", `/api/projects/${otherProjectId}/qr`);
 const officeQr = r.json.url.split("/j/")[1];
 r = await anne.call("POST", `/api/projects/${otherProjectId}/qr`);
-const anneQr = r.json.url.split("/j/")[1];
+let anneQr = r.json.url.split("/j/")[1];
 const announce = (client: Client, kind: string, size = 10, type = "application/pdf") =>
   client.call("POST", "/api/uploads", {
     projectId: otherProjectId,
@@ -432,7 +479,15 @@ const plans = await paul.call("GET", `/api/projects/${otherProjectId}/plans`);
 check("its members still read it", r.status === 200 && plans.status === 200);
 await admin.call("PATCH", `/api/projects/${otherProjectId}`, { status: "actif" });
 r = await anon.call("GET", `/api/invites/${anneQr}`);
-check("a reopened project admits again", r.status === 200, r.json);
+check(
+  "a code tried while the project was archived stays dead when the project reopens",
+  r.status === 410 && (await usesOf(anneQr)).revoked_at !== null,
+  r.json,
+);
+r = await anne.call("POST", `/api/projects/${otherProjectId}/qr`);
+anneQr = r.json.url.split("/j/")[1];
+r = await anon.call("GET", `/api/invites/${anneQr}`);
+check("a reopened project admits again, with a new code", r.status === 200, r.json);
 
 // The upload link holds the sender to what was announced, and writes once.
 const photo = (size: number) =>
@@ -519,88 +574,215 @@ check(
 );
 let [row] = await sql`select status from uploads where id = ${ticket.uploadId}`;
 check(
-  "its row stays, unfinished, while the link still works (it counts against the sender)",
+  "its row stays, unfinished, while the link may still write (it counts against the sender)",
   row?.status === "pending",
   row,
 );
-await sql`update uploads set created_at = now() - interval '3 hours' where id = ${ticket.uploadId}`;
+// Confirmations sent together while a wrong file is there: one of them deletes it.
 await sendFile(ticket.target, bytes(1999));
+const together = await Promise.all(
+  Array.from({ length: 12 }, () => worker.call("POST", `/api/uploads/${ticket.uploadId}/complete`)),
+);
+check(
+  "confirmations sent together are all refused, and the wrong file is gone",
+  together.every((answer) => answer.status === 400) && !existsSync(folder),
+  together.map((answer) => answer.status).join(),
+);
+check("the right file then gets in", (await sendFile(ticket.target, bytes(2000))) === 200);
+const racing = await Promise.all(
+  Array.from({ length: 12 }, () => worker.call("POST", `/api/uploads/${ticket.uploadId}/complete`)),
+);
+check(
+  "and is confirmed, however many confirmations arrive: it stays in place",
+  racing.every((answer) => answer.status === 200) &&
+    existsSync(folder) &&
+    (await sendFile(ticket.target, bytes(2000))) === 409,
+  racing.map((answer) => answer.status).join(),
+);
+
+// An unfinished upload has three hours: after that it is not confirmed, and is removed.
+r = await photo(2001);
+ticket = r.json;
+const lateFolder = `${STORAGE_DIR}/private/u/${ticket.uploadId}`;
+await sendFile(ticket.target, bytes(2001));
+await sql`update uploads set created_at = now() - interval '4 hours' where id = ${ticket.uploadId}`;
 r = await worker.call("POST", `/api/uploads/${ticket.uploadId}/complete`);
+check(
+  "an upload is confirmed within three hours or not at all",
+  r.status === 400 && /trop tardé/.test(r.json?.error?.message) && existsSync(lateFolder),
+  r.json,
+);
+r = await photo(2002);
 [row] = await sql`select status from uploads where id = ${ticket.uploadId}`;
 check(
-  "once the link's two hours are over, the row goes with the file",
-  r.status === 400 && !row && !existsSync(folder),
+  "the next upload announced removes it on the way, row and file",
+  r.status === 200 && !row && !existsSync(lateFolder),
   { status: r.status, row },
 );
 
-// Unfinished uploads: an allowance per person, and a clean-up after a day.
+// Unfinished uploads: an allowance per person, and a clean-up after three hours.
 const greedy = new Client();
 await greedy.call("POST", `/api/invites/${qrToken}`, { name: "Essai Plafond" });
 const greedyId = (await greedy.call("GET", "/api/me")).json.id;
-const hoard = (client: Client, size: number, kind = "photo") =>
+const hoard = (client: Client, name: string, size = 10, kind = "photo") =>
   client.call("POST", "/api/uploads", {
     projectId: kind === "photo" ? projectId : otherProjectId,
     kind,
-    filename: kind === "photo" ? "essai.jpg" : "essai.pdf",
+    filename: `${name}.${kind === "photo" ? "jpg" : "pdf"}`,
     contentType: kind === "photo" ? "image/jpeg" : "application/pdf",
     size,
   });
-const hoarded = await Promise.all(Array.from({ length: 35 }, () => hoard(greedy, 10)));
+const pendingOf = async (userId: string) =>
+  (
+    await sql`select count(*)::int as pending from uploads
+              where created_by = ${userId} and status = 'pending'`
+  )[0].pending as number;
+
+// A send that fails is announced again by the app: it must cost nothing.
+const MB = 1024 * 1024;
+const retries = [];
+for (let i = 0; i < 31; i++) retries.push(await hoard(greedy, "mauvais-signal", 3 * MB));
+check(
+  "31 tries of the same photo are one unfinished upload, none is refused",
+  retries.every((answer) => answer.status === 200) &&
+    new Set(retries.map((answer) => answer.json.uploadId)).size === 1 &&
+    (await pendingOf(greedyId)) === 1,
+  {
+    statuses: [...new Set(retries.map((answer) => answer.status))],
+    pending: await pendingOf(greedyId),
+  },
+);
+check(
+  "each try gets a link that works",
+  (await sendFile(retries[0].json.target, bytes(3 * MB))) === 200 &&
+    (await sendFile(retries[30].json.target, bytes(3 * MB))) === 409,
+);
+r = await greedy.call("POST", `/api/uploads/${retries[30].json.uploadId}/complete`);
+r = await hoard(greedy, "mauvais-signal", 3 * MB);
+check(
+  "once that photo is confirmed, the same file announced again is a new upload",
+  r.status === 200 && r.json.uploadId !== retries[0].json.uploadId,
+  r.json,
+);
+await sql`delete from uploads where created_by = ${greedyId} and status = 'pending'`;
+
+const hoarded = await Promise.all(Array.from({ length: 35 }, (_, i) => hoard(greedy, `p${i}`)));
 const accepted = hoarded.filter((answer) => answer.status === 200);
 const refused = hoarded.filter((answer) => answer.status === 429);
 check(
-  "of 35 uploads announced at once, 30 are accepted and 5 refused",
+  "of 35 different uploads announced at once, 30 are accepted and 5 refused",
   accepted.length === 30 && refused.length === 5,
   hoarded.map((answer) => answer.status).join(),
 );
 check(
-  "the refusal says why, in French",
+  "the refusal says why, in French (with its non-breaking space before the colon)",
   refused[0]?.json?.error?.code === "too_many_uploads" &&
-    /Trop d'envois/.test(refused[0]?.json?.error?.message),
+    /^Trop d'envois n'ont pas abouti\. Réessayez plus tard\u00a0: /.test(
+      refused[0]?.json?.error?.message,
+    ),
   refused[0]?.json,
 );
-r = await hoard(greedy, 10);
+r = await hoard(greedy, "un-de-plus");
 check("and the allowance stays used up", r.status === 429, r.json);
 const kept = accepted[0].json;
 await sendFile(kept.target, bytes(10));
 r = await greedy.call("POST", `/api/uploads/${kept.uploadId}/complete`);
-r = await hoard(greedy, 10);
+r = await hoard(greedy, "un-de-plus");
 check("a finished upload makes room for the next", r.status === 200, r.json);
 
-const MB = 1024 * 1024;
-const big = await Promise.all(Array.from({ length: 4 }, () => hoard(anne, 500 * MB, "plan")));
-r = await hoard(anne, 500 * MB, "plan");
+const tries = [];
+for (let i = 0; i < 5; i++) tries.push(await hoard(anne, "plans", 450 * MB, "plan"));
 check(
-  "unfinished uploads may announce 2 GB in all: four plans of 500 MB, not five",
+  "five tries of one 450 MB plan are one upload",
+  tries.every((answer) => answer.status === 200) && (await pendingOf(anneId)) === 1,
+  tries.map((answer) => answer.status).join(),
+);
+const big = await Promise.all(
+  Array.from({ length: 3 }, (_, i) => hoard(anne, `plans-${i}`, 500 * MB, "plan")),
+);
+r = await hoard(anne, "plans-de-trop", 500 * MB, "plan");
+check(
+  "unfinished uploads may announce 2 GB in all: a fifth different plan waits",
   big.every((answer) => answer.status === 200) && r.status === 429,
   [...big.map((answer) => answer.status), r.status],
 );
 
-const stale = accepted.slice(1, 4).map((answer) => answer.json);
+// Past their three hours, unfinished uploads no longer count and are removed.
+const stale = accepted.slice(1).map((answer) => answer.json);
 await sendFile(stale[0].target, bytes(10));
 const staleFolder = `${STORAGE_DIR}/private/u/${stale[0].uploadId}`;
-const staleIds = stale.map((answer) => answer.uploadId as string);
-await sql`update uploads set created_at = now() - interval '25 hours' where id in ${sql(staleIds)}`;
-r = await greedy.call("POST", `/api/uploads/${stale[0].uploadId}/complete`);
+await sql`update uploads set created_at = now() - interval '4 hours'
+          where created_by = ${greedyId} and status = 'pending'`;
+check("(30 unfinished uploads, all past their time)", (await pendingOf(greedyId)) === 30);
+r = await hoard(greedy, "apres-trois-heures");
 check(
-  "an upload is confirmed within a day or not at all",
-  r.status === 400 && /trop tardé/.test(r.json?.error?.message) && existsSync(staleFolder),
+  "a person whose unfinished uploads are past their time can send again at once",
+  r.status === 200,
   r.json,
 );
-r = await hoard(greedy, 10);
-const left = await sql`select id from uploads where id in ${sql(staleIds)}`;
 check(
-  "uploads left unfinished for a day are removed on the way, rows and files",
-  r.status === 200 && left.length === 0 && !existsSync(staleFolder),
-  { status: r.status, left: left.length },
+  "and those are removed on the way, a few at each upload",
+  (await pendingOf(greedyId)) === 21,
+  await pendingOf(greedyId),
 );
-const [{ pending }] = await sql`select count(*)::int as pending from uploads
-                                where created_by = ${greedyId} and status = 'pending'`;
-check("which gives the allowance back", pending === 28, pending);
+for (let i = 0; i < 2; i++) await hoard(greedy, "apres-trois-heures");
+check(
+  "until none is left, rows and files",
+  (await pendingOf(greedyId)) === 1 && !existsSync(staleFolder),
+  await pendingOf(greedyId),
+);
 
-// A QR code is worth what its author's rights are worth today.
+// What one person may send in a day, confirmed uploads included.
+const sendWhole = async (client: Client, name: string) => {
+  const announced = await hoard(client, name, 2000);
+  if (announced.status !== 200) return announced.status;
+  await sendFile(announced.json.target, bytes(2000));
+  return (await client.call("POST", `/api/uploads/${announced.json.uploadId}/complete`)).status;
+};
+const whole = [];
+for (let i = 0; i < 45; i++) whole.push(await sendWhole(greedy, `jour-${i}`));
+check(
+  "45 photos sent and confirmed in a row are accepted (far below a day's limit)",
+  whole.every((status) => status === 200),
+  whole.join(),
+);
+// The rest of a very long day, written straight to the table.
+const [{ sentToday }] = await sql`select count(*)::int as "sentToday" from uploads
+                                  where created_by = ${greedyId}`;
+await sql`insert into uploads (id, project_id, kind, storage_key, filename, content_type, size,
+                               status, created_by, created_at)
+          select 'jour-' || n, ${projectId}, 'photo', 'u/jour-' || n || '/p.jpg', 'p.jpg',
+                 'image/jpeg', 2000, 'complete', ${greedyId}, now() - interval '23 hours'
+          from generate_series(1, ${499 - sentToday}) as n`;
+r = await hoard(greedy, "la-500e");
+check("the 500th upload of a day is accepted", r.status === 200, r.json);
+r = await hoard(greedy, "la-501e");
+check(
+  "the next is refused until tomorrow, in French",
+  r.status === 429 &&
+    r.json?.error?.code === "daily_upload_limit" &&
+    /limite d'envois pour une journée/.test(r.json?.error?.message),
+  r.json,
+);
+await sql`update uploads set created_at = now() - interval '25 hours'
+          where created_by = ${greedyId} and id like 'jour-%'`;
+r = await hoard(greedy, "la-501e");
+check("what was sent more than a day ago no longer counts", r.status === 200, r.json);
+await sql`insert into uploads (id, project_id, kind, storage_key, filename, content_type, size,
+                               status, created_by, created_at)
+          select 'bureau-' || n, ${projectId}, 'photo', 'u/bureau-' || n || '/p.jpg', 'p.jpg',
+                 'image/jpeg', 2000, 'complete', ${adminId}, now() - interval '1 hour'
+          from generate_series(1, 600) as n`;
+r = await hoard(admin, "le-bureau-charge-un-projet");
+check("the office, which loads whole projects, has no daily limit", r.status === 200, r.json);
+await sql`delete from uploads where id like 'bureau-%' or id like 'jour-%'`;
+
+// A QR code is worth what its author's rights are worth today, and once
+// found worthless it is ended for good.
 const stands = async (token: string) =>
   (await anon.call("GET", `/api/invites/${token}`)).status === 200;
+const newCode = async (client: Client) =>
+  (await client.call("POST", `/api/projects/${otherProjectId}/qr`)).json.url.split("/j/")[1];
 check("a foreman's QR code works", await stands(anneQr));
 await admin.call("DELETE", `/api/projects/${otherProjectId}/members/${anneId}`);
 r = await anon.call("POST", `/api/invites/${anneQr}`, { name: "Revenant" });
@@ -617,12 +799,17 @@ check("so the foreman cannot use it to come back", r.status === 410 && back.stat
 ]);
 await admin.call("POST", `/api/projects/${otherProjectId}/members`, { userIds: [anneId] });
 check(
-  "put back on the project by the office, the foreman's code stands again",
-  await stands(anneQr),
+  "put back on the project by the office, the foreman's old code stays dead",
+  !(await stands(anneQr)) && (await usesOf(anneQr)).revoked_at !== null,
+  await usesOf(anneQr),
 );
+anneQr = await newCode(anne);
+check("and the foreman shows a new one", await stands(anneQr));
 await admin.call("PATCH", `/api/users/${anneId}`, { role: "travailleur" });
 check("it stops when the foreman becomes a worker", !(await stands(anneQr)));
 await admin.call("PATCH", `/api/users/${anneId}`, { role: "contremaitre" });
+check("and stays dead when she is a foreman again", !(await stands(anneQr)));
+anneQr = await newCode(anne);
 await admin.call("PATCH", `/api/users/${anneId}`, { active: false });
 r = await anon.call("POST", `/api/invites/${anneQr}`, { name: "Revenant" });
 check(
@@ -630,7 +817,18 @@ check(
   !(await stands(anneQr)) && r.status === 410,
   r.json,
 );
-check("the office's own code for that project still stands", await stands(officeQr));
+await admin.call("PATCH", `/api/users/${anneId}`, { active: true });
+r = await anon.call("POST", `/api/invites/${anneQr}`, { name: "Revenant" });
+check(
+  "and stays dead when she is reactivated the same day",
+  !(await stands(anneQr)) && r.status === 410,
+  r.json,
+);
+await admin.call("PATCH", `/api/users/${anneId}`, { active: false });
+check(
+  "the office's own code for that project stands all the while",
+  await stands(await newCode(admin)),
+);
 
 // A QR code has 40 places, however many people scan it at the same moment.
 r = await admin.call("POST", "/api/projects", { name: "Grand chantier (exemple)" });
@@ -638,9 +836,13 @@ const crowdedId = r.json.id;
 r = await admin.call("POST", `/api/projects/${crowdedId}/qr`);
 const crowdToken = r.json.url.split("/j/")[1];
 const crowd = await Promise.all(
-  Array.from({ length: 45 }, (_, i) =>
-    new Client().call("POST", `/api/invites/${crowdToken}`, { name: `Équipe ${i + 1}` }),
-  ),
+  Array.from({ length: 45 }, async (_, i) => {
+    const client = new Client();
+    const answer = await client.call("POST", `/api/invites/${crowdToken}`, {
+      name: `Équipe ${i + 1}`,
+    });
+    return { ...answer, cookie: client.cookie };
+  }),
 );
 r = await admin.call("GET", `/api/projects/${crowdedId}/members`);
 check(
@@ -651,7 +853,33 @@ check(
   { statuses: crowd.map((answer) => answer.status).join(), members: r.json?.length },
 );
 r = await anon.call("GET", `/api/invites/${crowdToken}`);
-check("then the code is an expired link, and the foreman shows a new one", r.status === 410);
+const lateJoin = await anon.call("POST", `/api/invites/${crowdToken}`, { name: "Trop Tard" });
+check(
+  "then the code is an expired link for anyone new, and the foreman shows a new one",
+  r.status === 410 && lateJoin.status === 410,
+  [r.status, lateJoin.status],
+);
+r = await paul.call("GET", `/api/invites/${crowdToken}`);
+const paulJoin = await paul.call("POST", `/api/invites/${crowdToken}`, {});
+const paulProject = await paul.call("GET", `/api/projects/${crowdedId}`);
+check(
+  "also for a worker with an account who is not on the project",
+  r.status === 410 && paulJoin.status === 410 && paulProject.status === 404,
+  [r.status, paulJoin.status, paulProject.status],
+);
+const crowdMember = new Client();
+crowdMember.cookie = crowd.find((answer) => answer.status === 200)!.cookie;
+const full = [];
+for (const client of [admin, crowdMember]) {
+  full.push(await client.call("GET", `/api/invites/${crowdToken}`));
+  full.push(await client.call("POST", `/api/invites/${crowdToken}`, {}));
+}
+check(
+  "the office and the people already on the project still open it with the full code",
+  full.every((answer) => answer.status === 200 && answer.json?.projectId === crowdedId) &&
+    (await usesOf(crowdToken)).uses === 40,
+  full.map((answer) => answer.status).join(),
+);
 
 // Plans.
 if (pdfPath) {

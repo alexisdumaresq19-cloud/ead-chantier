@@ -127,6 +127,21 @@ test("someone else's personal link does not replace the person signed in", async
   await expect(page.getByRole("heading", { name: "Cet appareil est déjà connecté" })).toBeVisible();
   await expect(page.getByText(`Il est connecté sous le nom de ${officeName}`)).toBeVisible();
   await expect(page.getByRole("button", { name: "Entrer" })).toHaveCount(0);
+  // Nobody has a password: the screen says what signing out costs, and
+  // staying signed in is the first thing it offers.
+  await expect(
+    page.getByText(
+      `Pour revenir ensuite sous le nom de ${officeName}, il faudra un nouveau lien du bureau.`,
+    ),
+  ).toBeVisible();
+  const [stay, leave] = await Promise.all(
+    [
+      page.getByRole("link", { name: "Ouvrir l'application" }),
+      page.getByRole("button", { name: "Se déconnecter de cet appareil" }),
+    ].map((control) => control.boundingBox()),
+  );
+  expect(stay!.y).toBeLessThan(leave!.y);
+  expect(stay!.height).toBeGreaterThan(leave!.height);
 
   // The API refuses as well, before the link is used up.
   const refused = await call(device.request, "POST", `/api/invites/${link.split("/i/")[1]}`, {});
@@ -163,22 +178,44 @@ test("a QR code never makes a foreman the manager of another project", async ({ 
   const qr = await post<{ url: string }>(office.request, `/api/projects/${third}/qr`);
   const path = new URL(qr.url).pathname;
 
+  // The screen says so before any button is pressed, and leads back to the app.
   const page = await foreman.newPage();
   await page.goto(path);
   await expect(
     page.getByRole("heading", { name: "Remplacement du ponceau du ruisseau Blanc" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Ajouter le projet" }).click();
   await expect(
-    page.getByRole("alert").filter({
-      hasText: "Le code QR sert aux travailleurs. Demandez au bureau de vous ajouter à ce projet.",
-    }),
+    page.getByText(
+      `Vous êtes connecté sous le nom de ${seed.people.foreman}. Le code QR sert aux travailleurs. Demandez au bureau de vous ajouter à ce projet.`,
+    ),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ajouter le projet" })).toHaveCount(0);
+  // The API refuses whatever the screen shows.
+  const invite = `/api/invites/${path.split("/j/")[1]}`;
+  const refused = await call(foreman.request, "POST", invite, {});
+  expect(refused.status).toBe(403);
+  expect(refused.body.error.message).toBe(
+    "Le code QR sert aux travailleurs. Demandez au bureau de vous ajouter à ce projet.",
+  );
   expect((await call(foreman.request, "GET", `/api/projects/${third}`)).status).toBe(404);
+  await page.getByRole("link", { name: "Ouvrir l'application" }).click();
+  await expect(page.getByRole("heading", { name: "Projets" })).toBeVisible();
+  await expect(page.getByText("Réfection de la rue Principale")).toBeVisible();
+  await expect(page.getByText("Remplacement du ponceau du ruisseau Blanc")).toHaveCount(0);
 
-  // The office opens the same code: let through, and put on no list.
-  const opened = await call(office.request, "POST", `/api/invites/${path.split("/j/")[1]}`, {});
+  // The office opens the same code: let through, and put on no list. Its
+  // screen offers to open the project, with nothing to "add".
+  const opened = await call(office.request, "POST", invite, {});
   expect(opened).toMatchObject({ status: 200, body: { projectId: third } });
+  const desk = await office.newPage();
+  await desk.goto(path);
+  await expect(desk.getByText("Vous avez déjà accès à ce projet.")).toBeVisible();
+  await expect(desk.getByRole("button", { name: "Ajouter le projet" })).toHaveCount(0);
+  await desk.getByRole("link", { name: "Ouvrir le projet" }).click();
+  await expect(desk).toHaveURL(new RegExp(`/projets/${third}$`));
+  await expect(
+    desk.getByRole("heading", { name: "Remplacement du ponceau du ruisseau Blanc" }),
+  ).toBeVisible();
   const members = await call<{ name: string }[]>(
     office.request,
     "GET",
@@ -268,15 +305,33 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
   const qr = await post<{ url: string }>(office.request, `/api/projects/${project.id}/qr`);
   const invite = `/api/invites/${new URL(qr.url).pathname.split("/j/")[1]}`;
 
-  // A code has 40 places; leave three, rather than create 40 accounts here.
-  const [code] = await sql`update invites set uses = max_uses - 3
+  // A code has 40 places; leave four, rather than create 40 accounts here.
+  const [code] = await sql`update invites set uses = max_uses - 4
                            where project_id = ${project.id} and kind = 'project'
                            returning id, max_uses`;
   expect(code.max_uses).toBe(40);
+  const usesLeft = async () => {
+    const [{ left }] = await sql`select max_uses - uses as left from invites where id = ${code.id}`;
+    return left as number;
+  };
 
   // Someone already in takes none of them.
   for (let i = 0; i < 3; i++)
     expect((await call(office.request, "POST", invite, {})).status).toBe(200);
+  // Nor does a name the database would refuse (it used to take a place and create nobody).
+  const stranger = await api.newContext({ baseURL });
+  const unstorable = await call(stranger, "POST", invite, { name: "Jean\u0000Tremblay" });
+  expect(unstorable.status).toBe(400);
+  expect(await usesLeft()).toBe(4);
+
+  // A worker with an account who asks ten times at the same moment takes one place.
+  const worker = await contextAs(browser, "worker");
+  const workerId = (await call(worker.request, "GET", "/api/me")).body.id;
+  const tenTimes = await Promise.all(
+    Array.from({ length: 10 }, () => call(worker.request, "POST", invite, {})),
+  );
+  expect(tenTimes.map((answer) => answer.status)).toEqual(Array(10).fill(200));
+  expect(await usesLeft()).toBe(3);
 
   // Eight people scan at the same moment: three get in.
   const devices = await Promise.all(Array.from({ length: 8 }, () => api.newContext({ baseURL })));
@@ -288,25 +343,40 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
   expect(answers.map((answer) => answer.status).sort()).toEqual([
     200, 200, 200, 410, 410, 410, 410, 410,
   ]);
-  const members = await call<{ unreviewed: boolean }[]>(
+  const members = await call<{ id: string; unreviewed: boolean }[]>(
     office.request,
     "GET",
     `/api/projects/${project.id}/members`,
   );
-  expect(members.body).toHaveLength(3);
-  expect(members.body.every((member) => member.unreviewed)).toBe(true);
-  const [{ uses }] = await sql`select uses from invites where id = ${code.id}`;
-  expect(uses).toBe(40);
-  expect((await call(devices[7], "GET", invite)).status).toBe(410);
+  const scanned = members.body.filter((member) => member.id !== workerId);
+  expect(members.body).toHaveLength(4);
+  expect(scanned.every((member) => member.unreviewed)).toBe(true);
+  expect(await usesLeft()).toBe(0);
+
+  // The full code is an expired link for anyone new. Those already in still
+  // open the project with it: the office, and someone who got in.
+  expect((await call(stranger, "GET", invite)).status).toBe(410);
+  expect((await call(stranger, "POST", invite, { name: "Essai Trop Tard" })).status).toBe(410);
+  const winner = devices[answers.findIndex((answer) => answer.status === 200)];
+  for (const already of [office.request, winner, worker.request]) {
+    const preview = await call(already, "GET", invite);
+    expect(preview).toMatchObject({ status: 200, body: { access: "open", projectId: project.id } });
+    expect(await call(already, "POST", invite, {})).toMatchObject({
+      status: 200,
+      body: { projectId: project.id },
+    });
+  }
+  expect(await usesLeft()).toBe(0);
 
   // Whoever got in by QR code is signed in for seven days, until confirmed.
-  const winner = devices[answers.findIndex((answer) => answer.status === 200)];
   const { cookies } = await winner.storageState();
   const session = cookies.find((cookie) => cookie.name === "ead_session");
   expect(Math.abs((session?.expires ?? 0) - (Date.now() / 1000 + 7 * DAY))).toBeLessThan(120);
 
-  await Promise.all(devices.map((device) => device.dispose()));
-  await office.close();
+  // The seeded worker's project list is left as it was.
+  await call(office.request, "DELETE", `/api/projects/${project.id}/members/${workerId}`);
+  await Promise.all([...devices, stranger].map((device) => device.dispose()));
+  await Promise.all([office.close(), worker.close()]);
   await sql.end();
 });
 
@@ -343,5 +413,50 @@ test("an upload link takes the announced file, once", async ({ browser }) => {
   expect(await send(10)).toBe(200);
   expect((await complete()).status).toBe(200);
   expect(await send(10)).toBe(409);
+  await worker.close();
+});
+
+test("a send that is tried again and again does not lock its sender out", async ({ browser }) => {
+  const run = test.info().project.name;
+  const worker = await contextAs(browser, "worker");
+  // The seeded worker starts with no unfinished upload, and ends so.
+  const sql = postgres(process.env.DATABASE_URL ?? "", { max: 1, prepare: false });
+  const workerId = (await call(worker.request, "GET", "/api/me")).body.id;
+  const forget = () =>
+    sql`delete from uploads where created_by = ${workerId} and status = 'pending'`;
+  await forget();
+  const announce = (filename: string) =>
+    call(worker.request, "POST", "/api/uploads", {
+      projectId: seed.projectId,
+      kind: "photo",
+      filename,
+      contentType: "image/jpeg",
+      size: 3_000_000,
+    });
+  // On a bad connection the app announces the same photo at each try: more
+  // tries than a person may have unfinished uploads, and one upload in all.
+  const tries = [];
+  for (let i = 0; i < 35; i++) tries.push(await announce(`mauvais-signal-${run}.jpg`));
+  expect(tries.map((answer) => answer.status)).toEqual(Array(35).fill(200));
+  expect(new Set(tries.map((answer) => answer.body.uploadId)).size).toBe(1);
+
+  // Different files are counted: 30 unfinished at a time, then a refusal
+  // that says what to do. (One place is taken by the photo above.)
+  const others = await Promise.all(
+    Array.from({ length: 32 }, (_, i) => announce(`autre-${i}-${run}.jpg`)),
+  );
+  const refused = others.filter((answer) => answer.status === 429);
+  expect(others.filter((answer) => answer.status === 200)).toHaveLength(29);
+  expect(refused).toHaveLength(3);
+  expect(refused[0].body.error).toEqual({
+    code: "too_many_uploads",
+    message:
+      "Trop d'envois n'ont pas abouti. Réessayez plus tard\u00a0: ils s'effacent après trois heures.",
+  });
+  // And still the photo that keeps failing can be tried again.
+  expect((await announce(`mauvais-signal-${run}.jpg`)).status).toBe(200);
+
+  await forget();
+  await sql.end();
   await worker.close();
 });

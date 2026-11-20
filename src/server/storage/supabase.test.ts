@@ -79,6 +79,28 @@ describe("supabase stat", () => {
     });
     await expect(storage.stat("private", "u/abc/plan.pdf")).rejects.toThrow(/Stockage \(info\)/);
   });
+
+  // Every sender would be told "the file did not arrive" and nothing would be logged.
+  it("does not mistake a missing bucket for a missing file", async () => {
+    for (const error of [
+      new StorageApiError("Bucket not found", 400, "404"),
+      new StorageApiError("Bucket not found", 404, "NoSuchBucket", "storage", "NoSuchBucket"),
+    ]) {
+      const { storage } = fakeClient({ info: { data: null, error } });
+      await expect(storage.stat("private", "u/abc/plan.pdf")).rejects.toThrow(/Bucket not found/);
+    }
+  });
+
+  // "No type" means "this store keeps none" to completeUpload, which then
+  // skips the comparison: hosted storage must never answer that.
+  it("fails rather than report a file with no recorded type", async () => {
+    for (const data of [{ size: 1234 }, { size: 1234, contentType: "" }]) {
+      const { storage } = fakeClient({ info: { data, error: null } });
+      await expect(storage.stat("private", "u/abc/plan.pdf")).rejects.toThrow(
+        /type de fichier inconnu/,
+      );
+    }
+  });
 });
 
 describe("ensureBuckets", () => {
@@ -185,9 +207,57 @@ describe("ensureBuckets", () => {
     expect(warn).toHaveBeenCalledTimes(2);
   });
 
+  it("recognises the refusal in the older form of the service's errors too", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // HTTP 400, with the service's own code in the answer.
+    const older = new StorageApiError("The object exceeded the maximum allowed size", 400, "413");
+    const { calls, api } = fakeApi((_method, _name, options) => ({
+      error: options.fileSizeLimit === null ? null : older,
+    }));
+    await ensureBuckets(rules, api);
+    expect(calls.at(-1)?.options.fileSizeLimit).toBeNull();
+    expect(warn).toHaveBeenCalledTimes(2);
+  });
+
   it("still fails the deployment on any other error", async () => {
     const down = new StorageApiError("Invalid API key", 401, "401");
     const { api } = fakeApi(() => ({ error: down }));
     await expect(ensureBuckets(rules, api)).rejects.toThrow(/Invalid API key/);
+  });
+
+  // A passing error must not take the limit off a bucket that has it: the
+  // second attempt, without the limit, would have succeeded each time here.
+  it("never drops the size limit because storage was down, slow or refused the key", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    for (const passing of [
+      new StorageApiError("Service Unavailable", 503, "503"),
+      new StorageApiError("Gateway Timeout", 504, "504"),
+      new StorageApiError("Too Many Requests", 429, "429"),
+      new StorageApiError("Invalid JWT", 400, "403"),
+      new StorageApiError(
+        "Internal Server Error",
+        500,
+        "InternalError",
+        "storage",
+        "InternalError",
+      ),
+      // What the library returns when the request never got an answer: no status.
+      Object.assign(new Error("fetch failed"), { name: "StorageUnknownError" }),
+    ]) {
+      let failed = false;
+      // An existing bucket: the first update fails once, anything after would work.
+      const { calls, api } = fakeApi((method) => {
+        if (method === "create") return { error: exists };
+        if (failed) return { error: null };
+        failed = true;
+        return { error: passing };
+      });
+      await expect(ensureBuckets(rules, api), passing.message).rejects.toThrow(passing.message);
+      expect(
+        calls.filter((call) => call.options.fileSizeLimit === null),
+        passing.message,
+      ).toEqual([]);
+    }
+    expect(warn).not.toHaveBeenCalled();
   });
 });

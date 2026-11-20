@@ -22,8 +22,10 @@ export type StoredFile = {
   size: number;
   /**
    * The type storage recorded when the file arrived (the sender's
-   * content-type header). Null when the store keeps none: the development
-   * folder, whose file route refuses any other type than the announced one.
+   * content-type header). Null only for a store that keeps none: the
+   * development folder, whose file route refuses any other type than the
+   * announced one. Hosted storage always has one, and its driver fails
+   * rather than answer null: null skips the comparison in completeUpload.
    */
   contentType: string | null;
 };
@@ -54,10 +56,14 @@ export interface Storage {
   /**
    * A link a browser sends one file to, for two hours. It writes once: it
    * cannot replace a file that is already there, so a file that has been
-   * checked (completeUpload) stays the file that was checked. The link itself
-   * does not hold the sender to the announced type and size, except in the
-   * development folder; hosted storage only applies the bucket's own limits,
-   * which is why completeUpload compares what arrived with what was announced.
+   * checked (completeUpload) stays the file that was checked, for as long as
+   * it is there. Once that file is deleted the link writes again, until it
+   * expires: an upload's file is therefore deleted only by uploads.ts
+   * (discardUpload for a module), which keeps count of what the link may
+   * still store. The link itself does not hold the sender to the announced
+   * type and size, except in the development folder; hosted storage only
+   * applies the bucket's own limits, which is why completeUpload compares
+   * what arrived with what was announced.
    */
   uploadTarget(
     bucket: Bucket,

@@ -28,6 +28,14 @@ const DAY = 86_400_000;
 export type SessionUser = typeof schema.users.$inferSelect & { sessionId: string };
 
 /**
+ * The database, or a transaction of it. What signs someone in is done in
+ * several steps (a link is used, an account is made, a session is opened):
+ * a route runs them in one transaction, so a failure half way leaves nothing
+ * behind, and passes the transaction to the functions below.
+ */
+export type Executor = Pick<typeof db, "select" | "insert" | "update" | "delete">;
+
+/**
  * What a request does to the session it came with, or null for nothing.
  * A visit is noted at most every six hours. It also pushes the session's end
  * back to the full length, except for someone who came in by QR code and has
@@ -88,27 +96,42 @@ export async function requireAdmin(request: NextRequest): Promise<SessionUser> {
 }
 
 /**
- * Opens a session for this device and puts its cookie on the response. It
+ * Opens a session for this device and returns what its cookie must hold. It
  * lasts `days` from now; each visit then renews it, unless the person is
- * still unreviewed (see sessionRenewal).
+ * still unreviewed (see sessionRenewal). Inside a transaction, give the
+ * cookie (setSessionCookie) only once the transaction is committed.
  */
-export async function startSession(
+export async function openSession(
   userId: string,
   request: NextRequest,
-  response: NextResponse,
   days: number = SESSION_DAYS,
-) {
+  executor: Executor = db,
+): Promise<{ token: string; expiresAt: Date }> {
   const token = newToken();
   const expiresAt = new Date(Date.now() + days * DAY);
-  await db.insert(schema.sessions).values({
+  await executor.insert(schema.sessions).values({
     id: newId(),
     userId,
     tokenHash: hashToken(token),
     label: deviceLabel(request.headers.get("user-agent") ?? ""),
     expiresAt,
   });
-  await db.update(schema.users).set({ lastSeenAt: new Date() }).where(eq(schema.users.id, userId));
-  setSessionCookie(response, token, expiresAt);
+  await executor
+    .update(schema.users)
+    .set({ lastSeenAt: new Date() })
+    .where(eq(schema.users.id, userId));
+  return { token, expiresAt };
+}
+
+/** Opens a session for this device (openSession) and puts its cookie on the response. */
+export async function startSession(
+  userId: string,
+  request: NextRequest,
+  response: NextResponse,
+  days: number = SESSION_DAYS,
+) {
+  const session = await openSession(userId, request, days);
+  setSessionCookie(response, session.token, session.expiresAt);
 }
 
 export function setSessionCookie(response: NextResponse, token: string, expires: Date) {
@@ -121,8 +144,12 @@ export function setSessionCookie(response: NextResponse, token: string, expires:
   });
 }
 
-export async function endSession(sessionId: string, response?: NextResponse) {
-  await db.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
+export async function endSession(
+  sessionId: string,
+  response?: NextResponse,
+  executor: Executor = db,
+) {
+  await executor.delete(schema.sessions).where(eq(schema.sessions.id, sessionId));
   response?.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
 }
 
@@ -196,8 +223,9 @@ export async function createPersonalInvite(userId: string, createdBy: string): P
 
 /**
  * A site's QR code: for a day, a worker who scans it joins that project, up
- * to PROJECT_INVITE_MAX_USES people. It stops working as soon as its author
- * may no longer manage the project (see findInvite).
+ * to PROJECT_INVITE_MAX_USES people. It stops working, for good, as soon as
+ * it is tried while its author may no longer manage the project or while the
+ * project is archived (see findInvite).
  */
 export async function createProjectInvite(
   projectId: string,
@@ -234,6 +262,10 @@ export type Invite = typeof schema.invites.$inferSelect;
  * The invitation behind a token, if it can still be used. Both the preview
  * and the acceptance go through here, so what is refused here is refused as
  * an expired link everywhere.
+ *
+ * A site's code that has no place left is still returned: it admits nobody
+ * new (consumeInvite refuses, and the preview says so with inviteIsFull), but
+ * it goes on opening the project for those who already have access to it.
  */
 export async function findInvite(token: string): Promise<Invite | null> {
   const [invite] = await db
@@ -242,9 +274,22 @@ export async function findInvite(token: string): Promise<Invite | null> {
     .where(eq(schema.invites.tokenHash, hashToken(token)))
     .limit(1);
   if (!invite || invite.revokedAt || invite.expiresAt < new Date()) return null;
-  if (invite.maxUses !== null && invite.uses >= invite.maxUses) return null;
-  if (invite.kind === "project" && !(await projectInviteStands(invite))) return null;
-  return invite;
+  if (invite.kind === "personal") return inviteIsFull(invite) ? null : invite;
+  if (await projectInviteStands(invite)) return invite;
+  // Seen while it does not stand, the code is ended for good: it stays dead
+  // if its author gets their rights back or the project is reopened the same
+  // day. (A code nobody tried in between is not seen here: the routes that
+  // take those rights away should also revoke it.)
+  await db
+    .update(schema.invites)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(schema.invites.id, invite.id), isNull(schema.invites.revokedAt)));
+  return null;
+}
+
+/** Whether every use of the invitation has been taken. */
+export function inviteIsFull(invite: Pick<Invite, "uses" | "maxUses">): boolean {
+  return invite.maxUses !== null && invite.uses >= invite.maxUses;
 }
 
 /**
@@ -252,8 +297,8 @@ export async function findInvite(token: string): Promise<Invite | null> {
  * they were when it was made: it stands only while the author still exists,
  * is active and may manage that project (the office, or a foreman who is
  * still a member). So taking a foreman off a project, deactivating them or
- * making them a worker ends their codes at once, with nothing to revoke. And
- * an archived project admits nobody, whoever made the code.
+ * making them a worker ends their codes as soon as someone tries one. And an
+ * archived project admits nobody, whoever made the code.
  */
 async function projectInviteStands(invite: Invite): Promise<boolean> {
   if (!invite.projectId || !invite.createdBy) return false;
@@ -283,10 +328,11 @@ async function projectInviteStands(invite: Invite): Promise<boolean> {
  * Takes one use of the invitation; false if none is left. One statement
  * checks and counts, so simultaneous requests can never take more uses than
  * the invitation has, nor use it after it has expired or been replaced. Call
- * it before giving what the invitation gives.
+ * it before giving what the invitation gives, in the same transaction
+ * (`executor`): if what follows fails, the use is given back.
  */
-export async function consumeInvite(invite: Invite): Promise<boolean> {
-  const used = await db
+export async function consumeInvite(invite: Invite, executor: Executor = db): Promise<boolean> {
+  const used = await executor
     .update(schema.invites)
     .set({ uses: raw`${schema.invites.uses} + 1` })
     .where(

@@ -2,7 +2,7 @@ import { sql as raw } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { isSetupCode, startSession } from "@/server/auth";
+import { isSetupCode, openSession, setSessionCookie } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { body, forbidden, route } from "@/server/http";
 import { newId } from "@/server/ids";
@@ -32,17 +32,18 @@ export const POST = route(async (request) => {
   // One account, even if two people send the right code at the same moment:
   // the lock makes them take turns, and the second finds the first's account.
   // (A lock held for the transaction only: the hosted database is reached
-  // through a transaction pooler.)
+  // through a transaction pooler.) The account and its session are written
+  // together: setup never ends closed with nobody signed in.
   const id = newId();
-  const created = await db.transaction(async (tx) => {
+  const session = await db.transaction(async (tx) => {
     await tx.execute(raw`select pg_advisory_xact_lock(hashtext('ead:setup'))`);
     const [any] = await tx.select({ id: schema.users.id }).from(schema.users).limit(1);
-    if (any) return false;
+    if (any) return null;
     await tx.insert(schema.users).values({ id, name: input.name, role: "admin" });
-    return true;
+    return openSession(id, request, undefined, tx);
   });
-  if (!created) throw alreadyDone();
+  if (!session) throw alreadyDone();
   const response = NextResponse.json({ ok: true });
-  await startSession(id, request, response);
+  setSessionCookie(response, session.token, session.expiresAt);
   return response;
 });

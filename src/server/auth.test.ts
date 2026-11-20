@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { isSetupCode, SESSION_DAYS, sessionRenewal, UNREVIEWED_SESSION_DAYS } from "./auth";
+import {
+  inviteIsFull,
+  isSetupCode,
+  SESSION_DAYS,
+  sessionRenewal,
+  UNREVIEWED_SESSION_DAYS,
+} from "./auth";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -45,11 +51,29 @@ describe("sessionRenewal", () => {
 });
 
 describe("isSetupCode", () => {
-  // Development default: "dev" (see env.ts).
+  afterEach(() => vi.unstubAllEnvs());
+
+  // Set here: the shell that runs the tests may export a SETUP_CODE of its own.
   it("accepts the configured code and nothing else", () => {
+    vi.stubEnv("SETUP_CODE", "le-code-de-cet-essai");
+    expect(isSetupCode("le-code-de-cet-essai")).toBe(true);
+    expect(isSetupCode("le-code-de-cet-essa")).toBe(false);
+    expect(isSetupCode("le-code-de-cet-essai ")).toBe(false);
+    expect(isSetupCode("dev")).toBe(false);
+    expect(isSetupCode("")).toBe(false);
+  });
+
+  it('is "dev" in development when none is set', () => {
+    vi.stubEnv("SETUP_CODE", undefined);
     expect(isSetupCode("dev")).toBe(true);
     expect(isSetupCode("de")).toBe(false);
-    expect(isSetupCode("dev ")).toBe(false);
-    expect(isSetupCode("")).toBe(false);
+  });
+});
+
+describe("inviteIsFull", () => {
+  it("says when every place of a code has been taken", () => {
+    expect(inviteIsFull({ uses: 39, maxUses: 40 })).toBe(false);
+    expect(inviteIsFull({ uses: 40, maxUses: 40 })).toBe(true);
+    expect(inviteIsFull({ uses: 1000, maxUses: null })).toBe(false);
   });
 });

@@ -25,13 +25,19 @@ function fail(action: string, error: { message: string }): never {
 // crossed a bundle boundary is not an `instanceof` the class imported here.
 type ServiceError = { message: string; status?: number; statusCode?: string; code?: string };
 
-/** Storage's way of saying there is no such file, in its older and newer forms. */
+/**
+ * Storage's way of saying there is no such file, in its older and newer
+ * forms. A bucket that does not exist is another matter: every upload would
+ * be told its file "did not arrive" when it is the installation that is
+ * wrong, so that one stays an error.
+ */
 function isMissing(error: ServiceError): boolean {
+  if (error.code === "NoSuchBucket" || /bucket/i.test(error.message)) return false;
   return (
     error.code === "NoSuchKey" ||
     error.status === 404 ||
     error.statusCode === "404" ||
-    /not found/i.test(error.message)
+    /object not found/i.test(error.message)
   );
 }
 
@@ -40,6 +46,20 @@ type BucketOptions = { public: boolean; fileSizeLimit: number | null; allowedMim
 
 const alreadyExists = (error: ServiceError) =>
   /already exists/i.test(error.message) || error.status === 409 || error.statusCode === "409";
+
+/**
+ * Whether the service looked at the request and would not take it as it is
+ * (400, 413 or 422, in the HTTP status or in the answer's own code), as it
+ * does for a size limit above the project's. A timeout, an outage (5xx), a
+ * refused key (401, 403) or "slow down" (429) say nothing about the request.
+ */
+function refusedTheRequest(error: ServiceError): boolean {
+  const codes = [error.status, Number(error.statusCode)];
+  const asked = (code: number | undefined) => code === 400 || code === 413 || code === 422;
+  const elsewhere = (code: number | undefined) =>
+    code !== undefined && (code >= 500 || code === 401 || code === 403 || code === 429);
+  return codes.some(asked) && !codes.some(elsewhere);
+}
 
 /** Creates the bucket with these settings, or gives them to the one that exists. */
 async function applyBucket(api: BucketApi, name: string, options: BucketOptions) {
@@ -58,19 +78,26 @@ async function applyBucket(api: BucketApi, name: string, options: BucketOptions)
  * A bucket's size limit may not exceed the Supabase project's own ("global")
  * limit, and the service refuses it when it does. The deployment then goes on
  * without the bucket limit, with a warning: the global limit still applies.
+ * Only a refusal of the request leads there. Any other failure (storage down
+ * or slow, a wrong key) stops the deployment: dropping the limit because of
+ * a passing error would take it off a bucket that had it, and that limit is
+ * the only bound on what an upload link accepts.
  */
 export async function ensureBuckets(rules: BucketRules, api: BucketApi = supabase().storage) {
   for (const bucket of ["public", "private"] as const) {
     const name = BUCKETS[bucket];
     const { fileSizeLimit, allowedMimeTypes } = rules[bucket];
     const options = { public: bucket === "public", fileSizeLimit, allowedMimeTypes };
-    const refused = await applyBucket(api, name, options);
+    const refused: ServiceError | null = await applyBucket(api, name, options);
     if (!refused) continue;
+    if (!refusedTheRequest(refused)) fail(`bucket ${name}`, refused);
+    // If the limit was not the reason, this is refused as well.
     const unlimited = await applyBucket(api, name, { ...options, fileSizeLimit: null });
     if (unlimited) fail(`bucket ${name}`, refused);
     const megabytes = Math.round(fileSizeLimit / (1024 * 1024));
+    const said = [refused.message, refused.status, refused.statusCode].filter(Boolean).join(", ");
     console.warn(
-      `ATTENTION : le stockage a refusé la limite de ${megabytes} Mo par fichier pour le compartiment « ${name} » (${refused.message}). ` +
+      `ATTENTION : le stockage a refusé la limite de ${megabytes} Mo par fichier pour le compartiment « ${name} » (${said}). ` +
         "Le compartiment est prêt sans cette limite : seule la limite globale du projet Supabase s'applique. " +
         `Si elle est plus basse que ${megabytes} Mo, les fichiers plus gros seront refusés à l'envoi : augmentez-la dans les réglages de stockage du projet Supabase, puis redéployez.`,
     );
@@ -108,8 +135,11 @@ export function supabaseStorage(using?: Pick<SupabaseClient, "storage">): Storag
       if (isMissing(error)) return null;
       fail("info", error);
     }
+    // Without a size or a type there is nothing to compare with what was
+    // announced: an error, never "no type kept" (which would pass the check).
     if (typeof data.size !== "number") fail("info", { message: "taille inconnue" });
-    return { size: data.size, contentType: data.contentType ?? null };
+    if (!data.contentType) fail("info", { message: "type de fichier inconnu" });
+    return { size: data.size, contentType: data.contentType };
   }
 
   return {

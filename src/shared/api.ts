@@ -73,6 +73,16 @@ export type InvitePreview =
       projectName: string;
       projectNumber: string | null;
       signedInAs: string | null;
+      /**
+       * What the code does for whoever is looking at it. "join": it puts them
+       * on the project (someone new gives their name first). "open": they
+       * already have access (a member, the office), so the project just
+       * opens. "refused": a foreman who is not on the project; only the
+       * office adds a foreman.
+       */
+      access: "join" | "open" | "refused";
+      /** The project to open, when `access` is "open". */
+      projectId: string | null;
     };
 
 export type InviteLink = { url: string; expiresAt: string };
