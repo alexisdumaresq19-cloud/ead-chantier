@@ -1,13 +1,23 @@
 import { and, eq } from "drizzle-orm";
 
+import { settleSiteCodes } from "@/app/api/users/_lib/people";
+import { projectFor } from "@/server/access";
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { route } from "@/server/http";
 
+/** The office takes someone off the project. Their account stays. */
 export const DELETE = route<{ id: string; userId: string }>(async (request, { id, userId }) => {
-  await requireAdmin(request);
-  await db
-    .delete(schema.projectMembers)
-    .where(and(eq(schema.projectMembers.projectId, id), eq(schema.projectMembers.userId, userId)));
+  const admin = await requireAdmin(request);
+  await projectFor(admin, id);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(schema.projectMembers)
+      .where(
+        and(eq(schema.projectMembers.projectId, id), eq(schema.projectMembers.userId, userId)),
+      );
+    // A foreman taken off the project no longer invites people to it.
+    await settleSiteCodes(tx, userId);
+  });
   return { ok: true };
 });

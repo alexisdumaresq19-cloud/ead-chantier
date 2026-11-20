@@ -1,4 +1,4 @@
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { projectFor } from "@/server/access";
@@ -6,11 +6,14 @@ import { requireAdmin, requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { body, route } from "@/server/http";
 import type { Member } from "@/shared/api";
+import { canManageProject } from "@/shared/roles";
 
 /** The people on the project, as every member sees them (a contact list). */
 export const GET = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
   await projectFor(user, id);
+  // Who the office has yet to check is for those who manage the project.
+  const manages = canManageProject(user.role);
   const rows = await db
     .select({ user: schema.users })
     .from(schema.projectMembers)
@@ -25,7 +28,7 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
       role: u.role,
       title: u.title,
       phone: u.phone,
-      unreviewed: u.unreviewed,
+      unreviewed: manages && u.unreviewed,
     }));
 });
 
@@ -35,12 +38,13 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   await projectFor(admin, id);
   const { userIds } = await body(
     request,
-    z.object({ userIds: z.array(z.string()).min(1).max(200) }),
+    z.object({ userIds: z.array(z.string().max(40)).min(1).max(500) }),
   );
+  // Deactivated people stay off the lists until the office reactivates them.
   const known = await db
     .select({ id: schema.users.id })
     .from(schema.users)
-    .where(inArray(schema.users.id, userIds));
+    .where(and(inArray(schema.users.id, userIds), eq(schema.users.active, true)));
   if (known.length) {
     await db
       .insert(schema.projectMembers)

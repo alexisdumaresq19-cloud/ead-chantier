@@ -1,78 +1,93 @@
-import { and, eq, inArray, ne, notInArray } from "drizzle-orm";
-import { z } from "zod";
+import { and, eq, inArray } from "drizzle-orm";
 
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { badRequest, body, notFound, route } from "@/server/http";
-import { ROLES } from "@/shared/roles";
+import { badRequest, body, forbidden, notFound, route } from "@/server/http";
 
-const patch = z
-  .object({
-    name: z.string().trim().min(2).max(80),
-    role: z.enum(ROLES),
-    title: z.string().trim().max(80).nullable(),
-    phone: z.string().trim().max(30).nullable(),
-    email: z.string().trim().max(120).nullable(),
-    active: z.boolean(),
-    unreviewed: z.boolean(),
-    projectIds: z.array(z.string()).max(200),
-  })
-  .partial();
+import { revokePersonalLinks, settleSiteCodes } from "../_lib/people";
+import { officeLockout, personChange, personProblem } from "../_lib/rules";
 
+/** The office changes someone's details, role, state or projects. */
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   const admin = await requireAdmin(request);
-  const { projectIds, ...fields } = await body(request, patch);
-  const [user] = await db.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
-  if (!user) throw notFound("Personne introuvable.");
+  const { projectIds, ...fields } = await body(request, personChange);
+  const problem = personProblem(fields);
+  if (problem) throw badRequest(problem);
+  const changesAccess = fields.role !== undefined || fields.active !== undefined;
 
-  // The office must always keep at least one working administrator.
-  const losesAdmin =
-    user.role === "admin" && ((fields.role && fields.role !== "admin") || fields.active === false);
-  if (losesAdmin) {
-    if (id === admin.id)
-      throw badRequest("Vous ne pouvez pas retirer votre propre accès au bureau.");
-    const others = await db
-      .select({ id: schema.users.id })
-      .from(schema.users)
-      .where(
-        and(eq(schema.users.role, "admin"), eq(schema.users.active, true), ne(schema.users.id, id)),
-      )
-      .limit(1);
-    if (!others.length) throw badRequest("Il doit rester au moins une personne du bureau.");
-  }
-
-  const clean = Object.fromEntries(
-    Object.entries(fields).map(([k, v]) => [k, v === "" ? null : v]),
-  );
-  if (Object.keys(clean).length)
-    await db.update(schema.users).set(clean).where(eq(schema.users.id, id));
-  // Someone deactivated is signed out everywhere at once.
-  if (fields.active === false)
-    await db.delete(schema.sessions).where(eq(schema.sessions.userId, id));
-
-  if (projectIds) {
-    const valid = projectIds.length
-      ? (
-          await db
-            .select({ id: schema.projects.id })
-            .from(schema.projects)
-            .where(inArray(schema.projects.id, projectIds))
-        ).map((p) => p.id)
-      : [];
-    await db
-      .delete(schema.projectMembers)
-      .where(
-        and(
-          eq(schema.projectMembers.userId, id),
-          valid.length ? notInArray(schema.projectMembers.projectId, valid) : undefined,
-        ),
-      );
-    if (valid.length) {
-      await db
-        .insert(schema.projectMembers)
-        .values(valid.map((projectId) => ({ projectId, userId: id })))
-        .onConflictDoNothing();
+  await db.transaction(async (tx) => {
+    // The office's accounts are locked while a role or a state changes: two
+    // people of the office demoting each other at the same moment must not
+    // both succeed and leave nobody in charge.
+    const office = changesAccess
+      ? await tx
+          .select({ id: schema.users.id })
+          .from(schema.users)
+          .where(and(eq(schema.users.role, "admin"), eq(schema.users.active, true)))
+          .for("update")
+      : null;
+    const [user] = await tx.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
+    if (!user) throw notFound("Personne introuvable.");
+    if (office) {
+      if (!office.some((account) => account.id === admin.id)) throw forbidden("Réservé au bureau.");
+      const refusal = officeLockout({
+        target: user,
+        change: fields,
+        actorId: admin.id,
+        otherActiveAdmins: office.filter((account) => account.id !== id).length,
+      });
+      if (refusal) throw badRequest(refusal);
     }
-  }
+
+    const clean = Object.fromEntries(
+      Object.entries(fields).map(([key, value]) => [key, value === "" ? null : value]),
+    );
+    if (Object.keys(clean).length)
+      await tx.update(schema.users).set(clean).where(eq(schema.users.id, id));
+
+    if (fields.active === false) {
+      // Someone deactivated is out at once: every device is signed out, and a
+      // link not opened yet will not let them back in after a reactivation.
+      await tx.delete(schema.sessions).where(eq(schema.sessions.userId, id));
+      await revokePersonalLinks(tx, id);
+    }
+
+    if (projectIds) {
+      const current = (
+        await tx
+          .select({ projectId: schema.projectMembers.projectId })
+          .from(schema.projectMembers)
+          .where(eq(schema.projectMembers.userId, id))
+      ).map((member) => member.projectId);
+      const wanted = projectIds.length
+        ? (
+            await tx
+              .select({ id: schema.projects.id })
+              .from(schema.projects)
+              .where(inArray(schema.projects.id, projectIds))
+          ).map((project) => project.id)
+        : [];
+      const removed = current.filter((projectId) => !wanted.includes(projectId));
+      const added = wanted.filter((projectId) => !current.includes(projectId));
+      if (removed.length) {
+        await tx
+          .delete(schema.projectMembers)
+          .where(
+            and(
+              eq(schema.projectMembers.userId, id),
+              inArray(schema.projectMembers.projectId, removed),
+            ),
+          );
+      }
+      if (added.length) {
+        await tx
+          .insert(schema.projectMembers)
+          .values(added.map((projectId) => ({ projectId, userId: id })))
+          .onConflictDoNothing();
+      }
+    }
+
+    if (changesAccess || projectIds) await settleSiteCodes(tx, id);
+  });
   return { ok: true };
 });

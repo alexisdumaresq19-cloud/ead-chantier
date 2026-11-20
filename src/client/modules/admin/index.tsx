@@ -1,16 +1,7 @@
-import { Page } from "../../shell/page";
+// People, invitations, projects and the account screen: what the office and
+// the foremen manage. One file per screen.
 
-const soon = (title: string) =>
-  function Screen() {
-    return (
-      <Page title={title}>
-        <p className="text-dim">À venir.</p>
-      </Page>
-    );
-  };
-
-export const NewProjectScreen = soon("Nouveau projet");
-export const ProjectSettingsScreen = soon("Réglages du projet");
-export const ProjectTeamScreen = soon("Équipe du projet");
-export const TeamScreen = soon("Équipe");
-export const AccountScreen = soon("Mon compte");
+export { AccountScreen } from "./account";
+export { NewProjectScreen, ProjectSettingsScreen } from "./project-form";
+export { ProjectTeamScreen } from "./project-team";
+export { TeamScreen } from "./team";
