@@ -4,7 +4,8 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   poweredByHeader: false,
   // Native and WebAssembly packages are loaded from node_modules at run time.
-  serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres", "pdfkit"],
+  // fontkit is pdfkit's own engine, asked directly which characters a typeface has.
+  serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres", "pdfkit", "fontkit"],
   outputFileTracingIncludes: {
     "/api/**": [
       "./node_modules/@hyzyla/pdfium/dist/**",

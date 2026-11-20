@@ -58,20 +58,14 @@ export const weatherLabel = ({ condition, temperatureC }: Weather) =>
     .join(", ");
 
 export const countLabel = (count: number, singular: string, plural = `${singular}s`) =>
-  `${count.toLocaleString(LOCALE)} ${count > 1 ? plural : singular}`;
+  `${count.toLocaleString(LOCALE)}${NBSP}${count > 1 ? plural : singular}`;
 
-/**
- * A text as the page can draw it: line ends and plain spaces only (a tab or
- * a narrow space the typefaces do not have would show as an empty box).
- */
-export const printable = (text: string) =>
-  text
-    .replace(/\r\n?/g, "\n")
-    // A narrow no-break space (numbers in French) stays unbreakable.
-    .replace(/\u202f/g, NBSP)
-    .replace(/[\t\u2000-\u200a\u205f\u3000]/g, " ")
-    // Control and invisible characters, except the line end.
-    .replace(
-      /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g,
-      "",
-    );
+/** "Rue Principale, Gaspé": the address, then the city when the address does not already say it. */
+export function placeLabel(address: string | null, city: string | null): string {
+  const street = address?.trim() ?? "";
+  const town = city?.trim() ?? "";
+  if (!street) return town;
+  if (!town || street.toLocaleLowerCase(LOCALE).includes(town.toLocaleLowerCase(LOCALE)))
+    return street;
+  return `${street}, ${town}`;
+}
