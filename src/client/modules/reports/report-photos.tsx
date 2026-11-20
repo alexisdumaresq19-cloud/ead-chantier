@@ -12,7 +12,7 @@ import { describePhotos } from "../photos/describe";
 import { localPreviewUrl } from "../photos/outbox";
 import { LocalImage, localLabel, LocalMark, tileClass, useSendAgain } from "../photos/tiles";
 import { Button, FormError, Sheet, Textarea, toast } from "../../ui";
-import type { ReportPhoto } from "./photos";
+import { shortCaption, type ReportPhoto } from "./photos";
 import { Notice } from "./status";
 
 // A report's photos as its screens show them: numbered in the order they
@@ -73,14 +73,20 @@ export function ReportPhotoGrid({
               {index + 1}
             </span>
           </button>
+          {/* Whole in the saved report, as in its PDF; shortened between two
+              words in the form, where the window shows it whole. */}
           <p
             className={cn(
-              "mt-1 line-clamp-2 text-[13px] leading-snug wrap-anywhere",
+              "mt-1 text-[13px] leading-snug break-words",
               !photo.caption && "text-dim italic",
-              large && "sm:text-sm print:line-clamp-none",
+              large && "sm:text-sm",
             )}
           >
-            {photo.caption ?? "Sans description"}
+            {photo.caption
+              ? large
+                ? photo.caption
+                : shortCaption(photo.caption)
+              : "Sans description"}
           </p>
         </li>
       ))}

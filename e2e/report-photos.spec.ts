@@ -221,6 +221,7 @@ test("the day's photos are chosen several at once, and a clash leaves them in th
   await page.getByRole("button", { name: /Photos du jour/ }).click();
   const chooser = page.getByRole("dialog", { name: "Photos du jour" });
   await expect(chooser.locator("button[aria-pressed=false]")).toHaveCount(3);
+  await expect(chooser.getByText("Aucune photo choisie")).toBeVisible();
   await page.waitForTimeout(450);
   await chooser.getByRole("button", { name: "Livraison EXEMPLE" }).click();
   await chooser.getByRole("button", { name: "Regard R-2" }).click();
@@ -382,8 +383,12 @@ test("the PDF is the saved report's main action: made, then opened, kept or shar
     await foreman.setOffline(true);
     await button.click();
     await expect(sheet).toContainText("il demande le réseau");
-    await page.keyboard.press("Escape");
+    // The network back, the PDF is made without another tap.
+    const again = page.waitForResponse((response) => new URL(response.url()).pathname === pdfPath);
     await foreman.setOffline(false);
+    expect((await again).status()).toBe(200);
+    await expect(sheet.getByRole("link", { name: "Ouvrir" })).toBeVisible();
+    await page.keyboard.press("Escape");
   }
 
   // An archived project: a foreman still gets the PDF, and nothing to change.
@@ -401,4 +406,115 @@ test("the PDF is the saved report's main action: made, then opened, kept or shar
 
   await project.leave();
   await Promise.all([office.close(), foreman.close(), device.close()]);
+});
+
+test("a saved report's photos show in its form without asking the network for them", async ({
+  browser,
+}) => {
+  const office = await contextAs(browser, "admin");
+  const foreman = await contextAs(browser, "foreman");
+  const project = await projectWith(office, foreman, "formulaire hors ligne");
+  const first = await addPhoto(foreman, project.id, "Puisard EXEMPLE");
+  const second = await addPhoto(foreman, project.id, "Clôture EXEMPLE");
+  const { report } = await post<{ report: Report }>(
+    foreman.request,
+    `/api/projects/${project.id}/reports`,
+    reportOf(siteDay(), [first.id, second.id]),
+  );
+
+  // The photos came with the report: none is asked for again, so a bad
+  // signal does not empty the form.
+  const asked: string[] = [];
+  await foreman.route(/\/api\/photos\//, (route) => {
+    asked.push(route.request().url());
+    return route.abort("internetdisconnected");
+  });
+  const page = await foreman.newPage();
+  await page.goto(`/projets/${project.id}/rapports/${report.id}/modifier`);
+  await expect(tile(page, 1, "Puisard EXEMPLE")).toBeVisible();
+  await expect(tile(page, 2, "Clôture EXEMPLE")).toBeVisible();
+  expect(asked).toEqual([]);
+  await foreman.unroute(/\/api\/photos\//);
+
+  // Saved while a photo cannot leave the phone yet: said in a few words.
+  await foreman.route(/\/api\/uploads/, (route) => route.abort("internetdisconnected"));
+  await takePhoto(page);
+  await answer(page, "Photo ajoutée", "Terminé");
+  await expect(tile(page, 3)).toBeVisible();
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page).toHaveURL(new RegExp(`/rapports/${report.id}$`));
+  await expect(
+    page.getByText("1 photo part encore de ce téléphone. Elle sera dans le PDF dès son arrivée."),
+  ).toBeVisible();
+  expect((await reportNamed(foreman, report.id)).photoIds).toHaveLength(3);
+  await foreman.unroute(/\/api\/uploads/);
+
+  await project.leave();
+  await Promise.all([office.close(), foreman.close()]);
+});
+
+test("the photo that fills a report to forty still opens its window, and the limit is told right", async ({
+  browser,
+}) => {
+  test.setTimeout(180_000);
+  const office = await contextAs(browser, "admin");
+  const foreman = await contextAs(browser, "foreman");
+  const project = await projectWith(office, foreman, "quarante");
+  // Sent by the office, whose allowance takes a day's worth at once.
+  const ids: string[] = [];
+  for (let n = 0; n < 39; n++) ids.push((await addPhoto(office, project.id)).id);
+  const { report } = await post<{ report: Report }>(
+    foreman.request,
+    `/api/projects/${project.id}/reports`,
+    reportOf(siteDay(), ids),
+  );
+  const saves: string[] = [];
+  const page = await foreman.newPage();
+  page.on("request", (request) => {
+    if (request.method() !== "GET" && request.url().includes(`/api/reports/${report.id}`))
+      saves.push(request.method());
+  });
+  await page.goto(`/projets/${project.id}/rapports/${report.id}/modifier`);
+  await expect(tile(page, 39)).toBeVisible();
+
+  // The 40th: its window opens, and "Enter" in its description finishes it
+  // without saving the report.
+  await takePhoto(page);
+  const added = page.getByRole("dialog", { name: "Photo ajoutée" });
+  await added.getByLabel("Description").fill("Quarantième EXEMPLE");
+  await added.getByLabel("Description").press("Enter");
+  await expect(added).toHaveCount(0);
+  await expect(tile(page, 40, "Quarantième EXEMPLE")).toBeVisible();
+  expect(saves).toEqual([]);
+  await expect(page.getByText(/Le rapport a 40 photos, le maximum\./)).toBeVisible();
+  const addLabel = phone() ? "Choisir dans le téléphone" : "Ajouter des photos";
+  await expect(page.getByLabel(addLabel, { exact: true })).toBeHidden();
+  if (phone())
+    await expect(
+      page.getByLabel("Prendre une photo pour le rapport", { exact: true }),
+    ).toBeHidden();
+
+  // One out, two in: the window of both, and the one left out is told.
+  await tile(page, 1).click();
+  await answer(page, "Photo 1", "Retirer du rapport");
+  await expect(tile(page, 40)).toHaveCount(0);
+  await page.getByLabel(addLabel, { exact: true }).setInputFiles([
+    { name: "IMG_0041.jpg", mimeType: "image/jpeg", buffer: await jpeg() },
+    { name: "IMG_0042.jpg", mimeType: "image/jpeg", buffer: await jpeg() },
+  ]);
+  await answer(page, "2 photos ajoutées", "Terminé");
+  const leftOut = page.getByText(/^1 photo n'a pas été ajoutée au rapport/);
+  await expect(leftOut).toBeVisible();
+
+  // The draft wiped: back to the 39 saved, and the notice goes with it.
+  await page.getByRole("button", { name: "Effacer" }).first().click();
+  await answer(page, "Effacer le brouillon?", "Effacer");
+  await expect(tile(page, 39)).toBeVisible();
+  await expect(tile(page, 40)).toHaveCount(0);
+  await expect(leftOut).toHaveCount(0);
+  await expect(page.getByLabel(addLabel, { exact: true })).toBeAttached();
+  expect(saves).toEqual([]);
+
+  await project.leave();
+  await Promise.all([office.close(), foreman.close()]);
 });

@@ -20,7 +20,13 @@ import { TakePhotoButton } from "../photos/take";
 import { useTouchDevice } from "../photos/tiles";
 import { Button, Sheet } from "../../ui";
 import { useDayPhotos } from "./data";
-import { leftOutText, photosToOffer, stillOnDevice, useReportPhotos } from "./photos";
+import {
+  leftOutText,
+  photosToOffer,
+  shortCaption,
+  stillOnDevice,
+  type ReportPhoto,
+} from "./photos";
 import { ReportPhotoGrid, ReportPhotoSheet } from "./report-photos";
 import { Notice } from "./status";
 
@@ -45,6 +51,7 @@ export function PhotoPart({
   projectId,
   day,
   photoIds,
+  photos,
   leftOut,
   onAdd,
   onRemove,
@@ -53,6 +60,8 @@ export function PhotoPart({
   /** The report's day: its photos in the project are offered. */
   day: string;
   photoIds: string[];
+  /** Those photos where they are (`useReportPhotos`), in the order taken. */
+  photos: ReportPhoto[];
   /** Photos just left out because the report had as many as it takes. */
   leftOut: number;
   onAdd: (ids: string[]) => void;
@@ -60,7 +69,6 @@ export function PhotoPart({
 }) {
   const touch = useTouchDevice();
   const online = useOnline();
-  const { photos } = useReportPhotos(projectId, photoIds);
   const dayPhotos = useDayPhotos(projectId, day || undefined);
   const offered = photosToOffer(dayPhotos.data ?? [], photoIds);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -75,56 +83,58 @@ export function PhotoPart({
     <div className="space-y-3">
       {photos.length > 0 ? <ReportPhotoGrid photos={photos} onOpen={setOpenId} /> : null}
 
-      {full ? null : (
-        <div
-          className={cn(
-            "grid gap-2",
-            ["", "grid-cols-1 [&>*]:flex-row [&>*]:gap-3", "grid-cols-2", "grid-cols-3"][choices],
-          )}
-        >
-          {touch ? (
-            <>
-              <TakePhotoButton
-                projectId={projectId}
-                label="Prendre une photo"
-                onAdded={onAdd}
-                className={choiceClass}
-              >
-                <ChoiceFace icon={Camera}>Prendre une photo</ChoiceFace>
-              </TakePhotoButton>
-              <TakePhotoButton
-                projectId={projectId}
-                camera={false}
-                label="Choisir dans le téléphone"
-                onAdded={onAdd}
-                className={choiceClass}
-              >
-                <ChoiceFace icon={Images}>Du téléphone</ChoiceFace>
-              </TakePhotoButton>
-            </>
-          ) : (
+      {/* A full report hides the ways to add, but keeps them: each holds the
+          window of the photos it just added, the last of which may have
+          filled the report. */}
+      <div
+        className={cn(
+          "grid gap-2",
+          ["", "grid-cols-1 [&>*]:flex-row [&>*]:gap-3", "grid-cols-2", "grid-cols-3"][choices],
+          full && "hidden",
+        )}
+      >
+        {touch ? (
+          <>
             <TakePhotoButton
               projectId={projectId}
-              camera={false}
-              label="Ajouter des photos"
+              label="Prendre une photo"
               onAdded={onAdd}
               className={choiceClass}
             >
-              <ChoiceFace icon={ImagePlus}>Ajouter des photos</ChoiceFace>
+              <ChoiceFace icon={Camera}>Prendre une photo</ChoiceFace>
             </TakePhotoButton>
-          )}
-          {offered.length > 0 ? (
-            <button type="button" onClick={() => setChoosing(true)} className={choiceClass}>
-              <ChoiceFace icon={CalendarCheck}>Photos du jour</ChoiceFace>
-              <span className="bg-ead-dark absolute top-1.5 right-1.5 flex h-5.5 min-w-5.5 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white tabular-nums">
-                {offered.length}
-              </span>
-            </button>
-          ) : null}
-        </div>
-      )}
+            <TakePhotoButton
+              projectId={projectId}
+              camera={false}
+              label="Choisir dans le téléphone"
+              onAdded={onAdd}
+              className={choiceClass}
+            >
+              <ChoiceFace icon={Images}>Du téléphone</ChoiceFace>
+            </TakePhotoButton>
+          </>
+        ) : (
+          <TakePhotoButton
+            projectId={projectId}
+            camera={false}
+            label="Ajouter des photos"
+            onAdded={onAdd}
+            className={choiceClass}
+          >
+            <ChoiceFace icon={ImagePlus}>Ajouter des photos</ChoiceFace>
+          </TakePhotoButton>
+        )}
+        {offered.length > 0 ? (
+          <button type="button" onClick={() => setChoosing(true)} className={choiceClass}>
+            <ChoiceFace icon={CalendarCheck}>Photos du jour</ChoiceFace>
+            <span className="bg-ead-dark absolute top-1.5 right-1.5 flex h-5.5 min-w-5.5 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white tabular-nums">
+              {offered.length}
+            </span>
+          </button>
+        ) : null}
+      </div>
 
-      {leftOut > 0 ? (
+      {leftOut > 0 && full ? (
         <Notice tone="warn" icon={<Info aria-hidden />}>
           {leftOutText(leftOut)}
         </Notice>
@@ -216,7 +226,9 @@ function DayPhotosSheet({
         <p className={cn("text-sm", over ? "text-warn font-medium" : "text-dim")}>
           {over
             ? `Le rapport en prend encore ${room}.`
-            : `${count(chosen.length, "photo choisie", "photos choisies")}`}
+            : chosen.length === 0
+              ? "Aucune photo choisie"
+              : count(chosen.length, "photo choisie", "photos choisies")}
         </p>
         <Button
           variant="ghost"
@@ -266,8 +278,8 @@ function DayPhotosSheet({
                 ) : null}
               </button>
               {photo.caption ? (
-                <p className="mt-1 line-clamp-2 text-[13px] leading-snug wrap-anywhere">
-                  {photo.caption}
+                <p className="mt-1 text-[13px] leading-snug break-words">
+                  {shortCaption(photo.caption)}
                 </p>
               ) : null}
             </li>

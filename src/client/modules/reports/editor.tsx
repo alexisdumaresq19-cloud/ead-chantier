@@ -77,6 +77,7 @@ import {
 import { capitalize, formatFullDay, formatHours, shiftDay } from "./lib";
 import { ReportMissing } from "./missing";
 import { PhotoPart } from "./photo-part";
+import { onTheWayText, stillOnDevice, useReportPhotos } from "./photos";
 import { DraftStatus, Notice } from "./status";
 import { WEATHER_ICONS } from "./weather";
 
@@ -94,7 +95,7 @@ export function NewReportScreen() {
   // Read once, when the screen opens: from then on the form is the draft.
   const [draft] = useState(() => readDraft(draftKey(me.id, project.id, day)));
   if (!useCanChangeReports()) return <ReportsArchived />;
-  return <Editor reportId={null} report={undefined} initialDay={day} draft={draft} />;
+  return <Editor reportId={null} report={undefined} reportAt={0} initialDay={day} draft={draft} />;
 }
 
 /** /rapports/:reportId/modifier */
@@ -124,6 +125,7 @@ function EditReport({ reportId }: { reportId: string }) {
     <Editor
       reportId={reportId}
       report={report.data}
+      reportAt={report.dataUpdatedAt}
       initialDay={report.data?.day ?? draft?.form.day ?? ""}
       draft={draft}
     />
@@ -142,6 +144,7 @@ type SaveJob = {
 function Editor({
   reportId,
   report,
+  reportAt,
   initialDay,
   draft,
 }: {
@@ -149,6 +152,8 @@ function Editor({
   reportId: string | null;
   /** Its saved version, once fetched. */
   report: Report | undefined;
+  /** When that version was fetched: what it says of its photos holds from then on. */
+  reportAt: number;
   initialDay: string;
   /** What was typed earlier on this device and not saved. */
   draft: Draft | null;
@@ -247,6 +252,35 @@ function Editor({
   const sameDay = dayReport.data?.report ?? null;
   const takenBy = sameDay && sameDay.id !== reportId ? sameDay : null;
 
+  // Photos come in after the camera or a window closes, from a callback made
+  // earlier: the form they join is the latest one.
+  const latest = useRef(form);
+  useEffect(() => {
+    latest.current = form;
+  });
+  const [leftOut, setLeftOut] = useState(0);
+  const takePhotos = useCallback((ids: string[]) => {
+    setLeftOut(addPhotoIds(latest.current, ids).refused);
+    setForm((current) => addPhotoIds(current, ids).form);
+  }, []);
+  const leavePhoto = useCallback((id: string) => {
+    setLeftOut(0);
+    setForm((current) => removePhotoId(current, id));
+  }, []);
+  const photosFull = form.photoIds.length >= REPORT_LIMITS.photos;
+  // The photos the saved report came with are on the device already: no
+  // network is needed to show them while it is changed.
+  const known = useMemo(
+    () => (report ? { photos: report.photos, at: reportAt } : undefined),
+    [report, reportAt],
+  );
+  const { photos } = useReportPhotos(project.id, form.photoIds, known);
+  const leaving = useRef(0);
+  const onTheWay = stillOnDevice(photos).length;
+  useEffect(() => {
+    leaving.current = onTheWay;
+  });
+
   const save = useMutation({
     mutationFn: async ({ content, over }: SaveJob): Promise<{ saved: Report } | Clash> => {
       // A signal too weak to answer counts as none: the button stops turning
@@ -290,7 +324,12 @@ function Editor({
         return;
       }
       leaveWith(outcome.saved);
-      toast.success("Rapport enregistré");
+      // Saved without waiting for the photos still leaving: said calmly, once.
+      const travelling = leaving.current;
+      toast.success(
+        "Rapport enregistré",
+        travelling > 0 ? { description: onTheWayText(travelling) } : undefined,
+      );
     },
     onError: (error, { content }) => {
       if (error instanceof ApiFailure && error.offline) {
@@ -330,6 +369,9 @@ function Editor({
     problems.find((problem) => problem.where === where)?.message;
 
   const submit = (event: FormEvent) => {
+    // A form of a window drawn elsewhere on the page (a photo's description)
+    // reaches here through React: it is not the report being saved.
+    if (event.target !== event.currentTarget) return;
     event.preventDefault();
     const check = checkForm(form, today);
     const [first] = [...unfinishedDay, ...check.problems];
@@ -376,6 +418,7 @@ function Editor({
       removeDraft(key);
       if (text <= today) navigate(`${base}/nouveau?jour=${text}`, { replace: true });
       if (waiting && !dirty) {
+        setLeftOut(0);
         setRestored(waiting);
         setForm(waiting.form);
         setDayText(text);
@@ -398,6 +441,7 @@ function Editor({
     if (!sure) return;
     setChecked(false);
     setRestored(null);
+    setLeftOut(0);
     removeDraft(key);
     if (!reportId) setForm(emptyForm(form.day));
     else if (report && saved) {
@@ -409,22 +453,6 @@ function Editor({
 
   const set = (change: Partial<ReportForm>) => setForm((current) => ({ ...current, ...change }));
 
-  // Photos come in after the camera or a window closes, from a callback made
-  // earlier: the form they join is the latest one.
-  const latest = useRef(form);
-  useEffect(() => {
-    latest.current = form;
-  });
-  const [leftOut, setLeftOut] = useState(0);
-  const takePhotos = useCallback((ids: string[]) => {
-    setLeftOut(addPhotoIds(latest.current, ids).refused);
-    setForm((current) => addPhotoIds(current, ids).form);
-  }, []);
-  const leavePhoto = useCallback((id: string) => {
-    setLeftOut(0);
-    setForm((current) => removePhotoId(current, id));
-  }, []);
-  const photosFull = form.photoIds.length >= REPORT_LIMITS.photos;
   const below = /^\s*[-−–]/.test(form.temperature);
   const flipSign = () => {
     const digits = form.temperature.trim().replace(/^[-−–+]\s*/, "");
@@ -432,8 +460,11 @@ function Editor({
     document.getElementById("report-temperature")?.focus();
   };
   // "Enter" on a phone keyboard closes the keyboard; only the button saves.
+  // A window drawn elsewhere on the page (a photo's) still sends its keys
+  // here through React: it keeps its own "Enter".
   const keepEnterFromSaving = (event: KeyboardEvent<HTMLFormElement>) => {
     if (event.key !== "Enter" || !(event.target instanceof HTMLInputElement)) return;
+    if (!event.currentTarget.contains(event.target)) return;
     event.preventDefault();
     event.target.blur();
   };
@@ -654,6 +685,7 @@ function Editor({
             projectId={project.id}
             day={form.day}
             photoIds={form.photoIds}
+            photos={photos}
             leftOut={leftOut}
             onAdd={takePhotos}
             onRemove={leavePhoto}
@@ -678,35 +710,35 @@ function Editor({
         </FormError>
 
         <BottomBar>
-          {/* Short enough to stay whole beside the camera on a 360 px phone. */}
+          {/* Short enough to stay whole beside the camera on a 360 px phone, up to "100 personnes". */}
           <div className="min-w-0 flex-1 pl-1.5">
             <p className="text-dim text-xs font-semibold whitespace-nowrap">
-              {totals.people > 0 ? count(totals.people, "personne") : "Aucune personne"}
+              {count(totals.people, "personne")}
             </p>
             <p className="font-display text-lg leading-tight font-bold whitespace-nowrap">
               {formatHours(totals.hours)}
             </p>
           </div>
-          {/* The camera within one tap, wherever the foreman is in the form. */}
-          {photosFull ? null : (
-            <TakePhotoButton
-              projectId={project.id}
-              label="Prendre une photo pour le rapport"
-              onAdded={takePhotos}
-              className={buttonClass({
-                variant: "secondary",
-                size: "lg",
-                className: "relative w-14 px-0 lg:hidden [&_svg]:size-6",
-              })}
-            >
-              <Camera aria-hidden />
-              {form.photoIds.length > 0 ? (
-                <span className="bg-ead-dark absolute -top-1.5 -right-1.5 flex h-5.5 min-w-5.5 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white tabular-nums ring-2 ring-white">
-                  {form.photoIds.length}
-                </span>
-              ) : null}
-            </TakePhotoButton>
-          )}
+          {/* The camera within one tap, wherever the foreman is in the form. A
+              full report hides it, but keeps it: it holds the window of the
+              photo that filled the report. */}
+          <TakePhotoButton
+            projectId={project.id}
+            label="Prendre une photo pour le rapport"
+            onAdded={takePhotos}
+            className={buttonClass({
+              variant: "secondary",
+              size: "lg",
+              className: cn("relative w-14 px-0 lg:hidden [&_svg]:size-6", photosFull && "hidden"),
+            })}
+          >
+            <Camera aria-hidden />
+            {form.photoIds.length > 0 ? (
+              <span className="bg-ead-dark absolute -top-1.5 -right-1.5 flex h-5.5 min-w-5.5 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white tabular-nums ring-2 ring-white">
+                {form.photoIds.length}
+              </span>
+            ) : null}
+          </TakePhotoButton>
           <Button type="submit" size="lg" loading={save.isPending}>
             Enregistrer
           </Button>

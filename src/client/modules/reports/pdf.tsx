@@ -8,7 +8,7 @@ import {
   ImageOff,
   Share2,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { reportPdfName } from "@/shared/reports";
 
@@ -109,6 +109,22 @@ export function PdfButton({ className, ...subject }: Subject & { className?: str
     setOpen(true);
     if (navigator.onLine) make.mutate();
   };
+  // Opened without a network, or cut off on the way: the PDF is made as soon
+  // as the network is back, without another tap.
+  const online = useOnline();
+  const waitsForNetwork =
+    open &&
+    !make.isPending &&
+    !make.data &&
+    (make.isIdle || (make.error instanceof ApiFailure && make.error.offline));
+  const { mutate } = make;
+  // On the network's return only: a failure while it seems there waits for a tap.
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    const back = online && !wasOnline.current;
+    wasOnline.current = online;
+    if (back && waitsForNetwork) mutate();
+  }, [online, waitsForNetwork, mutate]);
   return (
     <>
       <Button size="lg" onClick={start} className={className}>
