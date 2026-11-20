@@ -1,11 +1,11 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type { SessionUser } from "../auth";
 import { db, schema } from "../db/client";
 import { badRequest, HttpError } from "../http";
 import { newId, newPublicKey } from "../ids";
 import { storage } from "../storage";
-import { takeUpload, type Upload } from "../uploads";
+import { discardUpload, takeUpload, type Upload } from "../uploads";
 import { chooseTakenAt, NotAPhoto, processPhoto } from "./process";
 import type { PhotoRow } from "./queries";
 
@@ -23,6 +23,12 @@ export type PhotoInput = {
  */
 const uploadMissing = (message: string) => new HttpError(409, "upload_missing", message);
 
+/**
+ * Takes the upload for one photo. Its row goes from "complete" back to
+ * "pending" in a single statement: two requests arriving together cannot both
+ * use it, and an upload taken this way can no longer be taken (takeUpload
+ * wants it complete). Until the photo is made the file stays where it is.
+ */
 async function claimUpload(user: SessionUser, uploadId: string, projectId: string) {
   let upload: Upload;
   try {
@@ -31,23 +37,30 @@ async function claimUpload(user: SessionUser, uploadId: string, projectId: strin
     if (error instanceof HttpError) throw uploadMissing(error.message);
     throw error;
   }
-  // An upload makes one photo: whoever removes its record owns it, so two
-  // requests arriving together cannot both use it.
   const [claimed] = await db
-    .delete(schema.uploads)
-    .where(eq(schema.uploads.id, upload.id))
+    .update(schema.uploads)
+    .set({ status: "pending" })
+    .where(and(eq(schema.uploads.id, upload.id), eq(schema.uploads.status, "complete")))
     .returning({ id: schema.uploads.id });
   if (!claimed) throw uploadMissing("Téléversement introuvable.");
   return upload;
 }
 
-/** Removes a claimed upload's file from private storage. */
-async function dropOriginal(upload: Upload) {
-  const folder = upload.storageKey.slice(0, upload.storageKey.lastIndexOf("/"));
-  await storage()
-    .removePrefix("private", folder)
-    .catch((error) => console.error("photo original", folder, error));
-}
+/** A claimed upload the next try may use again (the server failed, not the file). */
+const releaseUpload = (upload: Upload) =>
+  db
+    .update(schema.uploads)
+    .set({ status: "complete" })
+    .where(and(eq(schema.uploads.id, upload.id), eq(schema.uploads.status, "pending")))
+    .returning({ id: schema.uploads.id })
+    .then(
+      (rows) => rows.length > 0,
+      () => false,
+    );
+
+/** The original has no use once it made a photo or was refused: uploads.ts drops it. */
+const dropOriginal = (upload: Upload) =>
+  discardUpload(upload.id).catch((error) => console.error("photo original", upload.id, error));
 
 /** The photo already made from this id by this person, if there is one. */
 async function sameAsBefore(id: string, user: SessionUser, projectId: string) {
@@ -144,15 +157,7 @@ export async function createPhoto(
   } catch (error) {
     // Not the file's fault (storage, database…): the upload is put back, so
     // that the phone's next try does not have to send the file again.
-    if (!(error instanceof HttpError))
-      putBack = await db
-        .insert(schema.uploads)
-        .values(upload)
-        .onConflictDoNothing()
-        .then(
-          () => true,
-          () => false,
-        );
+    if (!(error instanceof HttpError)) putBack = await releaseUpload(upload);
     throw error;
   } finally {
     // Once it has made a photo, or been refused, the original has no use:

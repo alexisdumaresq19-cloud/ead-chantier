@@ -4,6 +4,8 @@ import {
   isDay,
   PHOTO_ID_PATTERN,
   photoCursor,
+  readPhotoCursor,
+  type Photo,
   shiftDay,
   siteDay,
   siteDayBounds,
@@ -90,6 +92,60 @@ describe("what names a photo", () => {
     expect(photoCursor({ takenAt: "2026-10-01T18:05:00.000Z", id: "abcdefghjkmnpqrs" })).toBe(
       "2026-10-01T18:05:00.000Z_abcdefghjkmnpqrs",
     );
+  });
+
+  it("reads back a cursor it made, and nothing else", () => {
+    const photo = { takenAt: "2026-10-01T18:05:00.000Z", id: "abcdefghjkmnpqrs" };
+    expect(readPhotoCursor(photoCursor(photo))).toEqual({
+      takenAt: new Date(photo.takenAt),
+      id: photo.id,
+    });
+    expect(readPhotoCursor("2026-10-01T18:05:00Z_abc")?.id).toBe("abc");
+    for (const wrong of [
+      "",
+      "abc",
+      "2026-10-01T18:05:00.000Z",
+      "2026-10-01T18:05:00.000Z_",
+      "2026-13-45T18:05:00.000Z_abc",
+      "2026-02-30T18:05:00.000Z_abc",
+      "2026-10-01T25:05:00.000Z_abc",
+      "2026-10-01T18:05:00.000+02:00_abc",
+      "2026-10-01T18:05:00.000Z_ABC",
+      `2026-10-01T18:05:00.000Z_${"a".repeat(41)}`,
+      "2026-10-01T18:05:00.000Z_abc;drop",
+    ])
+      expect(readPhotoCursor(wrong), wrong).toBeNull();
+  });
+
+  it("keeps the shape the reports module reads", () => {
+    // Every field of a photo, named here: removing or renaming one fails the
+    // type check, and the reports' day view would break with it.
+    const photo: Required<{ [K in keyof Photo]: Photo[K] }> = {
+      id: "abcdefghjkmnpqrs",
+      url: "/files/public/p/x/full.jpg",
+      thumbUrl: "/files/public/p/x/thumb.webp",
+      width: 2560,
+      height: 1920,
+      takenAt: "2026-10-01T18:05:00.000Z",
+      day: "2026-10-01",
+      caption: null,
+      authorId: null,
+      authorName: null,
+      canEdit: false,
+    };
+    expect(Object.keys(photo).sort()).toEqual([
+      "authorId",
+      "authorName",
+      "canEdit",
+      "caption",
+      "day",
+      "height",
+      "id",
+      "takenAt",
+      "thumbUrl",
+      "url",
+      "width",
+    ]);
   });
 
   it("accepts ids of the server's shape only", () => {

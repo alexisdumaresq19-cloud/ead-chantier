@@ -3,6 +3,7 @@ import { and, desc, eq, gte, lt, lte, or, sql as raw } from "drizzle-orm";
 import { SITE_TIME_ZONE, siteDay, siteDayBounds, type Photo, type PhotoDay } from "@/shared/photos";
 import { canManageProject } from "@/shared/roles";
 
+import type { Project } from "../access";
 import type { SessionUser } from "../auth";
 import { db, schema } from "../db/client";
 import { notFound } from "../http";
@@ -14,7 +15,17 @@ export type PhotoRow = typeof schema.photos.$inferSelect;
 export const canEditPhoto = (row: PhotoRow, user: SessionUser) =>
   row.createdBy === user.id || canManageProject(user.role);
 
-export function photoDto(row: PhotoRow, authorName: string | null, user: SessionUser): Photo {
+/** Whether this person may change what the project holds (see assertOpen). */
+export const projectOpenTo = (project: Pick<Project, "status">, user: SessionUser) =>
+  project.status !== "archive" || user.role === "admin";
+
+/** `open`: the project takes changes from this person (projectOpenTo). */
+export function photoDto(
+  row: PhotoRow,
+  authorName: string | null,
+  user: SessionUser,
+  open: boolean,
+): Photo {
   return {
     id: row.id,
     url: storage().publicUrl(`${row.imageKey}/full.jpg`),
@@ -26,7 +37,7 @@ export function photoDto(row: PhotoRow, authorName: string | null, user: Session
     caption: row.caption,
     authorId: row.createdBy,
     authorName,
-    canEdit: canEditPhoto(row, user),
+    canEdit: open && canEditPhoto(row, user),
   };
 }
 
@@ -38,7 +49,11 @@ export async function photoRow(id: string): Promise<PhotoRow> {
 }
 
 /** One photo as the app shows it, with its author's name. */
-export async function photoOf(row: PhotoRow, user: SessionUser): Promise<Photo> {
+export async function photoOf(
+  row: PhotoRow,
+  user: SessionUser,
+  project: Pick<Project, "status">,
+): Promise<Photo> {
   let authorName: string | null = null;
   if (row.createdBy) {
     const [author] = await db
@@ -48,7 +63,7 @@ export async function photoOf(row: PhotoRow, user: SessionUser): Promise<Photo> 
       .limit(1);
     authorName = author?.name ?? null;
   }
-  return photoDto(row, authorName, user);
+  return photoDto(row, authorName, user, projectOpenTo(project, user));
 }
 
 export type PhotoListOptions = {
@@ -62,9 +77,11 @@ export type PhotoListOptions = {
 /** A project's photos, newest first. */
 export async function listPhotos(
   user: SessionUser,
-  projectId: string,
+  project: Pick<Project, "id" | "status">,
   { day, before, limit }: PhotoListOptions,
 ): Promise<Photo[]> {
+  const projectId = project.id;
+  const open = projectOpenTo(project, user);
   const bounds = day ? siteDayBounds(day) : null;
   const rows = await db
     .select({ photo: schema.photos, authorName: schema.users.name })
@@ -85,7 +102,7 @@ export async function listPhotos(
     )
     .orderBy(desc(schema.photos.takenAt), desc(schema.photos.id))
     .limit(limit);
-  return rows.map((row) => photoDto(row.photo, row.authorName, user));
+  return rows.map((row) => photoDto(row.photo, row.authorName, user, open));
 }
 
 /** The days that have photos, newest first, counted on the site's clock. */

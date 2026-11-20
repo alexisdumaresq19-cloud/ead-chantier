@@ -16,10 +16,11 @@ export type LocalPhoto = {
   caption: string | null;
   /**
    * preparing: being shrunk; sending: on its way; waiting: kept for later
-   * (no network, or the last try failed); sent: the server has it and the
-   * gallery is about to show the real one.
+   * (no network, or the last try failed); refused: the server will not take
+   * it (an archived project…), so it is no longer tried on its own; sent: the
+   * server has it and the gallery is about to show the real one.
    */
-  state: "preparing" | "sending" | "waiting" | "sent";
+  state: "preparing" | "sending" | "waiting" | "refused" | "sent";
   /** Why the last try failed, in words for the person. */
   error: string | null;
 };
@@ -92,6 +93,12 @@ export function takenLabel(photo: Pick<Photo, "takenAt" | "day">, today: string)
 // --- Sending ------------------------------------------------------------------
 
 const RETRY_DELAYS = [5, 15, 30, 60, 120, 300];
+/**
+ * After the server said this person has too many sends under way or for the
+ * day: those clear in hours, and each try that fails half-way would use up
+ * one more of them.
+ */
+export const BUSY_RETRY_DELAY = 30 * 60_000;
 
 /** How long to wait before trying again, after that many failed tries in a row (ms). */
 export function retryDelay(failures: number): number {
@@ -105,11 +112,14 @@ export function retryDelay(failures: number): number {
  *  - signed-out: nobody is signed in on this device any more; stop
  *  - invalid: the server looked at the file and it is not a photo; discard it
  *  - resend: the server no longer has the file; send it again
- *  - refused: the server will not take it from this person (no longer on the
- *    project…); keep it and say why
+ *  - busy: this person has too many sends under way, or for the day; stop
+ *    and wait a long while
+ *  - refused: the server will not take it from this person (an archived
+ *    project, no longer on the project…); keep it, say why, stop trying
  *  - failed: anything else (a server error); keep it and try later
  */
-export type FailureKind = "offline" | "signed-out" | "invalid" | "resend" | "refused" | "failed";
+export type FailureKind =
+  "offline" | "signed-out" | "invalid" | "resend" | "busy" | "refused" | "failed";
 
 export function failureKind(error: unknown): FailureKind {
   // A cancelled or stalled request, or anything unexpected in between.
@@ -118,6 +128,7 @@ export function failureKind(error: unknown): FailureKind {
   if (error.status === 401) return "signed-out";
   if (error.code === "invalid_image") return "invalid";
   if (error.code === "upload_missing") return "resend";
+  if (error.status === 429) return "busy";
   if (error.status === 403 || error.status === 404 || error.status === 409) return "refused";
   return "failed";
 }

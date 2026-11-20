@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { ProjectDetail } from "@/shared/api";
 import { photoCursor, type Photo, type PhotoDay } from "@/shared/photos";
 
-import { api, ApiFailure } from "../../lib/api";
+import { api } from "../../lib/api";
 import { queryClient } from "../../lib/query";
 import { keys } from "../../lib/session";
 
@@ -75,27 +75,6 @@ export const usePhoto = (projectId: string, photoId: string, enabled: boolean) =
     retry: false,
     meta: { persist: false },
   });
-
-const noNetwork = new ApiFailure(
-  0,
-  "offline",
-  "Pas de réseau. Réessayez quand la connexion revient.",
-);
-
-/**
- * Why a query has nothing to show, if it has failed. Without a network a
- * first fetch does not fail: it waits for the network to return, which a
- * screen must show as "no network" rather than as loading without end.
- */
-export function failureOf(query: {
-  data: unknown;
-  isError: boolean;
-  error: unknown;
-  isPaused: boolean;
-}): unknown {
-  if (query.data !== undefined) return null;
-  return query.isError ? query.error : query.isPaused ? noNetwork : null;
-}
 
 // --- Keeping what the device holds in step ------------------------------------
 

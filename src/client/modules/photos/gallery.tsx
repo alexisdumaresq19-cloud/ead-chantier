@@ -1,8 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
 import {
+  Archive,
   CalendarDays,
   Camera,
   ChevronRight,
+  CircleAlert,
   Clock,
   CloudOff,
   Image as ImageIcon,
@@ -25,6 +27,7 @@ import {
 import { Link, useLocation, useSearch } from "wouter";
 
 import { PHOTO_CAPTION_MAX, siteDay, type Photo, type PhotoDay } from "@/shared/photos";
+import { isAdmin } from "@/shared/roles";
 
 import { api, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -39,7 +42,6 @@ import {
   Card,
   confirmAction,
   EmptyState,
-  ErrorState,
   FormError,
   IconButton,
   Input,
@@ -49,13 +51,15 @@ import {
   Spinner,
   toast,
 } from "../../ui";
-import { failureOf, photoChanged, refreshProject, usePhotoDays, usePhotoList } from "./data";
+import { photoChanged, refreshProject, usePhotoDays, usePhotoList } from "./data";
 import { dayTitle, groupByDay, monthTitle, type DayGroup, type LocalPhoto } from "./logic";
 import {
   addPhotos,
   captionWaiting,
+  localFile,
   localPreviewUrl,
   removeWaiting,
+  retryRefused,
   sendNow,
   useLocalPhotos,
   useSendProgress,
@@ -88,6 +92,9 @@ export function GalleryScreen({ day }: { day: string | null }) {
   const base = `/projets/${project.id}/photos`;
   const touch = useTouchDevice();
   const [today] = useState(() => siteDay(new Date()));
+  // An archived project takes nothing new, except from the office.
+  const closed = project.status === "archive" && !isAdmin(me.role);
+  const canAdd = !day && !closed;
 
   const list = usePhotoList(project.id, day);
   const days = usePhotoDays(project.id);
@@ -117,6 +124,10 @@ export function GalleryScreen({ day }: { day: string | null }) {
 
   const [choosingDay, setChoosingDay] = useState(false);
   const [batch, setBatch] = useState<string[] | null>(null);
+  // A file of the batch that turned out not to be a photo has left it.
+  const batchKept = batch?.filter(
+    (id) => mine.some((local) => local.id === id) || photos.some((photo) => photo.id === id),
+  );
   const [adding, setAdding] = useState(false);
   const [localId, setLocalId] = useState<string | null>(null);
   const openLocal = mine.find((local) => local.id === localId && local.state !== "sent");
@@ -178,6 +189,7 @@ export function GalleryScreen({ day }: { day: string | null }) {
   }, []);
 
   const waiting = mine.filter((local) => local.state === "waiting");
+  const refused = mine.filter((local) => local.state === "refused");
   const more = useLoadMore(list);
   const { fetchNextPage } = list;
   const loadMore = useCallback(() => fetchNextPage({ cancelRefetch: false }), [fetchNextPage]);
@@ -199,7 +211,6 @@ export function GalleryScreen({ day }: { day: string | null }) {
     />
   ));
 
-  const failure = failureOf(list);
   let content: ReactNode;
   if (list.data === undefined) {
     // Nothing from the server yet (or no network, on a device that never
@@ -207,7 +218,9 @@ export function GalleryScreen({ day }: { day: string | null }) {
     content = (
       <>
         {sections}
-        {failure ? <ErrorState error={failure} onRetry={() => list.refetch()} /> : <GridSkeleton />}
+        <QueryState query={list} loading={<GridSkeleton />}>
+          {() => null}
+        </QueryState>
       </>
     );
   } else if (groups.length > 0) {
@@ -236,9 +249,11 @@ export function GalleryScreen({ day }: { day: string | null }) {
         icon={Camera}
         title="Aucune photo pour l'instant"
         text={
-          touch
-            ? "Prenez en photo l'avancement, un imprévu, l'état des lieux. Toute l'équipe du projet les verra ici."
-            : "Ajoutez des photos de l'avancement, d'un imprévu, de l'état des lieux. Toute l'équipe du projet les verra ici."
+          closed
+            ? "Aucune photo n'a été prise sur ce projet."
+            : touch
+              ? "Prenez en photo l'avancement, un imprévu, l'état des lieux. Toute l'équipe du projet les verra ici."
+              : "Ajoutez des photos de l'avancement, d'un imprévu, de l'état des lieux. Toute l'équipe du projet les verra ici."
         }
       />
     );
@@ -256,7 +271,7 @@ export function GalleryScreen({ day }: { day: string | null }) {
               <CalendarDays aria-hidden /> {day ? "Autre jour" : "Par jour"}
             </Button>
           ) : null}
-          {day ? null : (
+          {canAdd ? (
             // On a phone these are in the bar at the bottom, under the thumb.
             <div className="hidden gap-2 lg:flex">
               {touch ? (
@@ -274,22 +289,35 @@ export function GalleryScreen({ day }: { day: string | null }) {
                 </FileButton>
               )}
             </div>
-          )}
+          ) : null}
         </>
       }
     >
-      {batch ? (
+      {batchKept?.length ? (
         <BatchCaption
-          key={batch.join()}
+          key={batch?.join()}
           projectId={project.id}
-          ids={batch}
+          ids={batchKept}
           onDone={() => setBatch(null)}
         />
       ) : null}
+      {closed && !day ? (
+        <div
+          role="note"
+          className="bg-canvas border-line text-dim mb-4 flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm"
+        >
+          <Archive className="mt-0.5 size-5 shrink-0" aria-hidden />
+          <p>
+            <span className="text-text block font-bold">Projet archivé</span>
+            On ne peut plus y ajouter de photos. Celles qui y sont restent visibles.
+          </p>
+        </div>
+      ) : null}
+      {refused.length > 0 ? <RefusedNotice refused={refused} onOpen={setLocalId} /> : null}
       {waiting.length > 0 ? <WaitingNotice waiting={waiting} /> : null}
       {content}
 
-      {day ? null : (
+      {!canAdd ? null : (
         <>
           {/* Room for the bar below, so that it never hides the last row. */}
           <div className="h-20 lg:hidden" />
@@ -482,6 +510,35 @@ function BatchCaption({
   );
 }
 
+/** Photos the server would not take: they wait for the person to decide. */
+function RefusedNotice({
+  refused,
+  onOpen,
+}: {
+  refused: LocalPhoto[];
+  onOpen: (id: string) => void;
+}) {
+  const one = refused.length === 1;
+  return (
+    <div
+      role="alert"
+      className="bg-bad-tint text-bad mb-4 flex items-center gap-3 rounded-2xl px-4 py-3"
+    >
+      <CircleAlert className="size-5 shrink-0" aria-hidden />
+      <p className="min-w-0 flex-1 text-sm">
+        <span className="block font-bold">
+          {one ? "1 photo n'a pas été envoyée" : `${refused.length} photos n'ont pas été envoyées`}
+        </span>
+        {refused[0].error ?? "Le serveur les a refusées."} {one ? "Elle reste" : "Elles restent"}{" "}
+        sur cet appareil.
+      </p>
+      <Button variant="secondary" size="sm" onClick={() => onOpen(refused[0].id)} className="h-11">
+        {one ? "Voir" : "Voir la première"}
+      </Button>
+    </div>
+  );
+}
+
 /** Photos that could not leave yet: said once, above the grid. */
 function WaitingNotice({ waiting }: { waiting: LocalPhoto[] }) {
   const online = useOnline();
@@ -615,9 +672,11 @@ const LocalTile = memo(function LocalTile({
   const label =
     local.state === "waiting"
       ? "Photo en attente d'envoi"
-      : local.state === "sent"
-        ? "Photo envoyée"
-        : "Photo en cours d'envoi";
+      : local.state === "refused"
+        ? "Photo non envoyée"
+        : local.state === "sent"
+          ? "Photo envoyée"
+          : "Photo en cours d'envoi";
   return (
     <li>
       <button
@@ -643,6 +702,10 @@ const LocalTile = memo(function LocalTile({
         ) : local.state === "waiting" ? (
           <span className="bg-ink/75 absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 py-1 text-[11px] font-semibold text-white">
             <Clock className="size-3.5" aria-hidden /> En attente
+          </span>
+        ) : local.state === "refused" ? (
+          <span className="bg-bad absolute inset-x-0 bottom-0 flex items-center justify-center gap-1 py-1 text-[11px] font-semibold text-white">
+            <CircleAlert className="size-3.5" aria-hidden /> Non envoyée
           </span>
         ) : null}
       </button>
@@ -765,16 +828,7 @@ function DaySheet({
 }) {
   return (
     <Sheet open={open} onClose={onClose} title="Photos par jour">
-      <QueryState
-        query={days}
-        loading={
-          failureOf(days) ? (
-            <p className="text-dim py-6 text-center">
-              Pas de réseau. La liste des jours s&apos;affichera quand il reviendra.
-            </p>
-          ) : undefined
-        }
-      >
+      <QueryState query={days}>
         {(all) => {
           if (all.length === 0)
             return <p className="text-dim py-6 text-center">Aucune photo pour l&apos;instant.</p>;
@@ -847,12 +901,13 @@ function LocalSheet({ local, onClose }: { local: LocalPhoto | undefined; onClose
   const [trying, setTrying] = useState(false);
   const preview = local ? localPreviewUrl(local.id) : null;
   const waiting = local?.state === "waiting";
+  const refused = local?.state === "refused";
 
   async function remove() {
     if (!local) return;
     const sure = await confirmAction({
       title: "Retirer cette photo ?",
-      text: "Elle n'a pas encore été envoyée : elle sera perdue.",
+      text: "Elle n'a pas été envoyée\u00a0: elle sera perdue.",
       confirmLabel: "Retirer",
       danger: true,
     });
@@ -862,32 +917,60 @@ function LocalSheet({ local, onClose }: { local: LocalPhoto | undefined; onClose
     onClose();
   }
 
+  /** What the server would not take is not lost: the person keeps it on the phone. */
+  function save() {
+    const file = local ? localFile(local.id) : null;
+    if (!local || !file) return;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(file);
+    link.download = `photo-${siteDay(local.takenAt)}-${local.id.slice(0, 6)}.jpg`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
+  }
+
+  function retry() {
+    if (!local) return;
+    setTrying(true);
+    void (refused ? retryRefused(local.id) : sendNow()).finally(() => setTrying(false));
+  }
+
   return (
     <Sheet
       open={Boolean(local)}
       onClose={onClose}
-      title={waiting ? "Photo en attente d'envoi" : "Photo en cours d'envoi"}
+      title={
+        refused
+          ? "Photo non envoyée"
+          : waiting
+            ? "Photo en attente d'envoi"
+            : "Photo en cours d'envoi"
+      }
       description={
-        !waiting
-          ? "Elle sera visible par toute l'équipe dans un instant."
-          : online
-            ? (local?.error ?? "L'envoi n'a pas abouti. Un nouvel essai se fera tout seul.")
-            : "Elle est gardée sur cet appareil et partira dès que le réseau reviendra."
+        refused
+          ? `${local?.error ?? "Le serveur l'a refusée."} Elle reste sur cet appareil\u00a0: enregistrez-en une copie ou retirez-la.`
+          : !waiting
+            ? "Elle sera visible par toute l'équipe dans un instant."
+            : online
+              ? (local?.error ?? "L'envoi n'a pas abouti. Un nouvel essai se fera tout seul.")
+              : "Elle est gardée sur cet appareil et partira dès que le réseau reviendra."
       }
       footer={
-        waiting ? (
+        refused ? (
+          <>
+            <Button variant="secondary" onClick={remove}>
+              Retirer
+            </Button>
+            <Button variant="secondary" loading={trying} disabled={!online} onClick={retry}>
+              Réessayer
+            </Button>
+            <Button onClick={save}>Enregistrer une copie</Button>
+          </>
+        ) : waiting ? (
           <>
             <Button variant="secondary" onClick={remove}>
               Retirer la photo
             </Button>
-            <Button
-              loading={trying}
-              disabled={!online}
-              onClick={() => {
-                setTrying(true);
-                void sendNow().finally(() => setTrying(false));
-              }}
-            >
+            <Button loading={trying} disabled={!online} onClick={retry}>
               Envoyer maintenant
             </Button>
           </>

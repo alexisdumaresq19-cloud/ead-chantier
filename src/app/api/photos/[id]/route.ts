@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { projectFor } from "@/server/access";
+import { assertOpen, projectFor } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { body, forbidden, notFound, route } from "@/server/http";
 import { removePhoto, setPhotoCaption } from "@/server/photos/changes";
@@ -14,35 +14,36 @@ async function photoToSee(request: NextRequest, id: string) {
   const row = await photoRow(id);
   // Someone outside the project gets the same answer as for a photo that
   // does not exist.
-  await projectFor(user, row.projectId).catch(() => {
+  const project = await projectFor(user, row.projectId).catch(() => {
     throw notFound("Photo introuvable.");
   });
-  return { user, row };
+  return { user, row, project };
 }
 
-/** Same, for its author or someone who manages the project. */
+/** Same, for its author or someone who manages the project, while the project is open. */
 async function photoToChange(request: NextRequest, id: string) {
   const found = await photoToSee(request, id);
   if (!canEditPhoto(found.row, found.user))
     throw forbidden(
       "Seuls son auteur, les contremaîtres et le bureau peuvent modifier cette photo.",
     );
+  assertOpen(found.user, found.project);
   return found;
 }
 
 export const GET = route<{ id: string }>(async (request, { id }) => {
-  const { user, row } = await photoToSee(request, id);
-  return photoOf(row, user);
+  const { user, row, project } = await photoToSee(request, id);
+  return photoOf(row, user, project);
 });
 
 const patch = z.object({ caption: z.string().trim().max(PHOTO_CAPTION_MAX).nullable() });
 
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
-  const { user, row } = await photoToChange(request, id);
+  const { user, row, project } = await photoToChange(request, id);
   const { caption } = await body(request, patch);
   const updated = await setPhotoCaption(row, caption || null);
   if (!updated) throw notFound("Photo introuvable.");
-  return photoOf(updated, user);
+  return photoOf(updated, user, project);
 });
 
 /** Removes the photo for everyone, files included. */
