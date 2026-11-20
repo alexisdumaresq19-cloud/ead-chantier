@@ -3,6 +3,8 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
+import { cleanDatabaseUrl } from "../src/server/db/url";
+
 // Scripts read the same local settings as the app.
 try {
   process.loadEnvFile(".env.local");
@@ -18,7 +20,7 @@ const url =
   "postgres://ead:ead@127.0.0.1:54329/ead";
 
 async function main() {
-  const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
+  const sql = postgres(cleanDatabaseUrl(url), { max: 1, prepare: false, onnotice: () => {} });
   await migrate(drizzle(sql), { migrationsFolder: "./drizzle" });
   await sql.end();
   console.log("Base de données à jour.");

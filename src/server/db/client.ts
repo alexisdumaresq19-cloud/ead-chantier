@@ -3,6 +3,7 @@ import postgres from "postgres";
 
 import { env } from "../env";
 import * as schema from "./schema";
+import { cleanDatabaseUrl } from "./url";
 
 // One pool per server process, opened at the first query (so that building the
 // app needs no database) and kept across hot reloads in development.
@@ -10,7 +11,7 @@ import * as schema from "./schema";
 const globalForDb = globalThis as unknown as { __eadSql?: ReturnType<typeof postgres> };
 
 function connection() {
-  return (globalForDb.__eadSql ??= postgres(env.databaseUrl, {
+  return (globalForDb.__eadSql ??= postgres(cleanDatabaseUrl(env.databaseUrl), {
     max: env.dev ? 10 : 5,
     idle_timeout: 20,
     // Hosted Postgres is reached through a transaction pooler, which does not

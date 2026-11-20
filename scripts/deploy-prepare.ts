@@ -11,6 +11,7 @@ import { migrate } from "drizzle-orm/postgres-js/migrator";
 import postgres from "postgres";
 
 import { productionStorageProblem, setupCodeAdvice, storageDriverFrom } from "../src/server/env";
+import { cleanDatabaseUrl } from "../src/server/db/url";
 import { ensureBuckets } from "../src/server/storage/supabase";
 import { BUCKET_RULES } from "../src/server/uploads";
 
@@ -40,7 +41,11 @@ async function main() {
     process.exit(1);
   }
 
-  const sql = postgres(databaseUrl, { max: 1, prepare: false, onnotice: () => {} });
+  const sql = postgres(cleanDatabaseUrl(databaseUrl), {
+    max: 1,
+    prepare: false,
+    onnotice: () => {},
+  });
   let officeExists: boolean;
   try {
     await migrate(drizzle(sql), { migrationsFolder: "./drizzle" });
