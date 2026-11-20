@@ -10,8 +10,9 @@ import { navigate } from "../../lib/location";
 import { queryClient } from "../../lib/query";
 import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
-import { Badge, Button, Card, confirmAction, Field, Input, Textarea, toast } from "../../ui";
+import { Badge, Button, Card, Field, Input, Textarea, toast } from "../../ui";
 import { OfficeOnly } from "./office-only";
+import { confirmCalmly, ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 
 // Creating a project and correcting it. Only the office writes; everyone on
@@ -116,7 +117,9 @@ export function NewProjectScreen() {
       await queryClient.invalidateQueries({ queryKey: keys.projects, exact: true });
       toast.success("Projet créé");
       // The form is left behind: going back from the project must not offer
-      // to create it a second time.
+      // to create it a second time. A second tap on the button must not open
+      // whatever the project's home puts under the finger.
+      ignoreSecondTap();
       navigate(`/projets/${project.id}`, { replace: true });
     },
   });
@@ -204,7 +207,7 @@ function ProjectEditor({ project }: { project: ProjectDetail }) {
     save.mutate();
   };
   const archive = async () => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: "Archiver ce projet?",
       text: "Il quittera la liste des projets en cours. Ses plans, ses documents et ses photos resteront lisibles, et vous pourrez le rouvrir.",
       confirmLabel: "Archiver",
@@ -212,7 +215,7 @@ function ProjectEditor({ project }: { project: ProjectDetail }) {
     if (ok) setStatus.mutate("archive");
   };
   const reopen = async () => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: "Rouvrir ce projet?",
       text: "Il reviendra dans la liste des projets en cours.",
       confirmLabel: "Rouvrir",
@@ -276,7 +279,7 @@ function ProjectFacts({ project }: { project: ProjectDetail }) {
           {facts.map(([label, value]) => (
             <div key={label} className="px-4 py-3 sm:grid sm:grid-cols-3 sm:gap-4 sm:px-5">
               <dt className="text-dim text-sm font-semibold">{label}</dt>
-              <dd className="mt-0.5 text-[15px] break-words whitespace-pre-line sm:col-span-2 sm:mt-0">
+              <dd className="mt-0.5 text-[15px] wrap-anywhere whitespace-pre-line sm:col-span-2 sm:mt-0">
                 {value ?? <span className="text-dim">Non précisé</span>}
               </dd>
             </div>

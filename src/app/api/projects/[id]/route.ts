@@ -4,7 +4,7 @@ import { z } from "zod";
 import { projectFor } from "@/server/access";
 import { requireAdmin, requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { body, notFound, route } from "@/server/http";
+import { badRequest, body, notFound, route } from "@/server/http";
 import { summarize } from "@/server/projects";
 import type { ProjectDetail } from "@/shared/api";
 import { canManageProject } from "@/shared/roles";
@@ -40,7 +40,7 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
 
 const patch = z
   .object({
-    name: z.string().trim().min(2).max(120),
+    name: z.string().trim().max(120),
     number: z.string().trim().max(40).nullable(),
     client: z.string().trim().max(120).nullable(),
     address: z.string().trim().max(200).nullable(),
@@ -54,6 +54,9 @@ const patch = z
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   await requireAdmin(request);
   const input = await body(request, patch);
+  // Said in words for the office: a validation error would name the field in English.
+  if (input.name !== undefined && input.name.length < 2)
+    throw badRequest("Entrez le nom du projet.");
   const clean = Object.fromEntries(Object.entries(input).map(([k, v]) => [k, v === "" ? null : v]));
   // An update with nothing to set is an error for the database.
   const [project] = Object.keys(clean).length

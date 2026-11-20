@@ -7,7 +7,7 @@ import { newId } from "@/server/ids";
 import type { Person } from "@/shared/api";
 
 import { personalLink } from "./_lib/people";
-import { looksLikeEmail, newPerson } from "./_lib/rules";
+import { newPerson, personProblem } from "./_lib/rules";
 
 /** Everyone, for the office: who they are, their projects, their devices. */
 export const GET = route(async (request) => {
@@ -48,8 +48,8 @@ export const GET = route(async (request) => {
 export const POST = route(async (request) => {
   const admin = await requireAdmin(request);
   const data = await body(request, newPerson);
-  if (data.email && !looksLikeEmail(data.email))
-    throw badRequest("Vérifiez le courriel : il semble incomplet.");
+  const problem = personProblem(data);
+  if (problem) throw badRequest(problem);
   const id = newId();
   // The person and their projects are saved together, or not at all.
   await db.transaction(async (tx) => {

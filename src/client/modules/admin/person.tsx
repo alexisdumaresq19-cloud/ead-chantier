@@ -9,23 +9,14 @@ import { api, errorMessage } from "../../lib/api";
 import { queryClient } from "../../lib/query";
 import { keys, useCurrentUser, useProjects } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
-import {
-  Badge,
-  Button,
-  ButtonLink,
-  Card,
-  confirmAction,
-  EmptyState,
-  QueryState,
-  Sheet,
-  Skeleton,
-  toast,
-} from "../../ui";
+import { Badge, Button, ButtonLink, Card, EmptyState, Sheet, Skeleton, toast } from "../../ui";
 import { adminKeys, refreshPeople, usePeople } from "./data";
 import { DeviceList } from "./devices";
+import { Fetched } from "./fetched";
 import { InviteLinkPanel } from "./invite-link";
 import { firstName, formatPhone, lastSeenText, telHref } from "./people";
 import { personBody, PersonFields, type PersonForm } from "./person-fields";
+import { confirmCalmly, ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 
 // One person, for the office: their details, role and projects, their
@@ -53,9 +44,9 @@ export function PersonView({ id }: { id: string }) {
   }
   return (
     <Page title="Équipe" back={BACK}>
-      <QueryState query={people} loading={<Skeleton className="h-72" />}>
+      <Fetched query={people} loading={<Skeleton className="h-72" />}>
         {() => null}
-      </QueryState>
+      </Fetched>
     </Page>
   );
 }
@@ -127,14 +118,18 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
   });
   const invite = useMutation({
     mutationFn: () => api<InviteLink>(`${path}/invite`, { method: "POST" }),
-    onSuccess: setLink,
+    onSuccess: (made) => {
+      // The link shows only once: a second tap on the button must not close it.
+      ignoreSecondTap();
+      setLink(made);
+    },
     onError: (error) => toast.error(errorMessage(error)),
   });
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (form.role === "admin" && person.role !== "admin") {
-      const ok = await confirmAction({
+      const ok = await confirmCalmly({
         title: `Donner à ${first} l'accès du bureau?`,
         text: "Cette personne verra tous les projets et pourra gérer les personnes, comme vous.",
         confirmLabel: "Donner l'accès",
@@ -144,7 +139,7 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
     save.mutate();
   };
   const deactivate = async () => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: `Désactiver l'accès de ${first}?`,
       text: "Ses appareils seront déconnectés sur-le-champ et ses liens cesseront de fonctionner. Sa fiche reste, et vous pourrez réactiver son accès.",
       confirmLabel: "Désactiver l'accès",

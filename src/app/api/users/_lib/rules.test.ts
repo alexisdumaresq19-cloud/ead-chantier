@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { looksLikeEmail, newPerson, officeLockout, personChange } from "./rules";
+import { looksLikeEmail, newPerson, officeLockout, personChange, personProblem } from "./rules";
 
 const office = { id: "a", role: "admin", active: true } as const;
 
@@ -95,9 +95,18 @@ describe("person input", () => {
     expect(personChange.parse({})).toEqual({});
   });
 
-  it("refuses an unknown role and a name too short", () => {
+  it("refuses an unknown role and a name too long", () => {
     expect(personChange.safeParse({ role: "patron" }).success).toBe(false);
-    expect(newPerson.safeParse({ name: "J", role: "travailleur" }).success).toBe(false);
+    expect(newPerson.safeParse({ name: "J".repeat(81), role: "travailleur" }).success).toBe(false);
+  });
+
+  it("says in French what is wrong with a name or an email", () => {
+    expect(personProblem(newPerson.parse({ name: "   ", role: "travailleur" }))).toMatch(/nom/);
+    expect(personProblem(personChange.parse({ name: " J " }))).toMatch(/nom/);
+    expect(personProblem({ name: "Luc Roy", email: "luc.roy" })).toMatch(/courriel/);
+    expect(personProblem({ name: "Luc Roy", email: "luc.roy@exemple.ca" })).toBeNull();
+    // A change that leaves the name and the email alone has nothing to check.
+    expect(personProblem(personChange.parse({ title: "Arpenteur", email: null }))).toBeNull();
   });
 
   it("starts a new person without projects unless some are given", () => {

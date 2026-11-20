@@ -28,12 +28,10 @@ import {
   Button,
   ButtonLink,
   Card,
-  confirmAction,
   EmptyState,
   FormError,
   IconButton,
   LogoFull,
-  QueryState,
   SearchInput,
   Sheet,
   Skeleton,
@@ -41,6 +39,7 @@ import {
   toast,
 } from "../../ui";
 import { adminKeys, refreshPeople, useMembers, useNow, usePeople } from "./data";
+import { Fetched } from "./fetched";
 import { canShare, LinkField, shareLink } from "./invite-link";
 import {
   formatPhone,
@@ -53,6 +52,7 @@ import {
 } from "./people";
 import { CheckRow } from "./project-picker";
 import { QrCode } from "./qr";
+import { confirmCalmly, ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 import { hasRunOut, storeSiteCode, useStoredSiteCode } from "./site-code";
 
@@ -71,13 +71,18 @@ export function ProjectTeamScreen() {
   const poster = codeOpen && code.state === "ready" ? code.link : null;
 
   const openCode = () => {
+    ignoreSecondTap();
     setCodeOpen(true);
     code.show();
+  };
+  const openAdding = () => {
+    ignoreSecondTap();
+    setAdding(true);
   };
   const actions = project.canManage ? (
     <>
       {office ? (
-        <Button variant="secondary" size="lg" onClick={() => setAdding(true)}>
+        <Button variant="secondary" size="lg" onClick={openAdding}>
           <UserPlus aria-hidden /> Ajouter des personnes
         </Button>
       ) : null}
@@ -88,7 +93,9 @@ export function ProjectTeamScreen() {
   ) : null;
 
   return (
-    <>
+    // A name without a space breaks where the line ends, in the windows and
+    // on the poster too, and never pushes the screen wider than the phone.
+    <div className="wrap-anywhere">
       <div className={poster ? "print:hidden" : undefined}>
         <Page
           title="Équipe du projet"
@@ -101,7 +108,7 @@ export function ProjectTeamScreen() {
               {actions}
             </div>
           ) : null}
-          <QueryState query={members} loading={<Skeleton className="h-48" />}>
+          <Fetched query={members} loading={<Skeleton className="h-48" />}>
             {(list) =>
               list.length === 0 ? (
                 <EmptyState
@@ -117,7 +124,7 @@ export function ProjectTeamScreen() {
                 <MemberList project={project} members={list} office={office} />
               )
             }
-          </QueryState>
+          </Fetched>
         </Page>
       </div>
       {poster ? <SitePoster project={project} link={poster} /> : null}
@@ -138,7 +145,7 @@ export function ProjectTeamScreen() {
           members={members.data ?? []}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -162,7 +169,7 @@ function MemberList({
     onSettled: refreshPeople,
   });
   const askToRemove = async (member: Member) => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: `Retirer ${member.name} du projet?`,
       text:
         member.role === "admin"
@@ -238,7 +245,7 @@ function MemberRow({
   // A foreman or the office already carries a badge: the line under the name
   // is for the job title.
   const detail = member.title ?? (member.role === "travailleur" ? titleOrRole(member) : null);
-  const name = <span className="font-semibold break-words">{member.name}</span>;
+  const name = <span className="font-semibold wrap-anywhere">{member.name}</span>;
   return (
     <li className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
       <Avatar name={member.name} />
@@ -263,7 +270,7 @@ function MemberRow({
             </Badge>
           ) : null}
         </p>
-        {detail ? <p className="text-dim text-sm break-words">{detail}</p> : null}
+        {detail ? <p className="text-dim text-sm wrap-anywhere">{detail}</p> : null}
         {/* Beside the name on a wide screen, the number is in the call button. */}
         {phone ? <p className="text-dim text-sm sm:hidden">{phone}</p> : null}
       </div>
@@ -347,7 +354,7 @@ function AddPeopleSheet({
         </>
       }
     >
-      <QueryState query={people}>
+      <Fetched query={people} errorClassName="border-0 bg-transparent px-0 py-6">
         {(all) => {
           const onProject = new Set(members.map((member) => member.id));
           const available = sortByName(
@@ -406,7 +413,7 @@ function AddPeopleSheet({
             </div>
           );
         }}
-      </QueryState>
+      </Fetched>
     </Sheet>
   );
 }
@@ -416,7 +423,8 @@ function AddPeopleSheet({
 type SiteCode = (
   | { state: "none" | "making" | "expired" | "replaced" | "ended" }
   | { state: "failed"; error: unknown }
-  | { state: "ready"; link: InviteLink }
+  /** renewError: why asking for a new code failed; the current one still works. */
+  | { state: "ready"; link: InviteLink; renewError: unknown }
 ) & {
   now: Date;
   /** Shows the code, making one only if this device holds none that still works. */
@@ -464,12 +472,16 @@ function useSiteCode(projectId: string, watching: boolean): SiteCode {
     renew: () => make.mutate(),
   };
   if (make.isPending) return { state: "making", ...common };
+  const superseded =
+    link !== null && inForce.data !== undefined && inForce.data.expiresAt !== link.expiresAt;
+  // A code that works stays on screen, even when asking for a new one failed:
+  // without signal, the code in hand is the one people can still scan.
+  if (link && !expired && !superseded)
+    return { state: "ready", link, renewError: make.error, ...common };
   if (make.isError) return { state: "failed", error: make.error, ...common };
   if (!link) return { state: "none", ...common };
   if (expired) return { state: "expired", ...common };
-  if (inForce.data && inForce.data.expiresAt !== link.expiresAt)
-    return { state: inForce.data.expiresAt ? "replaced" : "ended", ...common };
-  return { state: "ready", link, ...common };
+  return { state: inForce.data?.expiresAt ? "replaced" : "ended", ...common };
 }
 
 function SiteCodeSheet({
@@ -486,7 +498,7 @@ function SiteCodeSheet({
   memberCount: number | undefined;
 }) {
   const renew = async () => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: "Créer un nouveau code?",
       text: "Le code actuel cessera de fonctionner, sur cet écran comme sur l'affiche imprimée.",
       confirmLabel: "Créer un nouveau code",
@@ -524,7 +536,8 @@ function SiteCodeSheet({
           <div className="mt-4 space-y-2">
             {/* A new code starts with a link not copied yet. */}
             <LinkField key={code.link.url} url={code.link.url} label="Lien du code QR" />
-            <div className="grid grid-cols-2 gap-2">
+            {/* Side by side where both fit, one under the other on a narrow phone. */}
+            <div className="flex flex-wrap gap-2 *:flex-1">
               {canShare() ? (
                 <Button
                   variant="secondary"
@@ -539,17 +552,14 @@ function SiteCodeSheet({
                   <Share2 aria-hidden /> Partager
                 </Button>
               ) : null}
-              <Button
-                variant="secondary"
-                className={canShare() ? undefined : "col-span-2"}
-                onClick={() => window.print()}
-              >
+              <Button variant="secondary" onClick={() => window.print()}>
                 <Printer aria-hidden /> Imprimer l&apos;affiche
               </Button>
             </div>
             <Button variant="ghost" block onClick={renew}>
               <RefreshCw aria-hidden /> Créer un nouveau code
             </Button>
+            <ShownError error={code.renewError} />
           </div>
         </>
       ) : code.state === "making" ? (

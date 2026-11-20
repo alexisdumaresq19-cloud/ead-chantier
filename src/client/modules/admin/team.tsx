@@ -18,17 +18,18 @@ import {
   buttonClass,
   Card,
   EmptyState,
-  QueryState,
   SearchInput,
   Sheet,
   Skeleton,
 } from "../../ui";
 import { refreshPeople, usePeople } from "./data";
+import { Fetched } from "./fetched";
 import { InviteLinkPanel } from "./invite-link";
 import { OfficeOnly } from "./office-only";
 import { firstName, lastSeenText, matchesPerson, sortPeople } from "./people";
 import { NEW_PERSON, personBody, PersonFields, type PersonForm } from "./person-fields";
 import { PersonView } from "./person";
+import { ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 
 // Everyone who has, or had, a way into the app: the office's list. A person
@@ -53,7 +54,10 @@ export function TeamScreen() {
 
   if (!isAdmin(me.role)) return <OfficeOnly title="Équipe" />;
   return (
-    <>
+    // A name typed without a space (anyone gives theirs at a site's QR code)
+    // breaks where the line ends, in the page's title and the windows' too,
+    // and never pushes the screen wider than the phone.
+    <div className="wrap-anywhere">
       {/* Kept in place under an open person, with its search. */}
       <div hidden={Boolean(personId)}>
         <PeopleList
@@ -63,7 +67,7 @@ export function TeamScreen() {
         />
       </div>
       {personId ? <PersonView key={personId} id={personId} /> : null}
-    </>
+    </div>
   );
 }
 
@@ -72,6 +76,10 @@ function PeopleList({ onOpen }: { onOpen: () => void }) {
   const projects = useProjects();
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
+  const add = () => {
+    ignoreSecondTap();
+    setAdding(true);
+  };
 
   return (
     <Page
@@ -82,15 +90,15 @@ function PeopleList({ onOpen }: { onOpen: () => void }) {
           : undefined
       }
       actions={
-        <Button size="lg" className="hidden sm:inline-flex" onClick={() => setAdding(true)}>
+        <Button size="lg" className="hidden sm:inline-flex" onClick={add}>
           <UserPlus aria-hidden /> Ajouter une personne
         </Button>
       }
     >
-      <Button size="lg" block className="mb-6 sm:hidden" onClick={() => setAdding(true)}>
+      <Button size="lg" block className="mb-6 sm:hidden" onClick={add}>
         <UserPlus aria-hidden /> Ajouter une personne
       </Button>
-      <QueryState
+      <Fetched
         query={people}
         loading={
           <div className="space-y-2">
@@ -116,7 +124,7 @@ function PeopleList({ onOpen }: { onOpen: () => void }) {
             )}
           </>
         )}
-      </QueryState>
+      </Fetched>
       <AddPersonSheet
         open={adding}
         onClose={() => setAdding(false)}
@@ -259,7 +267,7 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
         <Avatar name={person.name} />
         <span className="min-w-0">
           <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <span className="font-semibold break-words">{person.name}</span>
+            <span className="font-semibold wrap-anywhere">{person.name}</span>
             {person.unreviewed ? (
               <Badge tone="warn">
                 <ShieldAlert aria-hidden /> À vérifier
@@ -267,15 +275,19 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
             ) : null}
             {person.active ? null : <Badge>Accès désactivé</Badge>}
           </span>
-          <span className="text-dim block text-sm break-words lg:hidden">
+          <span className="text-dim block text-sm wrap-anywhere lg:hidden">
             {[ROLE_LABELS[person.role], person.title].filter(Boolean).join(" · ")}
           </span>
           <span className="text-dim block text-sm lg:hidden">
-            {/* "Jamais connecté" already says there is no device. */}
-            {[projects, person.lastSeenAt ? devices : null, seen].filter(Boolean).join(" · ")}
+            {/* "Jamais connecté" already says there is no device. On a narrow
+                phone the line breaks between two facts, never inside one. */}
+            {[projects, person.lastSeenAt ? devices : null, seen]
+              .filter((fact) => fact !== null)
+              .map((fact) => fact.replaceAll(" ", "\u00a0"))
+              .join(" · ")}
           </span>
           {person.title ? (
-            <span className="text-dim hidden text-sm break-words lg:block">{person.title}</span>
+            <span className="text-dim hidden text-sm wrap-anywhere lg:block">{person.title}</span>
           ) : null}
         </span>
       </span>
@@ -312,6 +324,9 @@ function AddPersonSheet({
       // The window keeps its scroll from one step to the next: the link must
       // not open half hidden where the bottom of the form was.
       document.getElementById(formId)?.scrollIntoView({ block: "start" });
+      // "Terminé" takes the place of the button just pressed: a second tap
+      // must not close the link, which shows only once.
+      ignoreSecondTap();
       setInvited({ person: form, link: invite });
       return refreshPeople();
     },

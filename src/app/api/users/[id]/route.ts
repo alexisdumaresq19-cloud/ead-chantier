@@ -5,14 +5,14 @@ import { db, schema } from "@/server/db/client";
 import { badRequest, body, forbidden, notFound, route } from "@/server/http";
 
 import { revokePersonalLinks, settleSiteCodes } from "../_lib/people";
-import { looksLikeEmail, officeLockout, personChange } from "../_lib/rules";
+import { officeLockout, personChange, personProblem } from "../_lib/rules";
 
 /** The office changes someone's details, role, state or projects. */
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   const admin = await requireAdmin(request);
   const { projectIds, ...fields } = await body(request, personChange);
-  if (fields.email && !looksLikeEmail(fields.email))
-    throw badRequest("Vérifiez le courriel : il semble incomplet.");
+  const problem = personProblem(fields);
+  if (problem) throw badRequest(problem);
   const changesAccess = fields.role !== undefined || fields.active !== undefined;
 
   await db.transaction(async (tx) => {

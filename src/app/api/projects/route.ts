@@ -2,12 +2,14 @@ import { z } from "zod";
 
 import { requireAdmin, requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { body, route } from "@/server/http";
+import { badRequest, body, route } from "@/server/http";
 import { newId } from "@/server/ids";
 import { projectsOf, summarize } from "@/server/projects";
 
 const projectInput = z.object({
-  name: z.string().trim().min(2).max(120),
+  // A name too short is refused below, in words for the office: a validation
+  // error would name the field in English.
+  name: z.string().trim().max(120),
   number: z.string().trim().max(40).nullish(),
   client: z.string().trim().max(120).nullish(),
   address: z.string().trim().max(200).nullish(),
@@ -23,6 +25,7 @@ export const GET = route(async (request) => {
 export const POST = route(async (request) => {
   const user = await requireAdmin(request);
   const input = await body(request, projectInput);
+  if (input.name.length < 2) throw badRequest("Entrez le nom du projet.");
   const [project] = await db
     .insert(schema.projects)
     .values({

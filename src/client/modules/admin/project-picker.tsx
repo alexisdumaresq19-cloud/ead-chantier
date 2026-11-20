@@ -30,8 +30,8 @@ export function CheckRow({
         className="accent-ead-dark size-5 shrink-0"
       />
       <span className="min-w-0">
-        <span className="block leading-snug font-medium break-words">{title}</span>
-        {detail ? <span className="text-dim block text-sm break-words">{detail}</span> : null}
+        <span className="block leading-snug font-medium wrap-anywhere">{title}</span>
+        {detail ? <span className="text-dim block text-sm wrap-anywhere">{detail}</span> : null}
       </span>
     </label>
   );

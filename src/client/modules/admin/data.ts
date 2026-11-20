@@ -16,7 +16,7 @@ export const adminKeys = {
   /** GET /api/users/:id/sessions — someone's devices; "me" for one's own. */
   devices: (userId: string) => ["devices", userId] as const,
   /** GET /api/projects/:id/qr — whether the code this device holds is still the one in force. */
-  siteCodeCheck: (projectId: string) => ["site-code-check", projectId] as const,
+  siteCodeCheck: (projectId: string) => [...keys.project(projectId), "site-code"] as const,
 };
 
 export const usePeople = ({ enabled = true }: { enabled?: boolean } = {}) =>

@@ -6,7 +6,9 @@ import { ROLES, type Role } from "@/shared/roles";
 // locking itself out. No database here, so it can be tested on its own.
 
 const fields = {
-  name: z.string().trim().min(2).max(80),
+  // A name too short passes here and is refused by personProblem(), in words
+  // for the office: a validation error would name the field in English.
+  name: z.string().trim().max(80),
   role: z.enum(ROLES),
   title: z.string().trim().max(80),
   phone: z.string().trim().max(30),
@@ -39,6 +41,15 @@ export const personChange = z
 
 /** Loose on purpose: it catches a forgotten "@" without refusing a real address. */
 export const looksLikeEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+
+/** What is wrong with the details typed, said to the office; null when they can be saved. */
+export function personProblem(details: { name?: string; email?: string | null }): string | null {
+  if (details.name !== undefined && details.name.length < 2)
+    return "Entrez le prénom et le nom de la personne.";
+  if (details.email && !looksLikeEmail(details.email))
+    return "Vérifiez le courriel : il semble incomplet.";
+  return null;
+}
 
 /**
  * Why a change would cost the office its access, or null when it may go

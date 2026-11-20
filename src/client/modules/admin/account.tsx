@@ -8,8 +8,9 @@ import { useOnline } from "../../lib/online";
 import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
-import { Avatar, Button, Card, confirmAction, toast } from "../../ui";
+import { Avatar, Button, Card, toast } from "../../ui";
 import { DeviceList } from "./devices";
+import { confirmCalmly } from "./second-tap";
 import { forgetSiteCodes } from "./site-code";
 
 /** Who is signed in on this device, their other devices, and the way out. */
@@ -29,7 +30,7 @@ export function AccountScreen() {
   });
 
   const askToLeave = async () => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: "Se déconnecter de cet appareil?",
       text: "Pour revenir, il faudra un nouveau lien du bureau ou le code QR d'un chantier.",
       confirmLabel: "Se déconnecter",
@@ -43,7 +44,7 @@ export function AccountScreen() {
       <Card className="flex items-center gap-4 p-4">
         <Avatar name={me.name} className="size-14 text-lg" />
         <div className="min-w-0">
-          <p className="font-display text-xl leading-tight font-bold break-words">{me.name}</p>
+          <p className="font-display text-xl leading-tight font-bold wrap-anywhere">{me.name}</p>
           <p className="text-dim mt-1 text-[15px]">
             {[ROLE_LABELS[me.role], me.title].filter(Boolean).join(" · ")}
           </p>

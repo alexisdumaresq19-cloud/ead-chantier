@@ -6,8 +6,10 @@ import type { Device } from "@/shared/api";
 import { api, errorMessage } from "../../lib/api";
 import { formatAgo } from "../../lib/format";
 import { queryClient } from "../../lib/query";
-import { Badge, Button, confirmAction, QueryState, Skeleton, toast } from "../../ui";
+import { Badge, Button, Skeleton, toast } from "../../ui";
 import { adminKeys, useDevices } from "./data";
+import { Fetched } from "./fetched";
+import { confirmCalmly } from "./second-tap";
 
 const deviceIcon = (label: string | null) =>
   /Ordinateur|Mac/.test(label ?? "")
@@ -48,7 +50,7 @@ export function DeviceList({
   });
 
   const ask = async (device: Device) => {
-    const ok = await confirmAction({
+    const ok = await confirmCalmly({
       title: "Déconnecter cet appareil?",
       text: `${device.label ?? "Cet appareil"} ne pourra plus ouvrir l'application. Pour y revenir, il faudra un nouveau lien du bureau ou le code QR d'un chantier.`,
       confirmLabel: "Déconnecter",
@@ -58,7 +60,11 @@ export function DeviceList({
   };
 
   return (
-    <QueryState query={devices} loading={<Skeleton className="h-16" />}>
+    <Fetched
+      query={devices}
+      loading={<Skeleton className="h-16" />}
+      errorClassName="border-0 bg-transparent px-0 py-4"
+    >
       {(list) =>
         list.length === 0 ? (
           <p className="text-dim text-[15px] text-pretty">{empty}</p>
@@ -96,6 +102,6 @@ export function DeviceList({
           </ul>
         )
       }
-    </QueryState>
+    </Fetched>
   );
 }
