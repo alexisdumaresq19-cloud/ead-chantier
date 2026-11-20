@@ -191,7 +191,9 @@ export function useRecorder({
       if (elapsed >= maxSeconds) finish(true);
     }, 250);
 
-    recorder.start(1000);
+    // One piece, handed over at the end: a recording cut in slices is a
+    // fragmented file on an iPhone, which transcription services read less well.
+    recorder.start();
     setSeconds(0);
     setPhase("recording");
   }, [phase, maxSeconds, finish, release]);

@@ -32,29 +32,37 @@ export const queryClient = new QueryClient({
 const KEY = "ead-query-cache";
 let pending: ReturnType<typeof setTimeout> | undefined;
 let latest: PersistedClient | undefined;
+let savedAt = 0;
 
-function saveNow() {
+/** Writes what is waiting to be stored, now. */
+export function saveStoredDataNow() {
   clearTimeout(pending);
   pending = undefined;
-  if (latest) set(KEY, latest).catch(() => {});
+  if (!latest) return;
+  savedAt = Date.now();
+  set(KEY, latest).catch(() => {});
   latest = undefined;
 }
 
-// A phone put back in a pocket may never run the timer: what was just seen
-// is saved as the app goes out of sight.
-if (typeof document !== "undefined")
+// A phone put back in a pocket may never run the timer, and a page that is
+// left takes its timer with it: what was just seen is saved as the app goes
+// out of sight or the page goes away.
+if (typeof document !== "undefined") {
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) saveNow();
+    if (document.hidden) saveStoredDataNow();
   });
+  window.addEventListener("pagehide", saveStoredDataNow);
+}
 
 /**
- * Stores the cache in IndexedDB, at most once a second, and never later than
- * a second after a change: a burst of changes does not push the save back.
+ * Stores the cache in IndexedDB, at most once a second: a change after a
+ * quiet moment is written at once, and a burst of changes is written again
+ * when its second ends, never later.
  */
 export const persister: Persister = {
   persistClient(client: PersistedClient) {
     latest = client;
-    pending ??= setTimeout(saveNow, 1000);
+    pending ??= setTimeout(saveStoredDataNow, Math.max(0, savedAt + 1000 - Date.now()));
   },
   restoreClient: () => get<PersistedClient>(KEY),
   removeClient: () => del(KEY),

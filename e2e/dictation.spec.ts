@@ -162,7 +162,9 @@ test("the home offers again the plans opened last", async ({ browser }) => {
   const context = await contextAs(browser, "worker");
   const page = await context.newPage();
   await page.goto(`/projets/${seed.projectId}`);
-  await expect(page.getByRole("link", { name: "Prendre une photo" })).toBeVisible();
+  // One tap from the home opens the camera.
+  await expect(page.getByLabel("Prendre une photo")).toBeAttached();
+  await expect(page.getByText("Prendre une photo")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Derniers plans ouverts" })).toHaveCount(0);
   // A worker has no report to write.
   await expect(page.getByRole("link", { name: /rapport du jour/i })).toHaveCount(0);

@@ -7,6 +7,7 @@ import type { Photo } from "@/shared/photos";
 import { api, errorMessage } from "../../lib/api";
 import { uploadFile } from "../../lib/upload";
 import { toast } from "../../ui";
+import { saveStoredDataNow } from "../../lib/query";
 import { photoAdded, refreshProject } from "./data";
 import { EXIF_READ_BYTES, readExifDate } from "./exif";
 import {
@@ -488,6 +489,10 @@ async function pass(): Promise<boolean> {
   // A refusal may come from a change to the project (archived): its screens learn of it.
   for (const item of refused) projects.add(item.projectId);
   for (const projectId of projects) void refreshProject(projectId);
+  // Written to the device at once: the app may be closed the next moment,
+  // and would otherwise open again on a gallery without what was just sent.
+  // (A tick later, once the lists have taken the change.)
+  if (projects.size > 0) setTimeout(saveStoredDataNow, 0);
   if (afterWaiting)
     toast.success(
       afterWaiting === 1
