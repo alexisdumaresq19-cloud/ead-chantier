@@ -87,9 +87,44 @@ describe("typedLine", () => {
     expect(typedLine("418 555-0123")).toBe("418 555-0123");
   });
 
+  it("keeps the names people have", () => {
+    for (const name of ["Jean-François Côté", "O'Brien", "Noël Lévesque", "Ève L’Heureux"])
+      expect(typedLine(name)).toBe(name);
+    // A non-breaking space, as a phone may put between two names.
+    expect(typedLine("Marie\u00a0Gagnon")).toBe("Marie Gagnon");
+  });
+
   // A NUL used to take one of a code's places before the database refused it.
   it("refuses any other control character", () => {
-    for (const text of ["Jean\u0000Tremblay", "Jean\u0007", "\u001bJean", "Jean\u007f"])
+    for (const text of [
+      "Jean\u0000Tremblay",
+      "Jean\u0007",
+      "\u001bJean",
+      "Jean\u007f",
+      "Jean\u0085",
+    ])
       expect(typedLine(text), JSON.stringify(text)).toBeNull();
+  });
+
+  // They would show in the member list as another name, or as nothing.
+  it("refuses invisible and direction-changing characters", () => {
+    for (const text of [
+      "Jean\u200bTremblay",
+      "Jean\u200dTremblay",
+      "Jean\u200fTremblay",
+      "Jean\u202eTremblay",
+      "\u2066Jean\u2069",
+      "Jean\u00adTremblay",
+      "Jean\u2060Tremblay",
+      "418\u202a555-0123",
+    ])
+      expect(typedLine(text), JSON.stringify(text)).toBeNull();
+  });
+
+  it("refuses half of a character", () => {
+    for (const text of ["Jean\ud800", "\udc00Jean", "Jean\udfff\ud800"])
+      expect(typedLine(text), JSON.stringify(text)).toBeNull();
+    // A whole character beyond the first plane is fine.
+    expect(typedLine("Jean 🦺")).toBe("Jean 🦺");
   });
 });

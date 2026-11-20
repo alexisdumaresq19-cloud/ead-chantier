@@ -330,11 +330,20 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
     expect((await call(office.request, "POST", invite, {})).status).toBe(200);
   // Nor does a name the database would refuse (it used to take a place and create nobody).
   const stranger = await api.newContext({ baseURL });
-  const unstorable = await call(stranger, "POST", invite, { name: "Jean\u0000Tremblay" });
-  expect(unstorable).toMatchObject({
-    status: 400,
-    body: { error: { message: "Ce nom contient des caractères non permis. Retapez-le." } },
-  });
+  // Nor do names that would pass for another in the member list (a
+  // right-to-left override, a zero-width space), or half of a character.
+  for (const name of [
+    "Jean\u0000Tremblay",
+    "Jean\u202eTremblay",
+    "Jean\u200bTremblay",
+    "Jean\ud800Tremblay",
+  ]) {
+    const unstorable = await call(stranger, "POST", invite, { name });
+    expect(unstorable, JSON.stringify(name)).toMatchObject({
+      status: 400,
+      body: { error: { message: "Ce nom contient des caractères non permis. Retapez-le." } },
+    });
+  }
   expect(await usesLeft()).toBe(4);
 
   // A worker with an account who asks ten times at the same moment takes one place.
@@ -477,15 +486,21 @@ test("a send that is tried again and again does not lock its sender out", async 
   for (let i = 0; i < 35; i++) tries.push(await announce(`mauvais-signal-${run}.jpg`));
   expect(tries.map((answer) => answer.status)).toEqual(Array(35).fill(200));
   expect(new Set(tries.map((answer) => answer.body.uploadId)).size).toBe(1);
+  // The same, sent all at once: still one upload.
+  const burst = await Promise.all(
+    Array.from({ length: 20 }, () => announce(`en-rafale-${run}.jpg`)),
+  );
+  expect(burst.map((answer) => answer.status)).toEqual(Array(20).fill(200));
+  expect(new Set(burst.map((answer) => answer.body.uploadId)).size).toBe(1);
 
   // Different files are counted: 30 unfinished at a time, then a refusal
-  // that says what to do. (One place is taken by the photo above.)
+  // that says what to do. (Two places are taken by the photos above.)
   const others = await Promise.all(
     Array.from({ length: 32 }, (_, i) => announce(`autre-${i}-${run}.jpg`)),
   );
   const refused = others.filter((answer) => answer.status === 429);
-  expect(others.filter((answer) => answer.status === 200)).toHaveLength(29);
-  expect(refused).toHaveLength(3);
+  expect(others.filter((answer) => answer.status === 200)).toHaveLength(28);
+  expect(refused).toHaveLength(4);
   expect(refused[0].body.error).toEqual({
     code: "too_many_uploads",
     message:

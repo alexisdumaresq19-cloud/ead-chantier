@@ -30,7 +30,8 @@ import {
 // that knows what the link can still do: completeUpload (a wrong file),
 // discardUpload (a file a module no longer wants) and the clean-up. A row
 // stays for as long as its link may write, so that whatever arrives is
-// counted against its sender and removed.
+// counted against its sender and removed, and then until it is a day old,
+// file gone, so that the daily allowance still counts it.
 
 export type UploadKind = "plan" | "document" | "photo";
 export type Upload = typeof schema.uploads.$inferSelect;
@@ -121,6 +122,8 @@ export const MAX_PENDING_BYTES = 2048 * MB;
  * What one person may announce in any 24 hours, per kind, whatever became of
  * it: confirmed files stay in storage, so the allowance above alone would
  * only slow a script down. Each is several times a heavy day's work.
+ * Counted from the uploads of the day (kept a day even once given up) and,
+ * for photos, from the photos made that day (see dailyUsage).
  */
 export const DAILY_LIMITS: Record<UploadKind, { count: number; bytes: number }> = {
   // A busy site takes a few dozen photos a day, a few MB each.
@@ -131,6 +134,20 @@ export const DAILY_LIMITS: Record<UploadKind, { count: number; bytes: number }> 
   plan: { count: 30, bytes: 6 * 1024 * MB },
 };
 
+/**
+ * The office loads a whole project on the day its contract starts: every
+ * plan and document at once, from one account. Its limits are those above
+ * times this; a stolen office session is still bounded.
+ */
+export const OFFICE_DAILY_FACTOR = 5;
+
+/** What this person may announce of this kind in a day. */
+export function dailyLimit(kind: UploadKind, role: SessionUser["role"]): Usage {
+  const limit = DAILY_LIMITS[kind];
+  const factor = role === "admin" ? OFFICE_DAILY_FACTOR : 1;
+  return { count: limit.count * factor, bytes: limit.bytes * factor };
+}
+
 /** How long an upload link works: fixed by Supabase, and the development folder follows. */
 const LINK_LIFETIME = 2 * HOUR;
 /**
@@ -138,14 +155,17 @@ const LINK_LIFETIME = 2 * HOUR;
  * working. The hour covers the moment between the row and the link being
  * made, the clocks, and a file that was still on its way when the link
  * expired. From then on it can no longer be confirmed, it no longer counts
- * against its sender, and the clean-up removes its file and its row.
+ * against its sender's unfinished uploads, and the clean-up removes its file.
+ * Its row stays until DAY, for the daily allowance.
  */
 const ABANDONED_AFTER = LINK_LIFETIME + HOUR;
+/** The window of the daily allowance, and how long an upload's row is kept. */
+const DAY = 24 * HOUR;
 /**
  * When a confirmed upload that nothing has used is removed: a day leaves a
  * phone that lost its signal after sending the time to come back and use it.
  */
-const UNUSED_AFTER = 24 * HOUR;
+const UNUSED_AFTER = DAY;
 /** Uploads removed per request, so that no request pays for a long clean-up. */
 const SWEEP_BATCH = 10;
 
@@ -156,6 +176,21 @@ const newerThan = (duration: number) =>
 const notNewerThan = (duration: number) =>
   raw`${schema.uploads.createdAt} <= now() - ${seconds(duration)}::int * interval '1 second'`;
 
+/**
+ * What an upload's storage_key becomes once its file may no longer be
+ * confirmed: "discarded" while its link can still write (the clean-up removes
+ * whatever it writes), "removed" once the file is gone for good. Neither can
+ * be a sent file's key (safeFilename strips leading dots), so no link writes
+ * there and no confirmation finds a file there.
+ */
+const DISCARDED = ".discarded";
+const REMOVED = ".removed";
+const keyMarked = (marker: string) =>
+  raw`${schema.uploads.storageKey} = 'u/' || ${schema.uploads.id} || '/' || ${marker}`;
+const markedKey = (id: string, marker: string) => `u/${id}/${marker}`;
+const isMarked = (upload: Upload) =>
+  [DISCARDED, REMOVED].some((marker) => upload.storageKey === markedKey(upload.id, marker));
+
 type Usage = { count: number; bytes: number };
 
 /** Whether one more upload of this size would exceed a person's allowance of unfinished uploads. */
@@ -163,9 +198,14 @@ export function exceedsAllowance(pending: Usage, size: number): boolean {
   return pending.count >= MAX_PENDING_UPLOADS || pending.bytes + size > MAX_PENDING_BYTES;
 }
 
-/** Whether one more upload of this kind and size would exceed what a person may send in a day. */
-export function exceedsDailyAllowance(kind: UploadKind, day: Usage, size: number): boolean {
-  const limit = DAILY_LIMITS[kind];
+/** Whether one more upload of this kind and size would exceed what this person may send in a day. */
+export function exceedsDailyAllowance(
+  kind: UploadKind,
+  role: SessionUser["role"],
+  day: Usage,
+  size: number,
+): boolean {
+  const limit = dailyLimit(kind, role);
   return day.count >= limit.count || day.bytes + size > limit.bytes;
 }
 
@@ -198,42 +238,43 @@ export async function beginUpload(
     console.error("uploads: sweep failed", error),
   );
 
-  // A send that failed is announced again by the app. It gets the place it
-  // already had, with a new link: trying again uses up nothing.
-  const again = await retriedUpload(user, { ...input, filename });
-  if (again) return { upload: again, target: await linkTo(again) };
-
   const id = newId();
   const storageKey = `u/${id}/${safeFilename(input.filename)}`;
-  const upload = await db.transaction(async (tx) => {
+  const { upload, retried } = await db.transaction(async (tx) => {
     // One request at a time per person: requests sent together cannot each
-    // find room for one more.
+    // find room for one more, nor each miss the upload the others repeat.
     await tx.execute(
       raw`select pg_advisory_xact_lock(hashtext('ead:uploads'), hashtext(${user.id}))`,
     );
+    // A send that failed is announced again by the app. It gets the place it
+    // already had, with a new link: trying again uses up nothing.
+    const again = await retriedUpload(tx, user, { ...input, filename });
+    if (again) return { upload: again, retried: true };
+
     const live = raw`${schema.uploads.status} = 'pending' and ${newerThan(ABANDONED_AFTER)}`;
-    const sameKind = raw`${schema.uploads.kind} = ${input.kind}`;
     const [used] = await tx
       .select({
         pending: raw<number>`(count(*) filter (where ${live}))::int`,
         pendingBytes: raw<number>`coalesce(sum(${schema.uploads.size}) filter (where ${live}), 0)::float8`,
-        day: raw<number>`(count(*) filter (where ${sameKind}))::int`,
-        dayBytes: raw<number>`coalesce(sum(${schema.uploads.size}) filter (where ${sameKind}), 0)::float8`,
       })
       .from(schema.uploads)
-      .where(and(eq(schema.uploads.createdBy, user.id), newerThan(24 * HOUR)));
+      .where(and(eq(schema.uploads.createdBy, user.id), newerThan(ABANDONED_AFTER)));
     if (exceedsAllowance({ count: used.pending, bytes: used.pendingBytes }, input.size))
       throw tooMany(
         "Trop d'envois n'ont pas abouti. Réessayez plus tard\u00a0: ils s'effacent après trois heures.",
       );
-    // The office is left out: it loads whole projects at once, and it is the
-    // one that lets people in, so the limit would protect nothing from it.
     if (
-      user.role !== "admin" &&
-      exceedsDailyAllowance(input.kind, { count: used.day, bytes: used.dayBytes }, input.size)
+      exceedsDailyAllowance(
+        input.kind,
+        user.role,
+        await dailyUsage(tx, user, input.kind),
+        input.size,
+      )
     )
       throw tooMany(
-        "Vous avez atteint la limite d'envois pour une journée. Réessayez demain, ou demandez au bureau.",
+        user.role === "admin"
+          ? "Vous avez atteint la limite d'envois pour une journée. Réessayez demain."
+          : "Vous avez atteint la limite d'envois pour une journée. Réessayez demain, ou demandez au bureau.",
       );
     const [row] = await tx
       .insert(schema.uploads)
@@ -248,24 +289,62 @@ export async function beginUpload(
         createdBy: user.id,
       })
       .returning();
-    return row;
+    return { upload: row, retried: false };
   });
   try {
     return { upload, target: await linkTo(upload) };
   } catch (error) {
-    // No link was handed out, so nothing can arrive: the place is given back.
-    await db.delete(schema.uploads).where(eq(schema.uploads.id, upload.id));
+    // No link was handed out for a new place, so nothing can arrive: it is
+    // given back. A retried one keeps the links it handed out before.
+    if (!retried) await db.delete(schema.uploads).where(eq(schema.uploads.id, upload.id));
     throw error;
   }
+}
+
+type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * What this person announced of this kind in the last 24 hours, whatever
+ * became of it. The photos module deletes an upload's row when it makes the
+ * photo, so the photos made that day are counted too. Their size is not
+ * kept: they count as one each, for nothing in bytes.
+ */
+async function dailyUsage(tx: Transaction, user: SessionUser, kind: UploadKind): Promise<Usage> {
+  const [uploads] = await tx
+    .select({
+      count: raw<number>`count(*)::int`,
+      bytes: raw<number>`coalesce(sum(${schema.uploads.size}), 0)::float8`,
+    })
+    .from(schema.uploads)
+    .where(
+      and(eq(schema.uploads.createdBy, user.id), eq(schema.uploads.kind, kind), newerThan(DAY)),
+    );
+  if (kind !== "photo") return uploads;
+  const [photos] = await tx
+    .select({ count: raw<number>`count(*)::int` })
+    .from(schema.photos)
+    .where(
+      and(
+        eq(schema.photos.createdBy, user.id),
+        raw`${schema.photos.createdAt} > now() - ${seconds(DAY)}::int * interval '1 second'`,
+      ),
+    );
+  return { count: uploads.count + photos.count, bytes: uploads.bytes };
 }
 
 /**
  * The unfinished upload this announcement repeats, if there is one whose
  * file has not arrived: the same file (name, size, type) for the same
  * project, by the same person. Its time starts again with the new link.
+ * Run under the person's lock, so that announcements sent together find the
+ * same one.
  */
-async function retriedUpload(user: SessionUser, input: Announcement): Promise<Upload | null> {
-  const [earlier] = await db
+async function retriedUpload(
+  tx: Transaction,
+  user: SessionUser,
+  input: Announcement,
+): Promise<Upload | null> {
+  const [earlier] = await tx
     .select()
     .from(schema.uploads)
     .where(
@@ -281,22 +360,19 @@ async function retriedUpload(user: SessionUser, input: Announcement): Promise<Up
       ),
     )
     .orderBy(desc(schema.uploads.createdAt))
-    .limit(1);
-  // A place that holds a file takes no other (the link writes once): that
-  // upload is confirmed or given up, and this one starts afresh.
-  if (!earlier || (await storage().stat("private", earlier.storageKey))) return null;
-  const [renewed] = await db
+    .limit(1)
+    .for("update");
+  // A discarded upload is never handed out again. A place that holds a file
+  // takes no other (the link writes once): that upload is confirmed or given
+  // up, and this one starts afresh.
+  if (!earlier || isMarked(earlier) || (await storage().stat("private", earlier.storageKey)))
+    return null;
+  const [renewed] = await tx
     .update(schema.uploads)
     .set({ createdAt: raw`now()` })
-    .where(
-      and(
-        eq(schema.uploads.id, earlier.id),
-        eq(schema.uploads.status, "pending"),
-        newerThan(ABANDONED_AFTER),
-      ),
-    )
+    .where(eq(schema.uploads.id, earlier.id))
     .returning();
-  return renewed ?? null;
+  return renewed;
 }
 
 /**
@@ -345,11 +421,17 @@ export async function completeUpload(user: SessionUser, uploadId: string): Promi
     const { upload, late } = found;
     if (upload.status === "complete") return upload;
     if (late) {
-      // Its link is dead: nothing can arrive any more, so all of it goes.
+      // Its link is dead: nothing can arrive any more, so the file goes. The
+      // row stays until the clean-up, a day after the announcement.
       await storage().removePrefix("private", `u/${upload.id}`);
-      await tx.delete(schema.uploads).where(eq(schema.uploads.id, upload.id));
+      await tx
+        .update(schema.uploads)
+        .set({ storageKey: markedKey(upload.id, REMOVED) })
+        .where(eq(schema.uploads.id, upload.id));
       return badRequest(TOO_LATE);
     }
+    // Given up by its module: whatever its link wrote since is not taken.
+    if (isMarked(upload)) return notFound("Téléversement introuvable.");
     const stored = await storage().stat("private", upload.storageKey);
     if (!stored) return badRequest(NOT_ARRIVED);
     const problem = uploadProblem(upload, stored);
@@ -372,11 +454,15 @@ export async function completeUpload(user: SessionUser, uploadId: string): Promi
 
 /**
  * For a module that no longer wants an upload it took (its document was
- * deleted, its photo has been resized): deletes the file now, and the row as
- * soon as the upload's link can no longer write. Until then the row goes
- * back to unfinished, so that anything the link writes again is counted
- * against the sender and removed by the clean-up. The row takes with it
- * whatever still refers to it.
+ * deleted, its photo has been resized): deletes the file now. The upload can
+ * never be confirmed or taken again: its row is marked given up (unfinished,
+ * its storage key moved to a place no link writes), and goes on counting
+ * against the sender, so that anything the link still writes is counted and
+ * removed by the clean-up. The row itself goes a day after the announcement.
+ *
+ * Callers delete their own rows that refer to the upload first (a document,
+ * a plan import): until the clean-up, such a row would still find this one,
+ * with no file behind it.
  *
  * Modules use this and never remove "u/<id>" from storage themselves: a
  * confirmed upload whose file is gone has an open link and a row that says
@@ -384,34 +470,41 @@ export async function completeUpload(user: SessionUser, uploadId: string): Promi
  */
 export async function discardUpload(uploadId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    const [upload] = await tx
-      .select()
+    const [found] = await tx
+      .select({
+        upload: schema.uploads,
+        linkDead: raw<boolean>`${notNewerThan(ABANDONED_AFTER)}`,
+        pastDay: raw<boolean>`${notNewerThan(DAY)}`,
+      })
       .from(schema.uploads)
       .where(eq(schema.uploads.id, uploadId))
       .for("update");
-    if (!upload) return;
+    if (!found) return;
+    const { upload, linkDead, pastDay } = found;
     await storage().removePrefix("private", `u/${upload.id}`);
-    const gone = await tx
-      .delete(schema.uploads)
-      .where(and(eq(schema.uploads.id, upload.id), notNewerThan(ABANDONED_AFTER)))
-      .returning({ id: schema.uploads.id });
-    if (!gone.length)
-      await tx
-        .update(schema.uploads)
-        .set({ status: "pending" })
-        .where(eq(schema.uploads.id, upload.id));
+    if (pastDay) {
+      await tx.delete(schema.uploads).where(eq(schema.uploads.id, upload.id));
+      return;
+    }
+    await tx
+      .update(schema.uploads)
+      .set({ status: "pending", storageKey: markedKey(upload.id, linkDead ? REMOVED : DISCARDED) })
+      .where(eq(schema.uploads.id, upload.id));
   });
 }
 
 /**
- * Uploads the clean-up removes, files and rows: those left unfinished past
- * their time (see ABANDONED_AFTER), whose links have expired and which
- * completeUpload refuses, and those confirmed more than a day ago that
- * nothing refers to (no plan import, no document; a photo removes its own
- * upload when it is made).
+ * Uploads the clean-up has work on: those left unfinished past their time
+ * (see ABANDONED_AFTER), whose links have expired and which completeUpload
+ * refuses, while their file may still be there; the rows of those whose file
+ * is gone, once a day old; and those announced more than a day ago,
+ * confirmed, that nothing refers to (no plan import, no document; a photo
+ * removes its own upload when it is made).
  */
 const removable = () => raw`(
-  (${schema.uploads.status} = 'pending' and ${notNewerThan(ABANDONED_AFTER)})
+  (${schema.uploads.status} = 'pending' and ${notNewerThan(ABANDONED_AFTER)}
+    and not ${keyMarked(REMOVED)})
+  or (${keyMarked(REMOVED)} and ${notNewerThan(DAY)})
   or (${schema.uploads.status} = 'complete' and ${notNewerThan(UNUSED_AFTER)}
     and not exists (select 1 from ${schema.planImports}
       where ${schema.planImports.uploadId} = ${schema.uploads.id})
@@ -420,11 +513,13 @@ const removable = () => raw`(
 )`;
 
 /**
- * Removes a few uploads nobody can use any more (see removable). Called on
- * the way by beginUpload: the caller's own first, then anyone's, oldest
- * first. Each is removed in its own transaction, row locked, so a module
- * that is taking it meanwhile is never left without it, and one that storage
- * refuses to delete is kept for later without stopping the others.
+ * Removes the files of a few uploads nobody can use any more, and the rows
+ * of those a day old (see removable); a younger row stays, marked, for the
+ * daily allowance. Called on the way by beginUpload: the caller's own first,
+ * then anyone's, oldest first. Each is handled in its own transaction, row
+ * locked, so a module that is taking it meanwhile is never left without it,
+ * and one that storage refuses to delete is kept for later without stopping
+ * the others. Returns how many were handled.
  */
 export async function sweepAbandonedUploads(first?: string): Promise<number> {
   const candidates = await db
@@ -441,15 +536,21 @@ export async function sweepAbandonedUploads(first?: string): Promise<number> {
     try {
       removed += await db.transaction(async (tx) => {
         // Looked at again under the lock; one being taken right now is skipped.
-        const [upload] = await tx
-          .select({ id: schema.uploads.id })
+        const [found] = await tx
+          .select({ upload: schema.uploads, pastDay: raw<boolean>`${notNewerThan(DAY)}` })
           .from(schema.uploads)
           .where(and(eq(schema.uploads.id, id), removable()))
           .for("update", { skipLocked: true });
-        if (!upload) return 0;
+        if (!found) return 0;
         // The file first: if storage refuses, the row stays to try again.
-        await storage().removePrefix("private", `u/${id}`);
-        await tx.delete(schema.uploads).where(eq(schema.uploads.id, id));
+        if (found.upload.storageKey !== markedKey(id, REMOVED))
+          await storage().removePrefix("private", `u/${id}`);
+        if (found.pastDay) await tx.delete(schema.uploads).where(eq(schema.uploads.id, id));
+        else
+          await tx
+            .update(schema.uploads)
+            .set({ storageKey: markedKey(id, REMOVED) })
+            .where(eq(schema.uploads.id, id));
         return 1;
       });
     } catch (error) {
