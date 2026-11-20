@@ -397,7 +397,9 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
   await expect(page.getByText(noPlace.body.error.message)).toBeVisible();
   await expect(page.getByLabel("Prénom et nom")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Réessayer" })).toHaveCount(0);
-  await page.getByRole("link", { name: "Ouvrir l'application" }).click();
+  // Not signed in: no button into the app, the way in is explained instead.
+  await expect(page.getByRole("link", { name: "Ouvrir l'application" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Comment entrer?" }).click();
   await expect(page.getByRole("heading", { name: "Bienvenue" })).toBeVisible();
   await late.close();
   const winner = devices[answers.findIndex((answer) => answer.status === 200)];
