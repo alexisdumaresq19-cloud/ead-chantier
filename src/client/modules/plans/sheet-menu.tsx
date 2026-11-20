@@ -21,6 +21,7 @@ import {
   Badge,
   Button,
   ButtonLink,
+  confirmAction,
   Field,
   FormError,
   Input,
@@ -29,7 +30,6 @@ import {
   Spinner,
   toast,
 } from "../../ui";
-import { confirmDeliberately } from "./confirm";
 import {
   planPaths,
   useArchiveSheet,
@@ -67,7 +67,7 @@ export function SheetMenu({
   const folder = folders.find((candidate) => candidate.id === sheet.folderId);
 
   const archiveSheet = async () => {
-    const confirmed = await confirmDeliberately({
+    const confirmed = await confirmAction({
       title: `Archiver la feuille ${sheet.number}?`,
       text: "Elle ne sera plus visible au chantier. Pour la remettre plus tard, importez de nouveau son PDF.",
       confirmLabel: "Archiver",
@@ -383,7 +383,7 @@ function Revisions({ projectId, sheet }: { projectId: string; sheet: PlanSheet }
 
   const show = async (revision: SheetRevision) => {
     const name = revisionTitle(revision);
-    const confirmed = await confirmDeliberately({
+    const confirmed = await confirmAction({
       title: `Montrer « ${name} » au chantier?`,
       text: `Tout le monde verra cette révision de la feuille ${sheet.number}, ajoutée le ${addedOn(revision)}. Les autres révisions restent ici.`,
       confirmLabel: "Montrer au chantier",

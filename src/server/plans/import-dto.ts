@@ -1,7 +1,7 @@
 import type { PlanImport } from "@/shared/plans";
 
 import { importPageDto } from "./dto";
-import { importWithPages } from "./imports";
+import { canRetry, importWithPages } from "./imports";
 
 export async function importDto(importId: string): Promise<PlanImport & { projectId: string }> {
   const { current, pages } = await importWithPages(importId);
@@ -17,5 +17,6 @@ export async function importDto(importId: string): Promise<PlanImport & { projec
     issuedOn: current.issuedOn,
     createdAt: current.createdAt.toISOString(),
     pages: pages.map(importPageDto),
+    canRetry: canRetry(current, pages),
   };
 }

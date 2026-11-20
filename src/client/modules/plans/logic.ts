@@ -6,9 +6,22 @@ import {
   type Plans,
   type Sheet,
 } from "@/shared/plans";
+import type { Role } from "@/shared/roles";
 
 // What the plan screens work out from their data, apart from any drawing:
 // who matches a search, which folder shows what, what stops a publication.
+
+// --- Who changes the plans --------------------------------------------------
+
+/**
+ * Whether to show the controls that change the plans: to those who manage
+ * the project, and once it is archived, to the office alone. The server
+ * decides again on every request.
+ */
+export const mayChangePlans = (
+  project: { canManage: boolean; status: "actif" | "archive" },
+  role: Role,
+): boolean => project.canManage && (project.status !== "archive" || role === "admin");
 
 // --- Searching the list -----------------------------------------------------
 

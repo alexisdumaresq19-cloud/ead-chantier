@@ -16,9 +16,9 @@ import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { useCurrentProject } from "../../lib/session";
 import { Page } from "../../shell/page";
-import { Button, EmptyState, IconButton, QueryState, SearchInput, Skeleton } from "../../ui";
+import { Badge, Button, EmptyState, IconButton, QueryState, SearchInput, Skeleton } from "../../ui";
 import { DropHint, InProgress, useAddFiles, useFileDrop } from "./adding";
-import { usePlans } from "./data";
+import { useCanChangePlans, usePlans } from "./data";
 import { FolderDialog } from "./folders";
 import { groupByFolder, indexSheets, type FolderGroup } from "./logic";
 import { LOOSE, useClosedFolders, usePlanView, type PlanView } from "./prefs";
@@ -33,7 +33,7 @@ import { SheetList, type ListProps } from "./sheets";
 export function PlansScreen() {
   const project = useCurrentProject();
   const plans = usePlans(project.id);
-  const canManage = project.canManage;
+  const canManage = useCanChangePlans();
   const fileInput = useRef<HTMLInputElement>(null);
   const [menuSheetId, setMenuSheetId] = useState<string | null>(null);
   const [folderDialog, setFolderDialog] = useState<{ folder: PlanFolder | null } | null>(null);
@@ -54,6 +54,7 @@ export function PlansScreen() {
   return (
     <Page
       title="Plans"
+      subtitle={project.status === "archive" ? <Badge>Projet archivé</Badge> : undefined}
       actions={
         // With nothing yet, the same button stands in the middle of the screen.
         canManage && !nothingYet ? (
@@ -84,7 +85,11 @@ export function PlansScreen() {
       <QueryState query={plans} loading={<ListSkeleton />}>
         {(data) =>
           nothingYet ? (
-            <NoPlans canManage={canManage} onAdd={chooseFiles} />
+            <NoPlans
+              canManage={canManage}
+              archived={project.status === "archive"}
+              onAdd={chooseFiles}
+            />
           ) : (
             <PlanList
               projectId={project.id}
@@ -124,9 +129,23 @@ export function PlansScreen() {
 
 // --- Nothing yet ------------------------------------------------------------
 
-function NoPlans({ canManage, onAdd }: { canManage: boolean; onAdd: () => void }) {
+function NoPlans({
+  canManage,
+  archived,
+  onAdd,
+}: {
+  canManage: boolean;
+  archived: boolean;
+  onAdd: () => void;
+}) {
   if (!canManage) {
-    return (
+    return archived ? (
+      <EmptyState
+        icon={Layers}
+        title="Aucun plan dans ce projet"
+        text="Ce projet est archivé sans plans. Le bureau peut encore en ajouter au besoin."
+      />
+    ) : (
       <EmptyState
         icon={Layers}
         title="Aucun plan pour l'instant"

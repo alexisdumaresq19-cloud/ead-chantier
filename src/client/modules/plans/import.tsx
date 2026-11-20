@@ -32,6 +32,7 @@ import {
   Button,
   ButtonLink,
   Card,
+  confirmAction,
   EmptyState,
   ErrorState,
   Field,
@@ -43,8 +44,14 @@ import {
   Spinner,
   toast,
 } from "../../ui";
-import { confirmDeliberately } from "./confirm";
-import { planKeys, planPaths, refreshProject, usePlanImport, usePlans } from "./data";
+import {
+  planKeys,
+  planPaths,
+  refreshProject,
+  useCanChangePlans,
+  usePlanImport,
+  usePlans,
+} from "./data";
 import { FolderDialog } from "./folders";
 import {
   draftOf,
@@ -66,15 +73,23 @@ export function ImportScreen() {
   const { importId } = useParams<{ importId: string }>();
   const list = planPaths.list(project.id);
   const back = { href: list, label: "Plans" };
-  const current = usePlanImport(project.id, importId, project.canManage);
+  const canChange = useCanChangePlans();
+  const current = usePlanImport(project.id, importId, canChange);
 
-  if (!project.canManage) {
+  if (!canChange) {
     return (
       <Page title="Ajout de plans" back={back}>
         <EmptyState
           icon={Lock}
-          title="Réservé au bureau et aux contremaîtres"
-          text="Les plans publiés se trouvent dans la liste des plans."
+          {...(project.canManage
+            ? {
+                title: "Ce projet est archivé",
+                text: "Ses plans ne changent plus. Seul le bureau peut encore en ajouter.",
+              }
+            : {
+                title: "Réservé au bureau et aux contremaîtres",
+                text: "Les plans publiés se trouvent dans la liste des plans.",
+              })}
           action={<ButtonLink href={list}>Voir les plans</ButtonLink>}
         />
       </Page>
@@ -320,7 +335,7 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
     },
   });
   const askCancel = async () => {
-    const confirmed = await confirmDeliberately({
+    const confirmed = await confirmAction({
       title: "Annuler cet import?",
       text: `Les pages converties de « ${current.filename} » seront supprimées. Les plans déjà publiés ne changent pas.`,
       confirmLabel: "Annuler l'import",
@@ -345,7 +360,7 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
     },
   });
   const askPublish = async () => {
-    const confirmed = await confirmDeliberately({
+    const confirmed = await confirmAction({
       title: `Publier ${count(kept.length, "feuille")}?`,
       text:
         replaced > 0
@@ -387,9 +402,15 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
           text={`${current.error ?? "Ce PDF n'a pas pu être converti."} Rien n'a été publié.`}
           action={
             <div className="flex flex-wrap justify-center gap-2">
-              <Button variant="secondary" onClick={() => retry.mutate()} loading={retry.isPending}>
-                <RotateCw aria-hidden /> Réessayer
-              </Button>
+              {current.canRetry ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => retry.mutate()}
+                  loading={retry.isPending}
+                >
+                  <RotateCw aria-hidden /> Réessayer
+                </Button>
+              ) : null}
               <Button variant="danger" onClick={askCancel} loading={cancel.isPending}>
                 Annuler l&apos;import
               </Button>
@@ -430,9 +451,15 @@ function ImportWork({ projectId, current }: { projectId: string; current: PlanIm
                 . Si vous publiez maintenant,{" "}
                 {failed > 1 ? "elles seront laissées" : "elle sera laissée"} de côté.
               </p>
-              <Button variant="secondary" onClick={() => retry.mutate()} loading={retry.isPending}>
-                <RotateCw aria-hidden /> Réessayer
-              </Button>
+              {current.canRetry ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => retry.mutate()}
+                  loading={retry.isPending}
+                >
+                  <RotateCw aria-hidden /> Réessayer
+                </Button>
+              ) : null}
             </div>
           ) : null}
 

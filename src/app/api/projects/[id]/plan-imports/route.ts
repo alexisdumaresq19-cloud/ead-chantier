@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { projectToManage } from "@/server/access";
+import { projectToChange, projectToManage } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
@@ -48,7 +48,7 @@ const input = z.object({
 /** Starts bringing an uploaded PDF in. */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  await projectToManage(user, id);
+  await projectToChange(user, id);
   const data = await body(request, input);
   const upload = await takeUpload(user, data.uploadId, "plan", id);
   if (data.folderId) {
