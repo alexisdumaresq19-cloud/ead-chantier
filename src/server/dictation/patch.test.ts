@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ReportContent } from "@/shared/reports";
 
-import { applyDictation, matchName, type DictationPatch } from "./patch";
+import { applyDictation, applyTidy, keepsTheFacts, matchName, type DictationPatch } from "./patch";
 
 const members = [
   { id: "u1", name: "Julie Cyr" },
@@ -29,6 +29,7 @@ const nothing: DictationPatch = {
   notes: null,
   replace: { equipment: false, workDone: false, notes: false },
   questions: [],
+  photos: [],
 };
 
 describe("matchName", () => {
@@ -144,5 +145,50 @@ describe("applyDictation", () => {
     const { content, changed } = applyDictation(empty, nothing, members);
     expect(content).toEqual(empty);
     expect(changed).toEqual([]);
+  });
+});
+
+describe("applyTidy", () => {
+  const current = {
+    ...empty,
+    weather: { condition: "pluie" as const, temperatureC: 4, note: "" },
+    equipment: "pelle, 2 camions",
+    workDone: "euh on a posé 40 m d'aqueduc entre R-3 et R-4 heu",
+    notes: "",
+  };
+
+  it("replaces the texts with their clean version, and nothing else", () => {
+    const { content, changed, questions } = applyTidy(current, {
+      ...nothing,
+      weather: { condition: "soleil", temperatureC: 20, note: "Beau" },
+      crew: [{ name: "Julie Cyr", hours: 8, remove: false }],
+      equipment: "Pelle et 2 camions.",
+      workDone: "Pose de 40 m de conduite d'aqueduc entre R-3 et R-4.",
+      notes: "Une note inventée.",
+      questions: ["Combien d'heures?"],
+    });
+    expect(content.equipment).toBe("Pelle et 2 camions.");
+    expect(content.workDone).toBe("Pose de 40 m de conduite d'aqueduc entre R-3 et R-4.");
+    // An empty part stays empty; the weather and the crew are not touched.
+    expect(content.notes).toBe("");
+    expect(content.weather).toEqual(current.weather);
+    expect(content.crew).toEqual([]);
+    expect(changed).toEqual(["equipment", "workDone"]);
+    expect(questions).toEqual([]);
+  });
+
+  it("keeps a text whose rewriting loses a figure or most of its words", () => {
+    const { content, changed } = applyTidy(current, {
+      ...nothing,
+      equipment: "Pelle et camions.",
+      workDone: "Pose.",
+    });
+    expect(content).toEqual(current);
+    expect(changed).toEqual([]);
+  });
+
+  it("keepsTheFacts compares the figures and the length", () => {
+    expect(keepsTheFacts("7,5 h et 200 mm", "200 mm, 7,5 h")).toBe(true);
+    expect(keepsTheFacts("7,5 h et 200 mm", "200 mm")).toBe(false);
   });
 });

@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import sharp from "sharp";
 
 import { call, contextAs, seed } from "./support";
 
@@ -23,6 +24,18 @@ const blank = (day: string) => ({
   workDone: "",
   notes: "",
 });
+
+/** Opens the window from the report without recording: the tap starts one, which is cancelled. */
+async function openWindow(page: Page) {
+  await page.getByRole("button", { name: /Dicter le rapport|Continuer la dictée/ }).click();
+  const dialog = page.getByRole("dialog", { name: /J'écoute|Dicter le rapport/ });
+  await page.waitForTimeout(450);
+  await dialog.getByRole("button", { name: "Annuler", exact: true }).click();
+  return page.getByRole("dialog", { name: "Dicter le rapport" });
+}
+
+const captionOf = async (page: Page, id: string) =>
+  (await call(page.context().request, "GET", `/api/photos/${id}`)).body.caption as string | null;
 
 async function dictateOnce(page: Page) {
   // One tap opens the window and starts the recording.
@@ -181,4 +194,159 @@ test("only those who write reports may dictate, and silence is said so", async (
   });
   expect(wrong.status()).toBe(400);
   await foreman.close();
+});
+
+test("a photo taken from the window goes with the report, and the assistant describes it", async ({
+  browser,
+}) => {
+  const phone = test.info().project.name === "phone";
+  const context = await contextAs(
+    browser,
+    "foreman",
+    phone ? { viewport: { width: 360, height: 740 } } : {},
+  );
+  const page = await context.newPage();
+  await page.goto(newReport(freeDay(45)));
+  const dialog = await openWindow(page);
+
+  // The camera, the strip and the footer's three places, all inside a narrow phone.
+  const camera = dialog.getByLabel("Prendre une photo");
+  await expect(dialog.getByText("Prenez vos photos ici")).toBeVisible();
+  await expect(dialog.getByText(/les photos du rapport sont lues par un service/)).toBeVisible();
+  const mic = await dialog.getByRole("button", { name: "Parler" }).boundingBox();
+  const write = await dialog.getByRole("button", { name: "Écrire" }).boundingBox();
+  const width = page.viewportSize()?.width ?? 0;
+  expect(mic && write).toBeTruthy();
+  if (phone && mic && write) {
+    expect(Math.abs(mic.x + mic.width / 2 - width / 2)).toBeLessThan(2);
+    expect(write.x).toBeGreaterThanOrEqual(0);
+    expect(write.x + write.width).toBeLessThan(mic.x);
+  }
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    width,
+  );
+
+  const jpeg = await sharp({
+    create: { width: 1600, height: 1200, channels: 3, background: "#8a7355" },
+  })
+    .jpeg()
+    .toBuffer();
+  await camera.setInputFiles({ name: "IMG_1.jpg", mimeType: "image/jpeg", buffer: jpeg });
+  const added = page.getByRole("dialog", { name: "Photo ajoutée" });
+  await expect(added).toBeVisible();
+  await page.waitForTimeout(450);
+  await added.getByRole("button", { name: "Terminé" }).click();
+  // The photo's own window closed; the dictation stays, with the photo numbered in its strip.
+  await expect(dialog).toBeVisible();
+  const strip = dialog.getByRole("list", { name: "Photos du rapport" });
+  await expect(strip.getByRole("figure", { name: /^Photo 1/ })).toBeVisible();
+
+  // Once the project has it, the assistant can describe it.
+  await dialog.getByRole("button", { name: "Décrire les photos" }).click({ timeout: 20_000 });
+  await expect(dialog.getByText("C'est fait")).toBeVisible({ timeout: 20_000 });
+  const described = dialog.getByRole("list", { name: "Photos décrites" });
+  await expect(described).toContainText("Photo 1 : Vue du chantier (description d'exemple)");
+  await expect(dialog.getByRole("button", { name: "Décrire les photos" })).toHaveCount(0);
+
+  const photos = (await call(context.request, "GET", `/api/projects/${seed.projectId}/photos`))
+    .body as { id: string; caption: string | null }[];
+  const photo = photos.find((one) => one.caption === "Vue du chantier (description d'exemple)");
+  expect(photo).toBeTruthy();
+  const id = photo?.id ?? "";
+
+  // Putting the turn back takes the description away.
+  await dialog.getByRole("button", { name: "Annuler les descriptions" }).click();
+  await expect.poll(() => captionOf(page, id)).toBeNull();
+  await expect(dialog.getByRole("button", { name: "Décrire les photos" })).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Décrire les photos" }).click();
+  await expect(dialog.getByText("C'est fait")).toBeVisible({ timeout: 20_000 });
+  await expect.poll(() => captionOf(page, id)).toBe("Vue du chantier (description d'exemple)");
+  await dialog.getByRole("button", { name: "Terminé" }).click();
+  await expect(dialog).toBeHidden();
+
+  // The saved report names the photo.
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page).toHaveURL(new RegExp(`/rapports/(?!nouveau)[a-z0-9]+$`));
+  const reportId = page.url().split("/").at(-1) ?? "";
+  const saved = (await call(context.request, "GET", `/api/reports/${reportId}`)).body;
+  expect(saved.photoIds).toEqual([id]);
+  await context.close();
+});
+
+test("the assistant puts the texts in clean French, and that can be put back", async ({
+  browser,
+}) => {
+  const context = await contextAs(browser, "foreman");
+  const page = await context.newPage();
+  await page.goto(newReport(freeDay(46)));
+  const work = page.getByLabel("Travaux réalisés");
+  await work.fill("  on a posé  la conduite\nremblai de la tranchée");
+  const dialog = await openWindow(page);
+
+  await dialog.getByRole("button", { name: "Mettre au propre" }).click();
+  await expect(dialog.getByText("C'est fait")).toBeVisible({ timeout: 20_000 });
+  await expect(dialog.getByText("Travaux réalisés : mis au propre")).toBeVisible();
+  await expect(work).toHaveValue("On a posé la conduite.\nRemblai de la tranchée.");
+  // A second clean copy would change nothing: it is not offered right after.
+  await expect(dialog.getByRole("button", { name: "Mettre au propre" })).toHaveCount(0);
+
+  await dialog.getByRole("button", { name: "Annuler la mise au propre" }).click();
+  await expect(work).toHaveValue("  on a posé  la conduite\nremblai de la tranchée");
+  await expect(dialog.getByRole("button", { name: "Mettre au propre" })).toBeVisible();
+  await context.close();
+});
+
+test("the tasks need something to work on, and photo ids are only the project's", async ({
+  browser,
+}) => {
+  const context = await contextAs(browser, "foreman");
+  const day = freeDay(47);
+  // An id the project does not hold is never looked at, whatever the screen says of it.
+  const stranger = "abcdefghjkmnpqrs";
+  const current = { ...blank(day), photoIds: [stranger] };
+  const photos = [
+    { id: stranger, caption: null, takenAt: new Date().toISOString(), onServer: true },
+  ];
+  const describe = await context.request.post(address, {
+    headers: { origin: seed.base },
+    multipart: {
+      day,
+      current: JSON.stringify(current),
+      photos: JSON.stringify(photos),
+      task: "describe",
+    },
+  });
+  expect(describe.status()).toBe(422);
+  expect((await describe.json()).error.code).toBe("nothing_to_describe");
+
+  const tidy = await context.request.post(address, {
+    headers: { origin: seed.base },
+    multipart: { day, current: JSON.stringify(blank(day)), task: "tidy" },
+  });
+  expect(tidy.status()).toBe(422);
+  expect((await tidy.json()).error.code).toBe("nothing_to_tidy");
+
+  const unknown = await context.request.post(address, {
+    headers: { origin: seed.base },
+    multipart: { day, current: JSON.stringify(blank(day)), task: "ignore-tout" },
+  });
+  expect(unknown.status()).toBe(400);
+
+  // A dictation tells which photos still on a phone could not be looked at.
+  const said = await context.request.post(address, {
+    headers: { origin: seed.base },
+    multipart: {
+      day,
+      current: JSON.stringify(current),
+      photos: JSON.stringify(photos),
+      text: "Soleil.",
+    },
+  });
+  expect(said.status()).toBe(200);
+  const result = await said.json();
+  expect(result.captions).toEqual([]);
+  expect(result.unseen).toEqual([stranger]);
+  expect(result.later).toEqual([]);
+  await context.close();
 });

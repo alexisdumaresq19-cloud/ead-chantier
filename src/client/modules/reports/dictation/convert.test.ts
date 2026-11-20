@@ -3,7 +3,17 @@ import { describe, expect, it } from "vitest";
 import type { ReportContent } from "@/shared/reports";
 
 import { emptyForm, type ReportForm } from "../form";
-import { contentForDictation, dictationChips, formAfterDictation } from "./convert";
+import type { ReportPhoto } from "../photos";
+import {
+  contentForDictation,
+  dictationChips,
+  formAfterDictation,
+  hasTextToTidy,
+  photoNumbers,
+  photosForAssistant,
+  photosToDescribe,
+  tidyChips,
+} from "./convert";
 
 const form = (change: Partial<ReportForm> = {}): ReportForm => ({
   ...emptyForm("2026-11-19"),
@@ -197,5 +207,56 @@ describe("dictationChips", () => {
       weather: { condition: null, temperatureC: null, note: "Vent fort" },
     };
     expect(dictationChips(blank, after, ["weather"])).toEqual(["Météo\u00a0: note ajoutée"]);
+  });
+});
+
+describe("photos for the assistant", () => {
+  const photo = (id: string, caption: string | null): ReportPhoto => ({
+    id,
+    takenAt: "2026-11-19T14:00:00.000Z",
+    caption,
+    photo: { id, caption } as ReportPhoto["photo"] & object,
+  });
+  const local = (id: string, state: "sending" | "sent"): ReportPhoto => ({
+    id,
+    takenAt: "2026-11-19T15:00:00.000Z",
+    caption: null,
+    local: {
+      id,
+      projectId: "p",
+      ownerId: "u",
+      takenAt: "2026-11-19T15:00:00.000Z",
+      caption: null,
+      state,
+      error: null,
+    },
+  });
+
+  it("says which photos the project already has, in the screen's order", () => {
+    expect(
+      photosForAssistant([photo("a", " Regard "), local("b", "sending"), local("c", "sent")]),
+    ).toEqual([
+      { id: "a", caption: "Regard", takenAt: "2026-11-19T14:00:00.000Z", onServer: true },
+      { id: "b", caption: null, takenAt: "2026-11-19T15:00:00.000Z", onServer: false },
+      { id: "c", caption: null, takenAt: "2026-11-19T15:00:00.000Z", onServer: true },
+    ]);
+  });
+
+  it("counts the photos to describe among those the project has", () => {
+    expect(photosToDescribe([photo("a", "Regard"), photo("b", null), local("c", "sending")])).toBe(
+      1,
+    );
+  });
+
+  it("offers to tidy a report that holds text", () => {
+    expect(hasTextToTidy(form())).toBe(false);
+    expect(hasTextToTidy(form({ notes: " Visite. " }))).toBe(true);
+  });
+
+  it("writes what was tidied and the numbers as the window shows them", () => {
+    expect(tidyChips(["workDone"])).toEqual(["Travaux réalisés\u00a0: mis au propre"]);
+    expect(photoNumbers([3])).toBe("la photo 3");
+    expect(photoNumbers([5, 3])).toBe("les photos 3 et 5");
+    expect(photoNumbers([4, 1, 2])).toBe("les photos 1, 2 et 4");
   });
 });

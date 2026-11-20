@@ -4,9 +4,18 @@ import { projectToChange } from "@/server/access";
 import { countDictation } from "@/server/ai/usage";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { applyDictation, reportOnScreen } from "@/server/dictation/patch";
+import { applyDictation, applyTidy, reportOnScreen } from "@/server/dictation/patch";
+import {
+  captionsFromPatch,
+  imagesForModel,
+  photosOnScreen,
+  planPhotos,
+  taskOf,
+} from "@/server/dictation/photos";
 import { readDictation, transcribeDictation } from "@/server/dictation/write";
 import { badRequest, HttpError, route } from "@/server/http";
+import { photoRowsByIds } from "@/server/photos/queries";
+import { storage } from "@/server/storage";
 import { DICTATION_MAX_BYTES, DICTATION_MAX_TEXT, type DictationResult } from "@/shared/dictation";
 
 // Two calls to the AI service, one after the other: allow for a slow one.
@@ -15,8 +24,10 @@ export const maxDuration = 90;
 const AUDIO = /^audio\/(webm|mp4|ogg|wav|x-wav|mpeg|mp3|aac|x-m4a|m4a)\b/;
 
 /**
- * Fills a daily report from what the foreman says: a recording or a text,
- * and the report as it stands on screen. Nothing is saved here.
+ * Fills a daily report from what the foreman says (a recording or a text)
+ * and the photos that go with it, or does a task without a dictation
+ * (describe the photos, put the texts in clean French). Nothing is saved
+ * here: the screen gives the photos their descriptions.
  */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
@@ -36,6 +47,19 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   }
   const report = reportOnScreen.parse(current);
   const asked = questionsAsked(form.get("asked"));
+  const task = taskOf(form.get("task"));
+  if (task === "invalid") throw badRequest("Demande inconnue.");
+  // An id is only ever looked up among this project's photos.
+  const onScreen = photosOnScreen(form.get("photos"), report.photoIds);
+  const rows = await photoRowsByIds(
+    id,
+    onScreen.map((photo) => photo.id),
+  );
+  const plan = planPhotos(
+    onScreen,
+    rows.map((row) => row.photo),
+    task,
+  );
 
   const members = await db
     .select({ id: schema.users.id, name: schema.users.name })
@@ -49,9 +73,23 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
     : [...members, { id: user.id, name: user.name }];
 
   const audio = form.get("audio");
-  const recorded = audio instanceof Blob && audio.size > 0 ? audio : null;
-  let heard = String(form.get("text") ?? "").trim();
-  if (recorded) {
+  const recorded = audio instanceof Blob && audio.size > 0 && !task ? audio : null;
+  let heard = task ? "" : String(form.get("text") ?? "").trim();
+  if (task === "describe") {
+    if (plan.toLook.length === 0)
+      throw new HttpError(
+        422,
+        "nothing_to_describe",
+        "Toutes les photos reçues ont une description.",
+      );
+  } else if (task === "tidy") {
+    if (![report.equipment, report.workDone, report.notes].some((text) => text.trim()))
+      throw new HttpError(
+        422,
+        "nothing_to_tidy",
+        "Le rapport n'a pas encore de texte à mettre au propre.",
+      );
+  } else if (recorded) {
     if (!AUDIO.test(recorded.type))
       throw badRequest("Cet enregistrement n'est pas dans un format accepté.");
     if (recorded.size > DICTATION_MAX_BYTES)
@@ -70,15 +108,34 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
     heard = heard.slice(0, DICTATION_MAX_TEXT);
   }
 
-  const patch = await readDictation({
+  const { images, failed } = await imagesForModel(plan.toLook, (key) =>
+    storage().get("public", key),
+  );
+  const { patch, sawImages } = await readDictation({
     heard,
     current: report,
     members: known,
     speaker: user.name,
     asked,
+    task,
+    photos: plan.listed,
+    images,
   });
-  const applied = applyDictation(report, patch, known);
-  return { heard, ...applied } satisfies DictationResult;
+  // Each task changes only what it is for.
+  const applied =
+    task === "tidy"
+      ? applyTidy(report, patch)
+      : task === "describe"
+        ? { content: report, changed: [], questions: [] }
+        : applyDictation(report, patch, known);
+  const looked = new Set(sawImages ? images.map((image) => image.number) : []);
+  const captions = captionsFromPatch(patch, plan, task, looked);
+  const unseen = [
+    ...plan.notArrived,
+    ...failed,
+    ...(sawImages ? [] : plan.toLook.map((photo) => photo.id).filter((id) => !failed.includes(id))),
+  ];
+  return { heard, ...applied, captions, unseen, later: plan.later } satisfies DictationResult;
 });
 
 const nothingHeard = () =>

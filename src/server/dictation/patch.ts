@@ -33,6 +33,8 @@ export const dictationPatch = z.object({
   notes: z.string().nullable(),
   replace: z.object({ equipment: z.boolean(), workDone: z.boolean(), notes: z.boolean() }),
   questions: z.array(z.string()),
+  /** Descriptions for the report's photos, by their number on screen. */
+  photos: z.array(z.object({ number: z.number(), description: z.string() })),
 });
 
 export type DictationPatch = z.infer<typeof dictationPatch>;
@@ -174,4 +176,49 @@ export function applyDictation(
     (field) => !same(content[field], current[field]),
   );
   return { content, changed, questions: [...new Set(questions)].slice(0, 4) };
+}
+
+type TextField = "equipment" | "workDone" | "notes";
+const TEXT_FIELDS: TextField[] = ["equipment", "workDone", "notes"];
+const TEXT_MAX: Record<TextField, number> = {
+  equipment: LIMITS.equipment,
+  workDone: LIMITS.text,
+  notes: LIMITS.text,
+};
+
+/** The figures of a text: "40", "7,5", "200". */
+const figures = (text: string) => new Set(text.match(/\d+(?:[.,]\d+)?/g) ?? []);
+
+/**
+ * Whether a rewritten text can stand for the one it replaces: every figure of
+ * the original is still there, and it is not much shorter (a clean text loses
+ * hesitations and repetitions, never half of what was said).
+ */
+export function keepsTheFacts(before: string, after: string): boolean {
+  const kept = figures(after);
+  return (
+    [...figures(before)].every((figure) => kept.has(figure)) &&
+    after.trim().length >= before.trim().length * 0.4
+  );
+}
+
+/**
+ * The report with its texts put in clean French ("Mettre au propre"): only
+ * the equipment, the work done and the notes, only those that held text, and
+ * only a rewriting that keeps the facts. Everything else stays as it was.
+ */
+export function applyTidy(
+  current: ReportContent,
+  patch: DictationPatch,
+): { content: ReportContent; changed: DictationField[]; questions: string[] } {
+  const content = { ...current };
+  const changed: DictationField[] = [];
+  for (const field of TEXT_FIELDS) {
+    const before = current[field];
+    const after = cut(patch[field]?.trim() ?? "", TEXT_MAX[field]);
+    if (!before.trim() || !after || after === before || !keepsTheFacts(before, after)) continue;
+    content[field] = after;
+    changed.push(field);
+  }
+  return { content, changed, questions: [] };
 }
