@@ -41,21 +41,16 @@ import { useWakeLock } from "./viewer/use-wake-lock";
 // for: a sheet tapped in the list is on screen at once (its thumbnail, then
 // sharp tiles) and is moved with two fingers as in a map app.
 
-// Both are held for as long as the app is open. The sheets fetched ahead have
-// no screen holding on to them, and the app's usual lifetime for unused data
-// (a month) is more than a browser timer can count: it runs out at once.
 const sheetQuery = (projectId: string, sheetId: string) =>
   queryOptions({
     queryKey: keys.sheet(projectId, sheetId),
     queryFn: ({ signal }) => api<SheetDetail>(`/api/sheets/${sheetId}`, { signal }),
-    gcTime: Infinity,
   });
 
 const plansQuery = (projectId: string) =>
   queryOptions({
     queryKey: keys.plans(projectId),
     queryFn: ({ signal }) => api<Plans>(`/api/projects/${projectId}/plans`, { signal }),
-    gcTime: Infinity,
   });
 
 /** Dark grey behind the sheet, so that the white edges of the paper show. */
@@ -74,6 +69,9 @@ export function SheetViewerScreen() {
 
   const detail = useQuery({
     ...sheetQuery(project.id, sheetId),
+    // Asked again on every opening, however fresh the copy on the device: a
+    // sheet archived meanwhile must say so, not show the plan it was.
+    refetchOnMount: "always",
     // A sheet still being prepared: look again until its plan is ready.
     refetchInterval: (query) => (query.state.data && !query.state.data.current ? 5000 : false),
   });
@@ -86,6 +84,11 @@ export function SheetViewerScreen() {
   // for more than a list kept on the device.
   const refused = detail.error instanceof ApiFailure && [403, 404].includes(detail.error.status);
   const shown = refused ? null : (view?.shown ?? null);
+  // The list kept on the device still names the sheet: it is asked again, so
+  // the way back does not lead to it.
+  useEffect(() => {
+    if (refused) void queryClient.invalidateQueries({ queryKey: keys.plans(project.id) });
+  }, [refused, queryClient, project.id]);
   const failure = failureOf(detail);
 
   const canvasRef = useRef<PlanCanvasHandle>(null);

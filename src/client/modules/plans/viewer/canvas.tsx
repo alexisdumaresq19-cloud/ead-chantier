@@ -108,6 +108,9 @@ const options: OpenSeadragon.Options = {
   showSequenceControl: false,
   keyboardNavEnabled: false,
   tabIndex: -1,
+  // There are no OpenSeadragon controls to fade; left on, each finger lifted
+  // starts a fading animation that runs on, even after the screen is left.
+  autoHideControls: false,
 
   // The sheet may be dragged past its edge and springs back on release; held
   // at the edge instead, it would lag behind the finger.
