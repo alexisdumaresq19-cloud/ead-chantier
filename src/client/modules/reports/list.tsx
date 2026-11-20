@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   CalendarDays,
   Check,
   ChevronRight,
@@ -26,12 +27,20 @@ import {
   Field,
   IconButton,
   Input,
+  QueryState,
   Sheet,
   Skeleton,
 } from "../../ui";
-import { dayQuery, membersQuery, reportsPath, useDrafts, useReports, useToday } from "./data";
+import {
+  dayQuery,
+  membersQuery,
+  reportsPath,
+  useCanChangeReports,
+  useDrafts,
+  useReports,
+  useToday,
+} from "./data";
 import { removeDraft, type Draft } from "./drafts";
-import { Fetched } from "./fetched";
 import {
   capitalize,
   formatFullDay,
@@ -43,6 +52,7 @@ import {
   shiftDay,
   weekdayShort,
 } from "./lib";
+import { Notice } from "./status";
 import { WeatherLine } from "./weather";
 
 // The project's reports: today's first, then the days of the week that still
@@ -57,15 +67,17 @@ export function ReportListScreen() {
   const reports = useReports(project.id);
   const drafts = useDrafts(me.id, project.id);
   const [choosingDate, setChoosingDate] = useState(false);
+  const canChange = useCanChangeReports();
   const base = reportsPath(project.id);
 
   // Fetched ahead: the report is often written where there is no signal, and
   // it starts from the people of the project and the crew of the day before.
   const client = useQueryClient();
   useEffect(() => {
+    if (!canChange) return;
     void client.prefetchQuery(dayQuery(project.id, today));
     void client.prefetchQuery(membersQuery(project.id));
-  }, [client, project.id, today]);
+  }, [client, project.id, today, canChange]);
 
   const byDay = new Map(reports.data?.map((report) => [report.day, report]));
   const draftDays = new Set(drafts.map((draft) => draft.form.day));
@@ -75,65 +87,77 @@ export function ReportListScreen() {
     return report ? `${base}/${report.id}` : `${base}/nouveau?jour=${day}`;
   };
   const todayReport = byDay.get(today);
-  const started = Boolean(todayReport) || draftDays.has(today);
+  // Saved, it is added to through the day; only on this device, it is still to save.
+  const todayLabel = todayReport
+    ? "Compléter le rapport d'aujourd'hui"
+    : draftDays.has(today)
+      ? "Continuer le rapport d'aujourd'hui"
+      : "Rapport d'aujourd'hui";
 
   return (
     <Page title="Rapports">
-      <div className="grid gap-3 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-stretch lg:gap-4">
-        <Link
-          href={
-            todayReport ? `${base}/${todayReport.id}/modifier` : `${base}/nouveau?jour=${today}`
-          }
-          className="bg-ead-dark hover:bg-ead-darker active:bg-ead-darker flex min-h-18 items-center gap-3.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-colors"
-        >
-          <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
-            <NotebookPen className="size-6.5" aria-hidden />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="font-display block text-[17px] leading-tight font-bold text-balance">
-              {started ? "Continuer le rapport d'aujourd'hui" : "Rapport d'aujourd'hui"}
+      {canChange ? (
+        <div className="grid gap-3 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-stretch lg:gap-4">
+          <Link
+            href={
+              todayReport ? `${base}/${todayReport.id}/modifier` : `${base}/nouveau?jour=${today}`
+            }
+            className="bg-ead-dark hover:bg-ead-darker active:bg-ead-darker flex min-h-18 items-center gap-3.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-colors"
+          >
+            <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
+              <NotebookPen className="size-6.5" aria-hidden />
             </span>
-            <span className="mt-0.5 block text-sm text-white/85">
-              {capitalize(formatWeekday(today))}
+            <span className="min-w-0 flex-1">
+              <span className="font-display block text-[17px] leading-tight font-bold text-balance">
+                {todayLabel}
+              </span>
+              <span className="mt-0.5 block text-sm text-white/85">
+                {capitalize(formatWeekday(today))}
+              </span>
             </span>
-          </span>
-          <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
-        </Link>
+            <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
+          </Link>
 
-        {/* Seven days across a 360 px phone leave no room for a frame: there, they sit on the page. */}
-        <section className="sm:border-line sm:bg-surface sm:rounded-2xl sm:border sm:px-3 sm:pt-1.5 sm:pb-3 sm:shadow-xs">
-          <div className="flex items-center justify-between gap-2 sm:pl-1">
-            <h2 className="font-display text-dim text-sm font-bold tracking-wider uppercase">
-              7 derniers jours
-            </h2>
-            <Button variant="ghost" onClick={() => setChoosingDate(true)} className="-mr-2 px-3">
-              <CalendarDays aria-hidden /> Autre date
-            </Button>
-          </div>
-          <ul className="grid grid-cols-7 gap-0.5 min-[390px]:gap-1 sm:gap-2">
-            {lastDays(today, 7).map((day) => (
-              <li key={day}>
-                <DayCell
-                  day={day}
-                  href={hrefOf(day)}
-                  state={
-                    byDay.has(day)
-                      ? "done"
-                      : draftDays.has(day)
-                        ? "draft"
-                        : reports.data
-                          ? "none"
-                          : "unknown"
-                  }
-                  isToday={day === today}
-                />
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
+          {/* Seven days across a 360 px phone leave no room for a frame: there, they sit on the page. */}
+          <section className="sm:border-line sm:bg-surface sm:rounded-2xl sm:border sm:px-3 sm:pt-1.5 sm:pb-3 sm:shadow-xs">
+            <div className="flex items-center justify-between gap-2 sm:pl-1">
+              <h2 className="font-display text-dim text-sm font-bold tracking-wider uppercase">
+                7 derniers jours
+              </h2>
+              <Button variant="ghost" onClick={() => setChoosingDate(true)} className="-mr-2 px-3">
+                <CalendarDays aria-hidden /> Autre date
+              </Button>
+            </div>
+            <ul className="grid grid-cols-7 gap-0.5 min-[390px]:gap-1 sm:gap-2">
+              {lastDays(today, 7).map((day) => (
+                <li key={day}>
+                  <DayCell
+                    day={day}
+                    href={hrefOf(day)}
+                    state={
+                      byDay.has(day)
+                        ? "done"
+                        : draftDays.has(day)
+                          ? "draft"
+                          : reports.data
+                            ? "none"
+                            : "unknown"
+                    }
+                    isToday={day === today}
+                  />
+                </li>
+              ))}
+            </ul>
+          </section>
+        </div>
+      ) : (
+        <Notice tone="neutral" icon={<Archive aria-hidden />}>
+          Projet archivé&nbsp;: les rapports se lisent et s&apos;impriment, mais ne se modifient
+          plus.
+        </Notice>
+      )}
 
-      {drafts.length > 0 ? (
+      {drafts.length > 0 && canChange ? (
         <DraftList
           drafts={drafts}
           hrefOf={(draft) =>
@@ -144,8 +168,8 @@ export function ReportListScreen() {
         />
       ) : null}
 
-      <div className="mt-8">
-        <Fetched
+      <div className={canChange ? "mt-8" : "mt-5"}>
+        <QueryState
           query={reports}
           loading={
             <div className="space-y-2">
@@ -186,7 +210,7 @@ export function ReportListScreen() {
               ))
             )
           }
-        </Fetched>
+        </QueryState>
       </div>
 
       <OtherDateSheet

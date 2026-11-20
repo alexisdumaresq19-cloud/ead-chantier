@@ -12,9 +12,24 @@ import { count, formatTime, formatWeekday } from "../../lib/format";
 import { navigate } from "../../lib/location";
 import { keys, useCurrentProject } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
-import { Button, ButtonLink, confirmAction, IconButton, Sheet, Skeleton, toast } from "../../ui";
-import { reportKeys, reportsPath, useDayPhotos, useReport, useStillShown } from "./data";
-import { Fetched } from "./fetched";
+import {
+  Button,
+  ButtonLink,
+  confirmAction,
+  IconButton,
+  QueryState,
+  Sheet,
+  Skeleton,
+  toast,
+} from "../../ui";
+import {
+  reportKeys,
+  reportsPath,
+  useCanChangeReports,
+  useDayPhotos,
+  useReport,
+  useStillShown,
+} from "./data";
 import { capitalize, formatFullDay, formatHours, formatWhen } from "./lib";
 import { ReportMissing } from "./missing";
 import { WeatherLine } from "./weather";
@@ -26,11 +41,16 @@ const COMPANY = "Les Entreprises Allen Dumaresq";
 
 /**
  * The printed page. The app's frame hides itself (class no-print); a message
- * still on screen ("Rapport enregistré") must not be printed on every sheet.
+ * still on screen ("Rapport enregistré") must not be printed on every sheet,
+ * and the black behind the app would edge the page and fill the end of the
+ * last one when backgrounds are printed.
  */
 const PRINT_PAGE = `
   @page { size: letter portrait; margin: 16mm 15mm; }
-  @media print { [data-sonner-toaster] { display: none !important; } }
+  @media print {
+    html { background: #fff !important; }
+    [data-sonner-toaster] { display: none !important; }
+  }
 `;
 
 export function ReportScreen() {
@@ -44,6 +64,7 @@ function ReportView({ reportId }: { reportId: string }) {
   const report = useReport(project.id, reportId);
   const photos = useDayPhotos(project.id, report.data?.day);
   const stillShown = useStillShown();
+  const canChange = useCanChangeReports();
   const base = reportsPath(project.id);
 
   const remove = useMutation({
@@ -85,13 +106,15 @@ function ReportView({ reportId }: { reportId: string }) {
       actions={
         shown ? (
           <>
-            <ButtonLink href={`${base}/${reportId}/modifier`}>
-              <Pencil aria-hidden /> Modifier
-            </ButtonLink>
+            {canChange ? (
+              <ButtonLink href={`${base}/${reportId}/modifier`}>
+                <Pencil aria-hidden /> Modifier
+              </ButtonLink>
+            ) : null}
             <Button variant="secondary" onClick={() => window.print()}>
               <Printer aria-hidden /> Imprimer
             </Button>
-            {shown.canDelete ? (
+            {shown.canDelete && canChange ? (
               <IconButton
                 label="Supprimer le rapport"
                 disabled={remove.isPending || remove.isSuccess}
@@ -106,7 +129,7 @@ function ReportView({ reportId }: { reportId: string }) {
       }
     >
       <style>{PRINT_PAGE}</style>
-      <Fetched
+      <QueryState
         query={report}
         loading={
           <div className="space-y-3">
@@ -118,10 +141,12 @@ function ReportView({ reportId }: { reportId: string }) {
         {(loaded) => (
           <>
             <ReportDocument report={loaded} project={project} />
-            {photos.data?.length ? <DayPhotos photos={photos.data} project={project} /> : null}
+            {photos.data?.length ? (
+              <DayPhotos photos={photos.data} project={project} day={loaded.day} />
+            ) : null}
           </>
         )}
-      </Fetched>
+      </QueryState>
     </Page>
   );
 }
@@ -256,64 +281,74 @@ const Nothing = ({ children }: { children: ReactNode }) => (
 );
 
 /** What was photographed that day, from the photos module. */
-function DayPhotos({ photos, project }: { photos: Photo[]; project: ProjectDetail }) {
+function DayPhotos({
+  photos,
+  project,
+  day,
+}: {
+  photos: Photo[];
+  project: ProjectDetail;
+  day: string;
+}) {
   const [open, setOpen] = useState<Photo | null>(null);
   return (
-    <Section
-      title="Photos du jour"
-      // On paper, the title stays with its photos.
-      className="print:break-inside-avoid"
-      action={
-        <Link
-          href={`/projets/${project.id}/photos`}
-          className="no-print text-ead-dark hover:bg-ead-tint -my-1 -mr-2 inline-flex h-11 items-center rounded-lg px-2 text-sm font-semibold"
-        >
-          Toutes les photos
-        </Link>
-      }
-    >
-      <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 print:grid-cols-4">
-        {photos.map((photo) => (
-          <li key={photo.id} className="break-inside-avoid">
-            <button
-              type="button"
-              onClick={() => setOpen(photo)}
-              aria-label={photo.caption ?? `Photo prise à ${formatTime(photo.takenAt)}`}
-              className="bg-line block aspect-square w-full cursor-pointer overflow-hidden rounded-xl"
-            >
-              <img
-                src={photo.thumbUrl}
-                alt=""
-                crossOrigin="anonymous"
-                loading="lazy"
-                className="size-full object-cover"
-              />
-            </button>
-          </li>
-        ))}
-      </ul>
-      <Sheet
-        open={open !== null}
-        onClose={() => setOpen(null)}
-        title={open?.caption ?? "Photo du jour"}
-        description={
-          open
-            ? `${capitalize(formatWeekday(open.takenAt))} à ${formatTime(open.takenAt)}${open.authorName ? ` · ${open.authorName}` : ""}`
-            : undefined
+    <div role="region" aria-label="Photos du jour" className="mt-8">
+      <Section
+        title="Photos du jour"
+        // On paper, the title stays with its photos.
+        className="print:break-inside-avoid"
+        action={
+          <Link
+            href={`/projets/${project.id}/photos/jour/${day}`}
+            className="no-print text-ead-dark hover:bg-ead-tint -my-1 -mr-2 inline-flex h-11 items-center rounded-lg px-2 text-sm font-semibold"
+          >
+            Voir la galerie
+          </Link>
         }
-        wide
       >
-        {open ? (
-          <img
-            src={open.url}
-            alt={open.caption ?? ""}
-            width={open.width}
-            height={open.height}
-            crossOrigin="anonymous"
-            className="bg-line h-auto max-h-[70dvh] w-full rounded-xl object-contain"
-          />
-        ) : null}
-      </Sheet>
-    </Section>
+        <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4 print:grid-cols-4">
+          {photos.map((photo) => (
+            <li key={photo.id} className="break-inside-avoid">
+              <button
+                type="button"
+                onClick={() => setOpen(photo)}
+                aria-label={photo.caption ?? `Photo prise à ${formatTime(photo.takenAt)}`}
+                className="bg-line block aspect-square w-full cursor-pointer overflow-hidden rounded-xl print:outline-none"
+              >
+                <img
+                  src={photo.thumbUrl}
+                  alt=""
+                  crossOrigin="anonymous"
+                  loading="lazy"
+                  className="size-full object-cover"
+                />
+              </button>
+            </li>
+          ))}
+        </ul>
+        <Sheet
+          open={open !== null}
+          onClose={() => setOpen(null)}
+          title={open?.caption ?? "Photo du jour"}
+          description={
+            open
+              ? `${capitalize(formatWeekday(open.takenAt))} à ${formatTime(open.takenAt)}${open.authorName ? ` · ${open.authorName}` : ""}`
+              : undefined
+          }
+          wide
+        >
+          {open ? (
+            <img
+              src={open.url}
+              alt={open.caption ?? ""}
+              width={open.width}
+              height={open.height}
+              crossOrigin="anonymous"
+              className="bg-line h-auto max-h-[70dvh] w-full rounded-xl object-contain"
+            />
+          ) : null}
+        </Sheet>
+      </Section>
+    </div>
   );
 }

@@ -35,14 +35,17 @@ import {
   confirmAction,
   FormError,
   Input,
+  QueryState,
   Textarea,
   toast,
 } from "../../ui";
+import { ReportsArchived } from "./archived";
 import { authorHas, ClashSheet, type Clash } from "./clash";
 import { CrewEditor } from "./crew";
 import {
   reportKeys,
   reportsPath,
+  useCanChangeReports,
   useDayReport,
   useMembers,
   useReport,
@@ -50,7 +53,6 @@ import {
   useToday,
 } from "./data";
 import { canKeepDrafts, draftKey, readDraft, removeDraft, writeDraft, type Draft } from "./drafts";
-import { Fetched } from "./fetched";
 import {
   checkForm,
   emptyForm,
@@ -79,12 +81,14 @@ export function NewReportScreen() {
   const day = isRealDay(asked) && asked <= today ? asked : today;
   // Read once, when the screen opens: from then on the form is the draft.
   const [draft] = useState(() => readDraft(draftKey(me.id, project.id, day)));
+  if (!useCanChangeReports()) return <ReportsArchived />;
   return <Editor reportId={null} report={undefined} initialDay={day} draft={draft} />;
 }
 
 /** /rapports/:reportId/modifier */
 export function EditReportScreen() {
   const { reportId } = useParams<{ reportId: string }>();
+  if (!useCanChangeReports()) return <ReportsArchived reportId={reportId} />;
   return <EditReport key={reportId} reportId={reportId} />;
 }
 
@@ -100,7 +104,7 @@ function EditReport({ reportId }: { reportId: string }) {
     if (report.error instanceof ApiFailure && report.error.status === 404) return <ReportMissing />;
     return (
       <Page title="Modifier le rapport" back={back} narrow>
-        <Fetched query={report}>{() => null}</Fetched>
+        <QueryState query={report}>{() => null}</QueryState>
       </Page>
     );
   }
@@ -113,6 +117,9 @@ function EditReport({ reportId }: { reportId: string }) {
     />
   );
 }
+
+const SAVE_TIMEOUT = 30_000;
+const OFFLINE_TOAST = "report-offline";
 
 type SaveJob = {
   content: ReportContent;
@@ -214,10 +221,13 @@ function Editor({
 
   const save = useMutation({
     mutationFn: async ({ content, over }: SaveJob): Promise<{ saved: Report } | Clash> => {
+      // A signal too weak to answer counts as none: the button stops turning
+      // and the report stays on the device. Saving again is safe (see below).
+      const signal = AbortSignal.timeout(SAVE_TIMEOUT);
       if (!over) {
         const { report: theirs, created } = await api<SavedReport>(
           `/api/projects/${project.id}/reports`,
-          { method: "POST", body: content },
+          { method: "POST", body: content, signal },
         );
         // The day already had a report. If it says the same thing, it is this
         // very save, received twice.
@@ -227,18 +237,22 @@ function Editor({
       }
       try {
         const body = { ...content, baseUpdatedAt: over.version };
-        return { saved: await api<Report>(`/api/reports/${over.id}`, { method: "PATCH", body }) };
+        return {
+          saved: await api<Report>(`/api/reports/${over.id}`, { method: "PATCH", body, signal }),
+        };
       } catch (error) {
         if (!(error instanceof ApiFailure)) throw error;
         if (error.status === 404) return { kind: "deleted", mine: content };
         if (error.code !== "conflict") throw error;
-        const latest = await api<Report>(`/api/reports/${over.id}`);
+        const latest = await api<Report>(`/api/reports/${over.id}`, { signal });
         return sameContent(latest, content)
           ? { saved: latest }
           : { kind: "changed", latest, mine: content };
       }
     },
     onMutate: () => {
+      // Whatever this attempt gives, the earlier "no network" no longer holds.
+      toast.dismiss(OFFLINE_TOAST);
       setSavedOffline(false);
       setRefusedDay(null);
     },
@@ -253,7 +267,7 @@ function Editor({
     onError: (error, { content }) => {
       if (error instanceof ApiFailure && error.offline) {
         setSavedOffline(true);
-        toast.warning("Pas de réseau. Le rapport reste sur cet appareil.");
+        toast.warning("Pas de réseau. Le rapport reste sur cet appareil.", { id: OFFLINE_TOAST });
       } else if (error instanceof ApiFailure && error.code === "day_taken")
         setRefusedDay(content.day);
       else toast.error(errorMessage(error));
@@ -583,7 +597,7 @@ function Editor({
           >
             {online
               ? "Le réseau est revenu. Vous pouvez enregistrer le rapport."
-              : "Pas de réseau\u00a0: le rapport n'a pas été envoyé. Il est gardé sur cet appareil. Enregistrez-le quand le réseau sera revenu."}
+              : "Pas de réseau\u00a0: le rapport n'est pas enregistré. Il est gardé sur cet appareil. Enregistrez-le quand le réseau sera revenu."}
           </Notice>
         ) : null}
         <FormError>

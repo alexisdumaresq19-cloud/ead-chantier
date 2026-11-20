@@ -128,6 +128,22 @@ export function addMember(form: ReportForm, member: { id: string; name: string }
   return { ...form, crew: [...form.crew, { ...row, own: false }] };
 }
 
+/**
+ * The people of the project still to add, in French order ("Émilie" between
+ * "Denis" and "François"). Someone already written by hand, as an earlier
+ * crew taken over may be, is not offered a second time.
+ */
+export function membersToAdd<T extends { id: string; name: string }>(
+  form: ReportForm,
+  members: T[],
+): T[] {
+  const ids = new Set(form.crew.flatMap((row) => row.userId ?? []));
+  const names = new Set(form.crew.map((row) => plain(row.name)));
+  return members
+    .filter((member) => !ids.has(member.id) && !names.has(plain(member.name)))
+    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+}
+
 /** Adds a line to write a name in (a subcontractor, a visitor). */
 export function addBlankRow(form: ReportForm): { form: ReportForm; key: string | null } {
   if (isFull(form)) return { form, key: null };
