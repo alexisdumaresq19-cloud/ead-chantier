@@ -1,10 +1,8 @@
-import { queryClient } from "../lib/query";
 import { preloadScreens } from "../routes";
 import { canStore, SHELL_CACHE, STATIC_CACHE } from "./caches";
 import { watchInstallOffer } from "./install-offer";
 import { storeShell } from "./shell";
 import { keepStorage } from "./storage";
-import { keepUnusedData } from "./stored-data";
 import { serverVersion, watchForUpdates, workerIsWaiting } from "./update";
 
 const ONCE = { once: true };
@@ -14,8 +12,6 @@ let started = false;
 export function registerPwa() {
   if (started) return;
   started = true;
-  // First of all: the stored data is restored right after this.
-  keepUnusedData(queryClient);
   watchInstallOffer();
 
   if (process.env.NODE_ENV !== "production") {

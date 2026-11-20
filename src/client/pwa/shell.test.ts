@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isThisBuild, markShell, obsoleteAssets, shellAssets } from "./shell";
+import { isThisBuild, markShell, obsoleteAssets, shellAssets, shellHeaders } from "./shell";
 
 const page = (...assets: string[]) =>
   `<!DOCTYPE html><html lang="fr-CA"><head><meta charSet="utf-8"/>${assets
@@ -107,5 +107,39 @@ describe("files of the previous shell to drop", () => {
 
   it("drops nothing when the build is the same", () => {
     expect(obsoleteAssets(v1, v1, new Set(shellAssets(v1)))).toEqual([]);
+  });
+});
+
+describe("the stored shell's headers", () => {
+  it("keep the server's protections and font hints, not what described one transfer", () => {
+    const stored = shellHeaders(
+      new Headers({
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "frame-ancestors 'self'",
+        "x-frame-options": "SAMEORIGIN",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "same-origin",
+        link: "</_next/static/media/f.woff2>; rel=preload; as=font",
+        "content-length": "8711",
+        "content-encoding": "gzip",
+        "cache-control": "s-maxage=31536000",
+        etag: '"4ayrl9zej76pz"',
+        vary: "rsc, Accept-Encoding",
+        date: "Fri, 20 Nov 2026 00:34:11 GMT",
+        "x-nextjs-cache": "HIT",
+      }),
+    );
+    expect(Object.fromEntries(stored)).toEqual({
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "frame-ancestors 'self'",
+      "x-frame-options": "SAMEORIGIN",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "same-origin",
+      link: "</_next/static/media/f.woff2>; rel=preload; as=font",
+    });
+  });
+
+  it("say the page is HTML even when the server forgot to", () => {
+    expect(shellHeaders(new Headers()).get("content-type")).toBe("text/html; charset=utf-8");
   });
 });

@@ -6,7 +6,8 @@
 //           itself, once all of its code is on the device
 //           (src/client/pwa/shell.ts): a stored shell never waits, offline,
 //           for code that was not downloaded.
-//   static  hashed code and fonts (/_next/static/) and the /brand/ images.
+//   static  hashed code and fonts (/_next/static/), the /brand/ images, the
+//           app's icons and its manifest.
 //           Code of earlier versions is left in place: an open tab may still
 //           need it. The page drops the old shell's own files when it stores
 //           a new one; the rest goes the day this cache changes its name.
@@ -82,7 +83,7 @@ self.addEventListener("fetch", (event) => {
     if (ours && isAppAddress(url.pathname)) event.respondWith(openApp(event));
   } else if (ours && url.pathname.startsWith("/_next/static/")) {
     event.respondWith(staticFile(event, { refresh: false }));
-  } else if (ours && url.pathname.startsWith("/brand/")) {
+  } else if (ours && (url.pathname.startsWith("/brand/") || isAppFile(url.pathname))) {
     // Not hashed: the stored copy answers and is replaced for the next time.
     event.respondWith(staticFile(event, { refresh: true }));
   } else if (isPublicFile(url, ours)) {
@@ -93,6 +94,11 @@ self.addEventListener("fetch", (event) => {
 /** Every address is a screen of the app, except the API, files and code. */
 function isAppAddress(pathname) {
   return !/^\/(api|files|_next)\//.test(pathname) && !/\.[a-z0-9]+$/i.test(pathname);
+}
+
+/** The tab's icon, the home screen's and the manifest: the page asks for them at every launch. */
+function isAppFile(pathname) {
+  return /^\/(icon|apple-icon)\.png$|^\/manifest\.webmanifest$/.test(pathname);
 }
 
 /**
@@ -137,7 +143,17 @@ function offlinePage() {
 <p style="color:#b8c0c8">L'application n'est pas encore sur cet appareil. Elle s'ouvrira dès que le réseau reviendra.</p>
 <a href="" style="display:inline-block;margin-top:8px;padding:13px 24px;border-radius:12px;background:#fff;color:#0b0d10;font-weight:600;text-decoration:none">Réessayer</a>
 </main>`,
-    { status: 503, headers: { "content-type": "text/html; charset=utf-8" } },
+    {
+      status: 503,
+      // The protections the server gives every page (next.config.ts).
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-security-policy": "frame-ancestors 'self'",
+        "x-frame-options": "SAMEORIGIN",
+        "x-content-type-options": "nosniff",
+        "referrer-policy": "same-origin",
+      },
+    },
   );
 }
 

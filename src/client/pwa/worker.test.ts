@@ -140,7 +140,7 @@ describe("what goes straight to the network", () => {
     expect(
       await worker.ask({ url: "/files/private/d/devis.pdf?e=1&s=2", mode: "navigate" }),
     ).toBeUndefined();
-    expect(await worker.ask({ url: "/manifest.webmanifest" })).toBeUndefined();
+    expect(await worker.ask({ url: "/robots.txt" })).toBeUndefined();
     expect(await worker.ask({ url: "https://www.google.com/maps/dir/" })).toBeUndefined();
     expect(
       await worker.ask({ url: "https://abc.supabase.co/storage/v1/object/sign/ead-private/x.pdf" }),
@@ -209,6 +209,11 @@ describe("opening the app", () => {
     const response = (await launch())!;
     expect(response.status).toBe(503);
     expect(await response.text()).toContain("Réessayer");
+    // With the protections the server gives every page.
+    expect(response.headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
+    expect(response.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(response.headers.get("referrer-policy")).toBe("same-origin");
   });
 
   it("passes a redirect on as the server sent it", async () => {
@@ -247,6 +252,20 @@ describe("code, fonts and brand images", () => {
     worker.fetch.mockResolvedValue(new Response("new logo"));
     expect(await (await worker.ask({ url: "/brand/ead-logo.png" }))!.text()).toBe("old logo");
     expect(await (await worker.ask({ url: "/brand/ead-logo.png" }))!.text()).toBe("new logo");
+  });
+
+  it("include the app's icons and manifest, which every launch asks for", async () => {
+    worker.fetch.mockResolvedValue(new Response("icon"));
+    for (const url of [
+      "/icon.png?icon.1o0cy.png",
+      "/apple-icon.png?a.png",
+      "/manifest.webmanifest",
+    ])
+      await worker.ask({ url });
+    worker.fetch.mockRejectedValue(new TypeError("Failed to fetch"));
+    expect(await (await worker.ask({ url: "/icon.png?icon.1o0cy.png" }))!.text()).toBe("icon");
+    expect(await (await worker.ask({ url: "/manifest.webmanifest" }))!.text()).toBe("icon");
+    expect(await worker.ask({ url: "/projets/icon.png" })).toBeUndefined();
   });
 
   it("still answer from the cache when that refresh fails", async () => {
