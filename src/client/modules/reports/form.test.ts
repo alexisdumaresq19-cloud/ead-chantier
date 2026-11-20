@@ -5,6 +5,7 @@ import type { CrewLine, ReportContent } from "@/shared/reports";
 import {
   addBlankRow,
   addMember,
+  addPhotoIds,
   checkForm,
   emptyForm,
   formFromReport,
@@ -12,6 +13,7 @@ import {
   formTotals,
   isBlankForm,
   membersToAdd,
+  removePhotoId,
   removeRow,
   setDayHours,
   setRowHours,
@@ -39,6 +41,7 @@ const report: ReportContent = {
   equipment: "Pelle",
   workDone: "Excavation.",
   notes: "",
+  photoIds: [],
 };
 
 /** The crew as [name, hours typed, written by hand]. */
@@ -204,6 +207,7 @@ describe("a report and its form", () => {
       equipment: "",
       workDone: "Pose de la conduite.",
       notes: "",
+      photoIds: [],
     });
   });
 
@@ -268,5 +272,37 @@ describe("a report and its form", () => {
     expect(formSignature({ ...form, workDone: "Excavation et remblai." })).not.toBe(saved);
     expect(formSignature(setRowHours(form, form.crew[2].key, "7"))).not.toBe(saved);
     expect(formSignature({ ...form, day: "2026-11-17" })).not.toBe(saved);
+  });
+});
+
+describe("the photos of a report being written", () => {
+  it("are added once each, up to what a report takes", () => {
+    const first = addPhotoIds(emptyForm(TODAY), ["a", "b", "a"]);
+    expect(first).toMatchObject({ added: 2, refused: 0 });
+    expect(first.form.photoIds).toEqual(["a", "b"]);
+    const again = addPhotoIds(first.form, ["b"]);
+    expect(again).toMatchObject({ added: 0, refused: 0 });
+    // Nothing new: the form is the same object, so nothing is drawn again.
+    expect(again.form).toBe(first.form);
+
+    const full = { ...emptyForm(TODAY), photoIds: Array.from({ length: 39 }, (_, i) => `p${i}`) };
+    const over = addPhotoIds(full, ["x", "y", "z"]);
+    expect(over).toMatchObject({ added: 1, refused: 2 });
+    expect(over.form.photoIds).toHaveLength(40);
+  });
+
+  it("make a form that is no longer blank, and are saved with it", () => {
+    const form = addPhotoIds(emptyForm(TODAY), ["a"]).form;
+    expect(isBlankForm(form)).toBe(false);
+    expect(checkForm(form, TODAY).content?.photoIds).toEqual(["a"]);
+    expect(removePhotoId(form, "a").photoIds).toEqual([]);
+    expect(isBlankForm(removePhotoId(form, "a"))).toBe(true);
+  });
+
+  it("change what would be saved, whatever the order they came in", () => {
+    const one = { ...emptyForm(TODAY), photoIds: ["a", "b"] };
+    expect(formSignature(one)).toBe(formSignature({ ...one, photoIds: ["b", "a"] }));
+    expect(formSignature(one)).not.toBe(formSignature({ ...one, photoIds: ["a"] }));
+    expect(formFromReport({ ...report, photoIds: ["a"] }).photoIds).toEqual(["a"]);
   });
 });

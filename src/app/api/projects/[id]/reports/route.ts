@@ -14,6 +14,6 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
 /** Writes the report of a day. A day that already has one answers with it, unchanged. */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  await projectToChange(user, id);
-  return createReport(user, id, await body(request, newReport));
+  const project = await projectToChange(user, id);
+  return createReport(user, project, await body(request, newReport));
 });

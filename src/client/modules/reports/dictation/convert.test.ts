@@ -52,6 +52,7 @@ describe("formAfterDictation", () => {
     equipment: "Pelle, rouleau.",
     workDone: "Pose de 40 m d'aqueduc.",
     notes: "",
+    photoIds: [],
   };
 
   it("fills an empty form: the crew sets the hours of the day", () => {

@@ -47,6 +47,15 @@ describe("drafts kept on the device", () => {
     expect(readDraft(key, store)).toBeNull();
   });
 
+  it("reads a draft written before reports had photos", () => {
+    const store = fakeStore();
+    const key = draftKey("julie", "p1", "2026-11-19");
+    const older = { ...draftFor("2026-11-19"), form: { ...draftFor("2026-11-19").form } };
+    Reflect.deleteProperty(older.form, "photoIds");
+    store.setItem(key, JSON.stringify(older));
+    expect(readDraft(key, store)).toEqual(draftFor("2026-11-19"));
+  });
+
   it("lists a person's drafts in a project, latest day first, and nobody else's", () => {
     const store = fakeStore();
     writeDraft(draftKey("julie", "p1", "2026-11-17"), draftFor("2026-11-17"), store);

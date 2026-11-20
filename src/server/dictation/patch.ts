@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { PHOTO_ID_PATTERN } from "@/shared/photos";
 import {
   isValidHours,
   REPORT_LIMITS as LIMITS,
@@ -59,6 +60,8 @@ export const reportOnScreen = z.object({
   equipment: z.string().max(LIMITS.equipment),
   workDone: z.string().max(LIMITS.text),
   notes: z.string().max(LIMITS.text),
+  // A phone still running the version from before reports had photos sends none.
+  photoIds: z.array(z.string().regex(PHOTO_ID_PATTERN)).max(LIMITS.photos).default([]),
 });
 
 export type KnownPerson = { id: string; name: string };
@@ -163,6 +166,7 @@ export function applyDictation(
     ),
     workDone: addText(current.workDone, patch.workDone, patch.replace.workDone, LIMITS.text),
     notes: addText(current.notes, patch.notes, patch.replace.notes, LIMITS.text),
+    photoIds: current.photoIds,
   };
 
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);

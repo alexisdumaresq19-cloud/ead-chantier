@@ -45,13 +45,26 @@ const ready = await createDatabase();
 process.env.DATABASE_URL = databaseUrl;
 
 const { sql } = await import("../db/client");
-const { changeReport, createReport, deleteReport, isDayTaken, reportToChange, reportToManage } =
-  await import("./queries");
+const {
+  changeReport,
+  createReport,
+  deleteReport,
+  isDayTaken,
+  listReports,
+  reportOf,
+  reportToChange,
+  reportToManage,
+} = await import("./queries");
 const { newReport } = await import("./input");
+const { removePhoto } = await import("../photos/changes");
+const { photoRow } = await import("../photos/queries");
 
 const projectId = "reports-test-project";
+const project = { id: projectId, status: "actif" as const };
 const foreman = { id: "reports-foreman", role: "contremaitre" } as SessionUser;
 const office = { id: "reports-office", role: "admin" } as SessionUser;
+const asForeman = { user: foreman, project };
+const asOffice = { user: office, project };
 const today = latestReportDay();
 const dayBefore = (days: number) =>
   new Date(Date.parse(`${today}T12:00:00Z`) - days * 86_400_000).toISOString().slice(0, 10);
@@ -64,6 +77,10 @@ const content = (day: string, workDone = "Excavation de la tranchée.") =>
     workDone,
     notes: "",
   });
+/** A photo of a project, as the photos module would have saved it. */
+const photo = (id: string, takenAt: string, inProject = projectId) =>
+  sql`insert into photos (id, project_id, image_key, width, height, taken_at, created_by)
+      values (${id}, ${inProject}, ${`p/${id}`}, 1600, 1200, ${takenAt}, ${foreman.id})`;
 const answer = (promise: Promise<unknown>) =>
   promise.then(
     () => "accepted",
@@ -84,6 +101,7 @@ describe("a failure on the one-report-per-day index", () => {
 describe.skipIf(!ready)("with a database", () => {
   beforeEach(async () => {
     await sql`delete from daily_reports`;
+    await sql`delete from photos`;
     await sql`delete from projects`;
     await sql`insert into users (id, name, role) values
               (${foreman.id}, 'Julie Cyr', 'contremaitre'), (${office.id}, 'Camille Roy', 'admin')
@@ -102,7 +120,7 @@ describe.skipIf(!ready)("with a database", () => {
   it("makes one report of ten saves of the same day sent together", async () => {
     const saves = await Promise.all(
       Array.from({ length: 10 }, (_, i) =>
-        createReport(foreman, projectId, content(today, `Version ${i}`)),
+        createReport(foreman, project, content(today, `Version ${i}`)),
       ),
     );
     expect(saves.filter((save) => save.created)).toHaveLength(1);
@@ -112,9 +130,9 @@ describe.skipIf(!ready)("with a database", () => {
   });
 
   it("refuses to move a report onto a day that has one, with a 409 and nothing changed", async () => {
-    const { report: first } = await createReport(foreman, projectId, content(dayBefore(1)));
-    const { report: second } = await createReport(foreman, projectId, content(dayBefore(2)));
-    const move = changeReport(foreman, second.id, {
+    const { report: first } = await createReport(foreman, project, content(dayBefore(1)));
+    const { report: second } = await createReport(foreman, project, content(dayBefore(2)));
+    const move = changeReport(asForeman, second.id, {
       day: first.day,
       baseUpdatedAt: second.updatedAt,
     });
@@ -125,22 +143,22 @@ describe.skipIf(!ready)("with a database", () => {
     // Two reports swapping days at the same moment: neither breaks the index.
     const moves = await Promise.all([
       answer(
-        changeReport(foreman, first.id, { day: dayBefore(3), baseUpdatedAt: first.updatedAt }),
+        changeReport(asForeman, first.id, { day: dayBefore(3), baseUpdatedAt: first.updatedAt }),
       ),
       answer(
-        changeReport(foreman, second.id, { day: dayBefore(3), baseUpdatedAt: second.updatedAt }),
+        changeReport(asForeman, second.id, { day: dayBefore(3), baseUpdatedAt: second.updatedAt }),
       ),
     ]);
     expect(moves.sort()).toEqual(["409 day_taken", "accepted"]);
   });
 
   it("writes nothing over a version saved since", async () => {
-    const { report } = await createReport(foreman, projectId, content(today));
-    await changeReport(office, report.id, {
+    const { report } = await createReport(foreman, project, content(today));
+    await changeReport(asOffice, report.id, {
       workDone: "Version du bureau",
       baseUpdatedAt: report.updatedAt,
     });
-    const stale = changeReport(foreman, report.id, {
+    const stale = changeReport(asForeman, report.id, {
       workDone: "Version du chantier",
       baseUpdatedAt: report.updatedAt,
     });
@@ -150,20 +168,99 @@ describe.skipIf(!ready)("with a database", () => {
   });
 
   it("keeps an archived project's reports readable and closed to change, except to the office", async () => {
-    const { report } = await createReport(foreman, projectId, content(today));
+    const { report } = await createReport(foreman, project, content(today));
     await sql`update projects set status = 'archive' where id = ${projectId}`;
     expect((await reportToManage(foreman, report.id)).row.id).toBe(report.id);
     expect(await answer(reportToChange(foreman, report.id))).toBe("403 forbidden");
-    const row = await reportToChange(office, report.id);
+    const { row } = await reportToChange(office, report.id);
     await deleteReport(office, row);
     const [{ count }] = await sql`select count(*)::int as count from daily_reports`;
     expect(count).toBe(0);
   });
 
   it("answers a report of a project the person is not on as missing", async () => {
-    const { report } = await createReport(foreman, projectId, content(today));
+    const { report } = await createReport(foreman, project, content(today));
     const outsider = { id: "reports-outsider", role: "contremaitre" } as SessionUser;
     expect(await answer(reportToManage(outsider, report.id))).toBe("404 not_found");
     expect(await answer(reportToChange(outsider, report.id))).toBe("404 not_found");
+  });
+
+  describe("the photos that go with a report", () => {
+    const early = "aaaaaaaaaaaaaaaa";
+    const late = "bbbbbbbbbbbbbbbb";
+    const elsewhere = "cccccccccccccccc";
+    const notYetSent = "dddddddddddddddd";
+
+    beforeEach(async () => {
+      await sql`insert into projects (id, name) values ('reports-other-project', 'Un autre projet')`;
+      await photo(late, "2026-11-18T19:00:00Z");
+      await photo(early, "2026-11-18T13:00:00Z");
+      await photo(elsewhere, "2026-11-18T15:00:00Z", "reports-other-project");
+    });
+
+    it("are those of its list the project holds, in the order they were taken", async () => {
+      const photoIds = [late, notYetSent, elsewhere, early];
+      const { report } = await createReport(foreman, project, { ...content(today), photoIds });
+      // The list is kept as it was sent: a photo on its way from a phone has its place.
+      expect(report.photoIds).toEqual(photoIds);
+      expect(report.photos.map((shown) => shown.id)).toEqual([early, late]);
+      expect(report.photos[0]).toMatchObject({ authorName: "Julie Cyr", canEdit: true });
+
+      // Once that photo arrives, the report shows it.
+      await photo(notYetSent, "2026-11-18T14:00:00Z");
+      const { row } = await reportToManage(foreman, report.id);
+      const read = await reportOf(asForeman, row);
+      expect(read.photos.map((shown) => shown.id)).toEqual([early, notYetSent, late]);
+      expect((await listReports(projectId))[0].photoCount).toBe(3);
+    });
+
+    it("stay when a change says nothing of them, and go when it says so", async () => {
+      const { report } = await createReport(foreman, project, {
+        ...content(today),
+        photoIds: [early, late],
+      });
+      const noted = await changeReport(asForeman, report.id, {
+        notes: "Visite de l'ingénieur.",
+        baseUpdatedAt: report.updatedAt,
+      });
+      expect(noted.photoIds).toEqual([early, late]);
+      const fewer = await changeReport(asForeman, report.id, {
+        photoIds: [late],
+        baseUpdatedAt: noted.updatedAt,
+      });
+      expect(fewer.photos.map((shown) => shown.id)).toEqual([late]);
+      expect((await listReports(projectId))[0].photoCount).toBe(1);
+    });
+
+    it("no longer name a photo removed from the project, without a new version", async () => {
+      const { report } = await createReport(foreman, project, {
+        ...content(today),
+        photoIds: [early, late],
+      });
+      const { report: untouched } = await createReport(foreman, project, {
+        ...content(dayBefore(1)),
+        photoIds: [late],
+      });
+      expect(await removePhoto(await photoRow(early))).toBe(true);
+      const rows = await sql`select id, photo_ids, updated_at from daily_reports order by day desc`;
+      expect(rows.map((row) => row.photo_ids)).toEqual([[late], [late]]);
+      expect(new Date(rows[0].updated_at).toISOString()).toBe(report.updatedAt);
+      expect(new Date(rows[1].updated_at).toISOString()).toBe(untouched.updatedAt);
+    });
+
+    it("are not editable once the project is archived, except by the office", async () => {
+      const { report } = await createReport(foreman, project, {
+        ...content(today),
+        photoIds: [early],
+      });
+      await sql`update projects set status = 'archive' where id = ${projectId}`;
+      const found = await reportToManage(foreman, report.id);
+      expect(
+        (await reportOf({ user: foreman, project: found.project }, found.row)).photos[0].canEdit,
+      ).toBe(false);
+      expect(
+        (await reportOf({ user: office, project: found.project }, found.row)).photos[0].canEdit,
+      ).toBe(true);
+    });
   });
 });

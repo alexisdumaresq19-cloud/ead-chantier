@@ -44,6 +44,7 @@ export function contentForDictation(form: ReportForm): ReportContent {
     equipment: form.equipment.slice(0, REPORT_LIMITS.equipment),
     workDone: form.workDone.slice(0, REPORT_LIMITS.text),
     notes: form.notes.slice(0, REPORT_LIMITS.text),
+    photoIds: form.photoIds.slice(0, REPORT_LIMITS.photos),
   };
 }
 

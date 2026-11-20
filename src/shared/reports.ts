@@ -12,6 +12,11 @@
 //                                                `baseUpdatedAt`, 409 "day_taken" if the
 //                                                new day already has a report)
 //   DELETE /api/reports/:id                      its author or the office
+//   GET    /api/reports/:id/pdf                  the report as a PDF document, with
+//                                                EAD's logo and its photos
+//                                                (application/pdf, named reportPdfName())
+
+import type { Photo } from "./photos";
 
 export const WEATHER_CONDITIONS = [
   "soleil",
@@ -57,6 +62,13 @@ export type ReportContent = {
   workDone: string;
   /** Delays, incidents, visitors, instructions received. */
   notes: string;
+  /**
+   * The photos that go with the report, chosen among the project's: they are
+   * shown in the report and printed in its PDF. Only their ids are kept: a
+   * photo still on its way from a phone is already counted, and one removed
+   * from the project since simply no longer shows.
+   */
+  photoIds: string[];
 };
 
 export type Report = ReportContent & {
@@ -69,6 +81,8 @@ export type Report = ReportContent & {
   updatedAt: string;
   /** The signed-in person may remove it (its author or the office). */
   canDelete: boolean;
+  /** The photos of `photoIds` that the project holds, in the order they were taken. */
+  photos: Photo[];
 };
 
 export type ReportSummary = {
@@ -82,6 +96,8 @@ export type ReportSummary = {
   excerpt: string;
   authorName: string | null;
   updatedAt: string;
+  /** How many photos go with the report. */
+  photoCount: number;
 };
 
 export type DayReport = {
@@ -106,6 +122,8 @@ export const REPORT_LIMITS = {
   weatherNote: 200,
   equipment: 2000,
   text: 10_000,
+  /** Photos with one report: its PDF stays light enough to send by email. */
+  photos: 40,
   temperatureMin: -60,
   temperatureMax: 60,
 } as const;
@@ -160,7 +178,15 @@ export const isEmptyContent = (content: Omit<ReportContent, "day">) =>
   content.crew.length === 0 &&
   !content.equipment.trim() &&
   !content.workDone.trim() &&
-  !content.notes.trim();
+  !content.notes.trim() &&
+  content.photoIds.length === 0;
+
+/** The same photos, in whatever order they were added. */
+function samePhotos(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const ids = new Set(a);
+  return b.every((id) => ids.has(id));
+}
 
 /** Whether two versions of a report say the same thing. */
 export function sameContent(a: ReportContent, b: ReportContent): boolean {
@@ -172,10 +198,27 @@ export function sameContent(a: ReportContent, b: ReportContent): boolean {
     a.equipment === b.equipment &&
     a.workDone === b.workDone &&
     a.notes === b.notes &&
+    samePhotos(a.photoIds, b.photoIds) &&
     a.crew.length === b.crew.length &&
     a.crew.every((line, index) => {
       const other = b.crew[index];
       return line.name === other.name && line.hours === other.hours && line.userId === other.userId;
     })
   );
+}
+
+/**
+ * The name of a report's PDF file: "Rapport journalier 2026-014 2026-10-01.pdf".
+ * Only letters, digits, spaces and hyphens, so that every phone, mail and
+ * shared folder takes it as it is.
+ */
+export function reportPdfName(project: { number: string | null; name: string }, day: string) {
+  const label = (project.number?.trim() || project.name)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/, "");
+  return `Rapport journalier ${label ? `${label} ` : ""}${day}.pdf`;
 }

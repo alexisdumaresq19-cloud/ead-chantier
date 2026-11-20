@@ -127,8 +127,11 @@ export function photoAdded(projectId: string, photo: Photo) {
 
 export function photoChanged(projectId: string, photo: Photo) {
   rewriteLists(projectId, (page) => page.map((p) => (p.id === photo.id ? photo : p)));
-  if (queryClient.getQueryData(photoKeys.one(projectId, photo.id)))
-    queryClient.setQueryData(photoKeys.one(projectId, photo.id), photo);
+  // Whoever shows this photo by itself (its own screen, a daily report it
+  // goes with) follows, whether or not it had to fetch it.
+  const queryKey = photoKeys.one(projectId, photo.id);
+  if (queryClient.getQueryCache().find({ queryKey, exact: true }))
+    queryClient.setQueryData(queryKey, photo);
 }
 
 export function photoRemoved(projectId: string, photo: Pick<Photo, "id" | "day">) {

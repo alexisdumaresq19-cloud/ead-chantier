@@ -18,6 +18,7 @@ const empty: ReportContent = {
   equipment: "",
   workDone: "",
   notes: "",
+  photoIds: [],
 };
 
 const nothing: DictationPatch = {

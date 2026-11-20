@@ -30,6 +30,7 @@ export function TakePhotoButton({
   className,
   children,
   label,
+  onAdded,
 }: {
   projectId: string;
   /** Opens the camera, facing the work; false opens the phone's gallery, for several photos. */
@@ -38,6 +39,11 @@ export function TakePhotoButton({
   children: ReactNode;
   /** The input's name, read aloud (the visible text may be shortened on a narrow screen). */
   label: string;
+  /**
+   * Called with the ids of the photos just taken in, before they have left
+   * the device: a daily report puts them with itself.
+   */
+  onAdded?: (ids: string[]) => void;
 }) {
   const me = useCurrentUser();
   const [busy, setBusy] = useState(false);
@@ -64,6 +70,7 @@ export function TakePhotoButton({
       if (ids.length) {
         markJustAdded(ids);
         setAdded(ids);
+        onAdded?.(ids);
       }
     } catch {
       toast.error("La photo n'a pas pu être ajoutée. Réessayez.");

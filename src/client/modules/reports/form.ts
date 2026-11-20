@@ -39,6 +39,8 @@ export type ReportForm = {
   equipment: string;
   workDone: string;
   notes: string;
+  /** The photos that go with the report, in the order they were added. */
+  photoIds: string[];
 };
 
 const newKey = () => Math.random().toString(36).slice(2, 10);
@@ -53,6 +55,7 @@ export const emptyForm = (day: string): ReportForm => ({
   equipment: "",
   workDone: "",
   notes: "",
+  photoIds: [],
 });
 
 /** The hours most of the crew did (the longer day on a tie); 8 without a crew. */
@@ -90,6 +93,7 @@ export function formFromReport(report: ReportContent): ReportForm {
     equipment: report.equipment,
     workDone: report.workDone,
     notes: report.notes,
+    photoIds: report.photoIds,
   };
 }
 
@@ -101,7 +105,8 @@ export const isBlankForm = (form: ReportForm) =>
   form.crew.length === 0 &&
   !form.equipment.trim() &&
   !form.workDone.trim() &&
-  !form.notes.trim();
+  !form.notes.trim() &&
+  form.photoIds.length === 0;
 
 /** Two forms with the same signature would save the same report. */
 export const formSignature = (form: ReportForm) =>
@@ -114,7 +119,34 @@ export const formSignature = (form: ReportForm) =>
     form.equipment.trim(),
     form.workDone.trim(),
     form.notes.trim(),
+    // The same photos make the same report, whatever the order they came in.
+    [...form.photoIds].sort(),
   ]);
+
+// --- The photos ---------------------------------------------------------------
+
+/**
+ * Puts photos with the report, each once. `refused` counts those left out
+ * because the report already has as many as it takes.
+ */
+export function addPhotoIds(
+  form: ReportForm,
+  ids: string[],
+): { form: ReportForm; added: number; refused: number } {
+  const fresh = [...new Set(ids)].filter((id) => !form.photoIds.includes(id));
+  const taken = fresh.slice(0, Math.max(0, REPORT_LIMITS.photos - form.photoIds.length));
+  return {
+    form: taken.length ? { ...form, photoIds: [...form.photoIds, ...taken] } : form,
+    added: taken.length,
+    refused: fresh.length - taken.length,
+  };
+}
+
+/** Takes a photo out of the report. The photo itself stays in the project. */
+export const removePhotoId = (form: ReportForm, id: string): ReportForm => ({
+  ...form,
+  photoIds: form.photoIds.filter((other) => other !== id),
+});
 
 // --- The crew ---------------------------------------------------------------
 
@@ -292,6 +324,7 @@ export function checkForm(
     equipment: form.equipment.trim(),
     workDone: form.workDone.trim(),
     notes: form.notes.trim(),
+    photoIds: form.photoIds.slice(0, REPORT_LIMITS.photos),
   };
   if (problems.length === 0 && isEmptyContent(content))
     problems.push({

@@ -9,11 +9,14 @@ import {
   type CrewLine,
   type DayReport,
   type Report,
+  type ReportContent,
   type ReportSummary,
   type SavedReport,
   type Weather,
   type WeatherCondition,
 } from "@/shared/reports";
+
+import type { Photo } from "@/shared/photos";
 
 import { assertOpen, projectToManage, type Project } from "../access";
 import type { SessionUser } from "../auth";
@@ -21,12 +24,15 @@ import { db, schema } from "../db/client";
 import type { ReportCrewLine, ReportWeather } from "../db/schema";
 import { badRequest, forbidden, HttpError, notFound } from "../http";
 import { newId } from "../ids";
+import { photosByIds } from "../photos/queries";
 import { EMPTY_REPORT, type newReport, type reportChange } from "./input";
 
 // Daily reports: one per project and per day (the unique index
-// daily_reports_project_day), written by the foremen and the office.
+// daily_reports_project_day), written by the foremen and the office. A
+// report names the photos that go with it; the photos stay the project's.
 
-type Row = typeof schema.dailyReports.$inferSelect;
+export type ReportRow = typeof schema.dailyReports.$inferSelect;
+type Row = ReportRow;
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 const reports = schema.dailyReports;
@@ -50,23 +56,38 @@ const weatherRow = ({ condition, temperatureC, note }: Weather): ReportWeather =
 const crewDto = (stored: ReportCrewLine[]): CrewLine[] =>
   stored.map((line) => ({ name: line.name, hours: line.hours ?? 0, userId: line.userId ?? null }));
 
-function reportDto(row: Row, authorName: string | null, user: SessionUser): Report {
+/** What the report says, as the screens and its PDF read it. */
+export const contentOf = (row: Row): ReportContent => ({
+  day: row.day,
+  weather: weatherDto(row.weather),
+  crew: crewDto(row.crew),
+  equipment: row.equipment,
+  workDone: row.workDone,
+  notes: row.notes,
+  photoIds: row.photoIds,
+});
+
+function reportDto(
+  row: Row,
+  authorName: string | null,
+  user: SessionUser,
+  photos: Photo[],
+): Report {
   return {
+    ...contentOf(row),
     id: row.id,
     projectId: row.projectId,
-    day: row.day,
-    weather: weatherDto(row.weather),
-    crew: crewDto(row.crew),
-    equipment: row.equipment,
-    workDone: row.workDone,
-    notes: row.notes,
     authorId: row.createdBy,
     authorName,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     canDelete: canDelete(user, row),
+    photos,
   };
 }
+
+/** What a report is shown with: who asks, and whether its project still takes changes. */
+type Reader = { user: SessionUser; project: Pick<Project, "status"> };
 
 const withAuthor = () =>
   db
@@ -74,7 +95,7 @@ const withAuthor = () =>
     .from(reports)
     .leftJoin(schema.users, eq(schema.users.id, reports.createdBy));
 
-async function authorName(row: Row): Promise<string | null> {
+export async function authorName(row: Row): Promise<string | null> {
   if (!row.createdBy) return null;
   const [author] = await db
     .select({ name: schema.users.name })
@@ -108,14 +129,23 @@ export async function reportToManage(
 }
 
 /** Same, to change or remove it: refused once its project is archived, except to the office. */
-export async function reportToChange(user: SessionUser, id: string): Promise<Row> {
-  const { row, project } = await reportToManage(user, id);
-  assertOpen(user, project);
-  return row;
+export async function reportToChange(
+  user: SessionUser,
+  id: string,
+): Promise<{ row: Row; project: Project }> {
+  const found = await reportToManage(user, id);
+  assertOpen(user, found.project);
+  return found;
 }
 
-export const reportOf = async (user: SessionUser, row: Row): Promise<Report> =>
-  reportDto(row, await authorName(row), user);
+/** The report as the screens read it, with its author's name and its photos. */
+export async function reportOf({ user, project }: Reader, row: Row): Promise<Report> {
+  const [name, photos] = await Promise.all([
+    authorName(row),
+    photosByIds(user, { id: row.projectId, status: project.status }, row.photoIds),
+  ]);
+  return reportDto(row, name, user, photos);
+}
 
 /** Every report of the project, newest day first, as lines of a list. */
 export async function listReports(projectId: string): Promise<ReportSummary[]> {
@@ -130,6 +160,12 @@ export async function listReports(projectId: string): Promise<ReportSummary[]> {
       notes: raw<string>`left(${reports.notes}, 400)`,
       updatedAt: reports.updatedAt,
       authorName: schema.users.name,
+      // Counted among the project's photos: one removed since is not.
+      photoCount: raw<number>`(
+        select count(*)::int from ${schema.photos}
+        where ${schema.photos.projectId} = ${reports.projectId}
+          and ${schema.photos.id} in (select jsonb_array_elements_text(${reports.photoIds}))
+      )`,
     })
     .from(reports)
     .leftJoin(schema.users, eq(schema.users.id, reports.createdBy))
@@ -146,6 +182,7 @@ export async function listReports(projectId: string): Promise<ReportSummary[]> {
       excerpt: excerptOf(row.workDone.trim() || row.notes),
       authorName: row.authorName,
       updatedAt: row.updatedAt.toISOString(),
+      photoCount: row.photoCount,
     };
   });
 }
@@ -153,9 +190,10 @@ export async function listReports(projectId: string): Promise<ReportSummary[]> {
 /** The report of a day, if any, and the last crew noted before that day. */
 export async function dayReport(
   user: SessionUser,
-  projectId: string,
+  project: Pick<Project, "id" | "status">,
   day: string,
 ): Promise<DayReport> {
+  const projectId = project.id;
   const [found] = await withAuthor()
     .where(and(eq(reports.projectId, projectId), eq(reports.day, day)))
     .orderBy(asc(reports.createdAt))
@@ -174,7 +212,14 @@ export async function dayReport(
     .orderBy(desc(reports.day))
     .limit(1);
   return {
-    report: found ? reportDto(found.row, found.authorName, user) : null,
+    report: found
+      ? reportDto(
+          found.row,
+          found.authorName,
+          user,
+          await photosByIds(user, project, found.row.photoIds),
+        )
+      : null,
     previous: previous ? { day: previous.day, crew: crewDto(previous.crew) } : null,
   };
 }
@@ -239,9 +284,11 @@ const reportOfDay = async (projectId: string, day: string) =>
 /** Creates the day's report, or returns the one the day already has, untouched. */
 export async function createReport(
   user: SessionUser,
-  projectId: string,
+  project: Pick<Project, "id" | "status">,
   input: z.infer<typeof newReport>,
 ): Promise<SavedReport> {
+  const projectId = project.id;
+  const reader = { user, project };
   const crew = await knownCrew(db, projectId, input.crew);
   // Two saves of the same day at the same moment: the index lets one row in,
   // the other insert does nothing and reads the winner. That row can be
@@ -262,9 +309,9 @@ export async function createReport(
       })
       .onConflictDoNothing({ target: [reports.projectId, reports.day] })
       .returning();
-    if (inserted) return { report: await reportOf(user, inserted), created: true };
+    if (inserted) return { report: await reportOf(reader, inserted), created: true };
     const existing = await reportOfDay(projectId, input.day);
-    if (existing) return { report: await reportOf(user, existing), created: false };
+    if (existing) return { report: await reportOf(reader, existing), created: false };
   }
   throw new HttpError(409, "day_taken", DAY_TAKEN);
 }
@@ -274,7 +321,7 @@ export async function createReport(
  * in the meantime, nothing is written: the person is told and chooses.
  */
 export async function changeReport(
-  user: SessionUser,
+  reader: Reader,
   id: string,
   { baseUpdatedAt, ...change }: z.infer<typeof reportChange>,
 ): Promise<Report> {
@@ -297,6 +344,7 @@ export async function changeReport(
         equipment: change.equipment ?? current.equipment,
         workDone: change.workDone ?? current.workDone,
         notes: change.notes ?? current.notes,
+        photoIds: change.photoIds ?? current.photoIds,
       };
       if (isEmptyContent(next)) throw badRequest(EMPTY_REPORT);
       const [saved] = await tx
@@ -313,7 +361,7 @@ export async function changeReport(
         .returning();
       return saved;
     });
-    return reportOf(user, row);
+    return reportOf(reader, row);
   } catch (error) {
     if (isDayTaken(error)) throw new HttpError(409, "day_taken", DAY_TAKEN);
     throw error;

@@ -333,6 +333,11 @@ export const dailyReports = pgTable(
     workDone: text("work_done").notNull().default(""),
     /** Delays, incidents, visitors, instructions received. */
     notes: text("notes").notNull().default(""),
+    /** Ids of the project's photos that go with the report, in the order they were added. */
+    photoIds: jsonb("photo_ids")
+      .$type<string[]>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     createdBy: text("created_by"),
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

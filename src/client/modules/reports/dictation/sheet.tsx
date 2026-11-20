@@ -98,6 +98,8 @@ export function DictationSheet({
   form: ReportForm;
   /** Receives the form once filled, and the parts that changed. */
   onApply: (next: ReportForm, changed: DictationField[]) => void;
+  /** Receives the ids of photos taken from this window: they go with the report. */
+  onPhotosAdded: (ids: string[]) => void;
   /** Opened by a tap on the microphone: recording starts at once. */
   startRecording: boolean;
 }) {

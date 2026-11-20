@@ -76,6 +76,20 @@ The interface is in Québec French only.
   allowance first (`countDictation`, 429 `too_many_dictations`). `AI_FAKE=1`
   (set by the end-to-end tests) answers with fixed rules and calls nothing.
   A screen offers the dictation only when `GET /api/assistant` says so.
+- **A daily report and its photos**: a report names the photos that go with
+  it (`photoIds`, saved with the rest of the report, 40 at most); the photos
+  themselves stay the project's (`photos` table, gallery, descriptions). The
+  API hands a report back with `photos`, those of its list the project holds,
+  oldest first; an id not found (a photo still on its way from a phone, or
+  removed since) simply does not show. On screen, `useReportPhotos()`
+  (`modules/reports/photos.ts`) finds each photo where it is: still on the
+  device (the outbox) or in the project.
+- **A report's PDF** (`GET /api/reports/:id/pdf`, `src/server/reports/pdf`) is
+  drawn with pdfkit, directly: no browser, no layout engine, so it is ready in
+  a fraction of a second. Its typefaces and the logo are read from disk at
+  run time; `next.config.ts` names them in that route's trace
+  (`outputFileTracingIncludes`), and a path built at run time carries a
+  `turbopackIgnore` mark, or the bundler traces the whole project.
 - **Shapes shared by both sides** are in `src/shared` (one file per module).
 
 ## The browser side (`src/client`)

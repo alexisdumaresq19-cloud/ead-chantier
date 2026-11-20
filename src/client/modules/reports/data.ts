@@ -45,6 +45,15 @@ export const dayQuery = (projectId: string, day: string) => ({
   queryFn: () => api<DayReport>(`/api/projects/${projectId}/reports/day/${day}`),
 });
 
+/**
+ * A report as the device kept it may date from before reports had photos:
+ * it is read as a report without any, until the network brings it again.
+ */
+const withPhotos = (report: Report): Report =>
+  Array.isArray(report.photoIds) && Array.isArray(report.photos)
+    ? report
+    : { ...report, photoIds: [], photos: [] };
+
 export const membersQuery = (projectId: string) => ({
   queryKey: keys.members(projectId),
   queryFn: () => api<Member[]>(`/api/projects/${projectId}/members`),
@@ -66,6 +75,7 @@ export const useReport = (projectId: string, reportId: string) =>
         throw new ApiFailure(404, "not_found", "Rapport introuvable.");
       return report;
     },
+    select: withPhotos,
   });
 
 /**
@@ -74,7 +84,13 @@ export const useReport = (projectId: string, reportId: string) =>
  * opening that one.
  */
 export const useDayReport = (projectId: string, day: string, enabled = true) =>
-  useQuery({ ...dayQuery(projectId, day), enabled, staleTime: 0 });
+  useQuery({
+    ...dayQuery(projectId, day),
+    enabled,
+    staleTime: 0,
+    select: (found: DayReport): DayReport =>
+      found.report ? { ...found, report: withPhotos(found.report) } : found,
+  });
 
 export const useMembers = (projectId: string) => useQuery(membersQuery(projectId));
 

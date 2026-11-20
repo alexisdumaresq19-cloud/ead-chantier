@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   devIndicators: false,
   poweredByHeader: false,
   // Native and WebAssembly packages are loaded from node_modules at run time.
-  serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres"],
+  serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres", "pdfkit"],
   outputFileTracingIncludes: {
     "/api/**": [
       "./node_modules/@hyzyla/pdfium/dist/**",
@@ -12,6 +12,14 @@ const nextConfig: NextConfig = {
       // The worker that draws plan pages is started from its own file
       // (src/server/plans/render.ts): the bundler does not see it.
       "./src/server/plans/page-drawing.mjs",
+    ],
+    // What a report's PDF is drawn with, read from disk at run time
+    // (src/server/reports/pdf/assets.ts). The route is /api/reports/[id]/pdf:
+    // written with brackets, the key would be read as a pattern and match nothing.
+    "/api/reports/*/pdf": [
+      "./src/server/reports/pdf/fonts/*.ttf",
+      "./public/brand/ead-logo.png",
+      "./public/brand/ead-mark.png",
     ],
   },
   turbopack: {

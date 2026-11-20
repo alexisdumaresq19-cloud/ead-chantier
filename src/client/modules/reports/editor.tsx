@@ -59,6 +59,7 @@ import {
 import { DictationCard, DictationSheet } from "./dictation/sheet";
 import { canKeepDrafts, draftKey, readDraft, removeDraft, writeDraft, type Draft } from "./drafts";
 import {
+  addPhotoIds,
   checkForm,
   emptyForm,
   formFromReport,
@@ -672,6 +673,7 @@ function Editor({
               changed.length === 0 ? [] : [...new Set([...fields, ...changed])],
             );
           }}
+          onPhotosAdded={(ids) => setForm((current) => addPhotoIds(current, ids).form)}
         />
       ) : null}
 

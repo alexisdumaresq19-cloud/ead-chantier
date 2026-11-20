@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql as raw } from "drizzle-orm";
 
 import type { SessionUser } from "../auth";
 import { db, schema } from "../db/client";
@@ -186,6 +186,18 @@ export async function removePhoto(row: PhotoRow): Promise<boolean> {
     .where(eq(schema.photos.id, row.id))
     .returning({ id: schema.photos.id });
   if (!removed.length) return false;
+  // Daily reports that named it no longer do. Their version stays the same:
+  // someone writing one of them at this moment is not told it changed.
+  await db
+    .update(schema.dailyReports)
+    .set({ photoIds: raw`${schema.dailyReports.photoIds} - ${row.id}::text` })
+    .where(
+      and(
+        eq(schema.dailyReports.projectId, row.projectId),
+        raw`${schema.dailyReports.photoIds} @> jsonb_build_array(${row.id}::text)`,
+      ),
+    )
+    .catch((error) => console.error("photo in reports", row.id, error));
   // The record goes first: a file left behind is only clutter, a record
   // without its files would be a broken photo in the gallery.
   await storage()

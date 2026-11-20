@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, lte, or, sql as raw } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, lte, or, sql as raw } from "drizzle-orm";
 
 import { SITE_TIME_ZONE, siteDay, siteDayBounds, type Photo, type PhotoDay } from "@/shared/photos";
 import { canManageProject } from "@/shared/roles";
@@ -102,6 +102,36 @@ export async function listPhotos(
     )
     .orderBy(desc(schema.photos.takenAt), desc(schema.photos.id))
     .limit(limit);
+  return rows.map((row) => photoDto(row.photo, row.authorName, user, open));
+}
+
+/**
+ * Those of the given photos that the project holds, with their authors'
+ * names, in the order they were taken: the photos that go with a daily
+ * report. An id from another project, or of a photo removed since, gives
+ * nothing.
+ */
+export async function photoRowsByIds(
+  projectId: string,
+  ids: string[],
+): Promise<{ photo: PhotoRow; authorName: string | null }[]> {
+  if (ids.length === 0) return [];
+  return db
+    .select({ photo: schema.photos, authorName: schema.users.name })
+    .from(schema.photos)
+    .leftJoin(schema.users, eq(schema.users.id, schema.photos.createdBy))
+    .where(and(eq(schema.photos.projectId, projectId), inArray(schema.photos.id, ids)))
+    .orderBy(asc(schema.photos.takenAt), asc(schema.photos.id));
+}
+
+/** Same, as the app shows them. */
+export async function photosByIds(
+  user: SessionUser,
+  project: Pick<Project, "id" | "status">,
+  ids: string[],
+): Promise<Photo[]> {
+  const open = projectOpenTo(project, user);
+  const rows = await photoRowsByIds(project.id, ids);
   return rows.map((row) => photoDto(row.photo, row.authorName, user, open));
 }
 

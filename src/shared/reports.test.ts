@@ -7,6 +7,7 @@ import {
   isRealDay,
   isValidHours,
   latestReportDay,
+  reportPdfName,
   sameContent,
   type ReportContent,
 } from "./reports";
@@ -21,6 +22,7 @@ const report: ReportContent = {
   equipment: "Pelle",
   workDone: "Excavation de la tranchée.",
   notes: "",
+  photoIds: [],
 };
 
 describe("report rules", () => {
@@ -74,8 +76,11 @@ describe("report rules", () => {
       equipment: "",
       workDone: " \n",
       notes: "",
+      photoIds: [],
     };
     expect(isEmptyContent(blank)).toBe(true);
+    // Photos alone make a report.
+    expect(isEmptyContent({ ...blank, photoIds: ["abcdefghjkmnpqrs"] })).toBe(false);
     expect(isEmptyContent({ ...blank, workDone: "Chantier fermé." })).toBe(false);
     expect(isEmptyContent({ ...blank, weather: { ...blank.weather, temperatureC: 0 } })).toBe(
       false,
@@ -93,6 +98,11 @@ describe("report rules", () => {
       true,
     );
     expect(sameContent(report, { ...report, notes: "Visite" })).toBe(false);
+    // The same photos, whatever the order they were added in.
+    const withPhotos = { ...report, photoIds: ["a", "b"] };
+    expect(sameContent(withPhotos, { ...report, photoIds: ["b", "a"] })).toBe(true);
+    expect(sameContent(withPhotos, report)).toBe(false);
+    expect(sameContent(withPhotos, { ...report, photoIds: ["a", "c"] })).toBe(false);
     expect(sameContent(report, { ...report, day: "2026-11-17" })).toBe(false);
     expect(sameContent(report, { ...report, crew: report.crew.slice(0, 1) })).toBe(false);
     expect(
@@ -104,5 +114,25 @@ describe("report rules", () => {
     expect(
       sameContent(report, { ...report, weather: { ...report.weather, temperatureC: 12 } }),
     ).toBe(false);
+  });
+});
+
+describe("the name of a report's PDF", () => {
+  it("is made of the project's number and the day", () => {
+    expect(reportPdfName({ number: "2026-014", name: "Rue Principale" }, "2026-10-01")).toBe(
+      "Rapport journalier 2026-014 2026-10-01.pdf",
+    );
+  });
+
+  it("falls back on the project's name, without accents or signs a file name refuses", () => {
+    expect(
+      reportPdfName({ number: null, name: "Réfection : rue de l'Église / phase 2" }, "2026-10-01"),
+    ).toBe("Rapport journalier Refection-rue-de-l-Eglise-phase-2 2026-10-01.pdf");
+    expect(reportPdfName({ number: "  ", name: "…" }, "2026-10-01")).toBe(
+      "Rapport journalier 2026-10-01.pdf",
+    );
+    expect(reportPdfName({ number: null, name: "A".repeat(80) }, "2026-10-01")).toBe(
+      `Rapport journalier ${"A".repeat(40)} 2026-10-01.pdf`,
+    );
   });
 });

@@ -73,7 +73,11 @@ const isDraft = (value: unknown): value is Draft => {
 export function readDraft(key: string, store = deviceStore()): Draft | null {
   try {
     const draft: unknown = JSON.parse(store?.getItem(key) ?? "null");
-    return isDraft(draft) ? draft : null;
+    if (!isDraft(draft)) return null;
+    // A draft written before reports had photos.
+    return Array.isArray(draft.form.photoIds)
+      ? draft
+      : { ...draft, form: { ...draft.form, photoIds: [] } };
   } catch {
     return null;
   }

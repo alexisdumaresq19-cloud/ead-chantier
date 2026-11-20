@@ -11,19 +11,20 @@ import {
 
 export const GET = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  return reportOf(user, (await reportToManage(user, id)).row);
+  const { row, project } = await reportToManage(user, id);
+  return reportOf({ user, project }, row);
 });
 
 /** Saves a change, unless someone else changed the report in the meantime. */
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  await reportToChange(user, id);
-  return changeReport(user, id, await body(request, reportChange));
+  const { project } = await reportToChange(user, id);
+  return changeReport({ user, project }, id, await body(request, reportChange));
 });
 
 /** Removes the report: its author or the office. */
 export const DELETE = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  await deleteReport(user, await reportToChange(user, id));
+  await deleteReport(user, (await reportToChange(user, id)).row);
   return { ok: true };
 });

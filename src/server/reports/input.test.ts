@@ -35,7 +35,44 @@ describe("what the API accepts for a report", () => {
       equipment: "Pelle",
       workDone: "Excavation de la tranchée.",
       notes: "",
+      photoIds: [],
     });
+  });
+
+  it("takes the photos that go with the report, each once", () => {
+    const first = "abcdefghjkmnpqrs";
+    const second = "tuvwxyz23456789a";
+    expect(newReport.parse({ ...report, photoIds: [first, second, first] }).photoIds).toEqual([
+      first,
+      second,
+    ]);
+    expect(refused({ photoIds: ["../../etc/passwd"] })).toBe(true);
+    expect(refused({ photoIds: [first.toUpperCase()] })).toBe(true);
+    expect(refused({ photoIds: "abcdefghjkmnpqrs" })).toBe(true);
+    const letters = "abcdefghjkmnpqrstuvwxyz";
+    const many = Array.from(
+      { length: 41 },
+      (_, index) => `abcdefghjkmnpq${letters[index % 23]}${letters[Math.floor(index / 23)]}`,
+    );
+    expect(refused({ photoIds: many })).toBe(true);
+    expect(refused({ photoIds: many.slice(0, 40) })).toBe(false);
+    // A change that says nothing of the photos leaves them alone.
+    expect(
+      reportChange.parse({ notes: "Visite", baseUpdatedAt: new Date().toISOString() }),
+    ).not.toHaveProperty("photoIds");
+  });
+
+  it("takes photos alone as a report", () => {
+    const blank = {
+      day: today,
+      weather: { condition: null, temperatureC: null, note: "" },
+      crew: [],
+      equipment: "",
+      workDone: "",
+      notes: "",
+    };
+    expect(newReport.safeParse(blank).success).toBe(false);
+    expect(newReport.safeParse({ ...blank, photoIds: ["abcdefghjkmnpqrs"] }).success).toBe(true);
   });
 
   it("takes a closed day: no crew, no temperature", () => {

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { PHOTO_ID_PATTERN } from "@/shared/photos";
 import {
   FIRST_REPORT_DAY,
   isEmptyContent,
@@ -66,6 +67,16 @@ const crew = z
     return new Set(ids).size === ids.length;
   }, "Une personne est inscrite deux fois.");
 
+/**
+ * The photos that go with the report. Only the shape of an id is checked: a
+ * photo still on its way from a phone is not in the project yet, and the
+ * report reads its photos from the project alone (reports/queries.ts).
+ */
+const photoIds = z
+  .array(z.string().regex(PHOTO_ID_PATTERN, "Photo inconnue."))
+  .transform((ids) => [...new Set(ids)])
+  .pipe(z.array(z.string()).max(LIMITS.photos, `Trop de photos (${LIMITS.photos} au plus).`));
+
 const content = z.object({
   day: reportDay,
   weather,
@@ -73,13 +84,19 @@ const content = z.object({
   equipment: text(LIMITS.equipment),
   workDone: text(LIMITS.text),
   notes: text(LIMITS.text),
+  photoIds,
 });
 
 export const EMPTY_REPORT =
   "Le rapport est vide\u00a0: inscrivez au moins la météo ou les travaux.";
 
-/** POST: the whole report. */
-export const newReport = content.refine((report) => !isEmptyContent(report), EMPTY_REPORT);
+/**
+ * POST: the whole report. A phone still running the version from before
+ * reports had photos sends none.
+ */
+export const newReport = content
+  .extend({ photoIds: photoIds.default([]) })
+  .refine((report) => !isEmptyContent(report), EMPTY_REPORT);
 
 /** PATCH: what changes, and the version the change was made from. */
 export const reportChange = content.partial().extend({
