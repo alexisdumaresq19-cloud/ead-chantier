@@ -3,9 +3,11 @@ import { z } from "zod";
 
 import {
   COMPANY_LIMITS as L,
+  EMAIL_PROBLEM,
   emailProblem,
   EMPTY_COMPANY_PROFILE,
   officerProblem,
+  PHONE_PROBLEM,
   phoneProblem,
   type CompanyProfile,
   type CompanyProfileInput,
@@ -49,12 +51,12 @@ const address = z
   );
 
 const phone = line(L.phone).refine((text) => phoneProblem(text) === null, {
-  message: "Ce numéro de téléphone n'est pas valide.",
+  message: PHONE_PROBLEM,
 });
 
 const email = line(L.email)
   .transform((text) => text.toLowerCase())
-  .refine((text) => emailProblem(text) === null, { message: "Ce courriel n'est pas valide." });
+  .refine((text) => emailProblem(text) === null, { message: EMAIL_PROBLEM });
 
 /** What the office sends. Every field must be there, empty when not known. */
 export const companyProfileInput = z.object({

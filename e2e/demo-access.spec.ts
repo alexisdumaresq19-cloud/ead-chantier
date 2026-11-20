@@ -12,7 +12,7 @@ import { call, contextAs, post, seed } from "./support";
 
 test.describe.configure({ mode: "serial" });
 
-let access: { phone: string; code: string };
+let access: { phone: string; code: string; pausedUntil?: string | null };
 
 /** The day at the site (the tests' browsers are on the site's clock too). */
 const siteDay = (daysAgo = 0) =>
@@ -162,6 +162,19 @@ test("the account never touches the team, by the screens or by the API", async (
     phone: access.phone,
   });
   expect([shared.status, shared.body.error.code]).toEqual([400, "demo_phone"]);
+  // Nor does a newcomer who scans a site's QR code take it as their own.
+  const qr = (await call(office.request, "POST", `/api/projects/${seed.projectId}/qr`, {})).body;
+  const newcomer = await device(browser);
+  const joined = await call(
+    newcomer.request,
+    "POST",
+    `/api/invites/${new URL(qr.url).pathname.split("/j/")[1]}`,
+    { name: "Faux Numéro", phone: access.phone },
+  );
+  expect([joined.status, joined.body.error.code]).toEqual([400, "demo_phone"]);
+  const listed = (await call(office.request, "GET", "/api/users")).body as { name: string }[];
+  expect(listed.some((person) => person.name === "Faux Numéro")).toBe(false);
+  await newcomer.close();
   // Nor does the office make it anything else, or send it a link.
   const promoted = await call(office.request, "PATCH", `/api/users/${demo.id}`, { role: "admin" });
   expect(promoted.status).toBe(403);
@@ -200,6 +213,20 @@ test("the account adds to its projects, and never removes or changes what the te
     ["PATCH", `/api/sheets/${seed.sheetIds[0]}`, { title: "Effacé" }, "sans les modifier"],
     ["DELETE", `/api/sheets/${seed.sheetIds[0]}`, undefined, "sans les modifier"],
     ["POST", `${project}/plan-folders`, { name: "Essai" }, "sans les modifier"],
+    // Nor does it start plan work: an upload of a plan, an import tried again.
+    [
+      "POST",
+      "/api/uploads",
+      {
+        projectId: seed.projectId,
+        kind: "plan",
+        filename: "plan.pdf",
+        contentType: "application/pdf",
+        size: 1000,
+      },
+      "sans les modifier",
+    ],
+    ["POST", "/api/plan-imports/import-inconnu/retry", {}, "sans les modifier"],
   ] as const;
   for (const [method, path, data, said] of tries) {
     const refused = await call(visitor.request, method, path, data);
@@ -399,6 +426,40 @@ test("the visitor deletes the account, and the next visitor still gets in", asyn
   expect(changed.status).toBe(200);
   expect((await call(next.request, "DELETE", `/api/reports/${reportId}`)).status).toBe(200);
   await next.close();
+});
+
+test("deleted too often, the access pauses, the office sees it, and a new code opens it", async ({
+  browser,
+}) => {
+  // Visitors delete the account and come back until the day's bound.
+  let refused: { status: number; body: { error: { code: string } } } | null = null;
+  for (let i = 0; i < 8 && !refused; i++) {
+    const visitor = await device(browser);
+    const signedIn = await call(visitor.request, "POST", "/api/sessions/code", access);
+    if (signedIn.status === 200) {
+      expect((await call(visitor.request, "DELETE", "/api/me")).status).toBe(200);
+    } else refused = signedIn;
+    await visitor.close();
+  }
+  expect([refused?.status, refused?.body.error.code]).toEqual([429, "too_many_demos"]);
+
+  const office = await contextAs(browser, "admin");
+  const page = await office.newPage();
+  await page.goto("/equipe");
+  const card = page.getByRole("region", { name: "Accès de démonstration" });
+  await expect(card.getByText("En pause")).toBeVisible();
+  await expect(card.getByRole("status")).toContainText("Personne n'entre avant le ");
+  await expect(card.getByRole("status")).toContainText("Changez le code pour le rouvrir");
+  // The way out the refusal names.
+  await card.getByRole("button", { name: "Changer le code" }).click();
+  await confirm(page, "Changer le code");
+  await expect(card.getByText("Actif")).toBeVisible();
+  await expect(card.getByText("En pause")).toHaveCount(0);
+  access = (await call(office.request, "GET", "/api/company/demo")).body.access;
+  expect(access.pausedUntil).toBeNull();
+  const reviewer = await device(browser);
+  expect((await call(reviewer.request, "POST", "/api/sessions/code", access)).status).toBe(200);
+  await Promise.all([office.close(), reviewer.close()]);
 });
 
 test("the office removes the access: the number and the code stop working", async ({ browser }) => {

@@ -251,7 +251,7 @@ function ProfileSheet({
             aria-invalid={Boolean(shown.name)}
           />
         </Field>
-        <Field label="Adresse postale" optional>
+        <Field label="Adresse postale">
           <Textarea
             value={form.address}
             onChange={(event) => set({ address: event.target.value })}
@@ -262,7 +262,7 @@ function ProfileSheet({
             className="resize-none"
           />
         </Field>
-        <Field label="Téléphone" optional error={shown.phone}>
+        <Field label="Téléphone" error={shown.phone}>
           <Input
             type="tel"
             inputMode="tel"
@@ -273,7 +273,7 @@ function ProfileSheet({
             aria-invalid={Boolean(shown.phone)}
           />
         </Field>
-        <Field label="Courriel" optional error={shown.email}>
+        <Field label="Courriel" error={shown.email}>
           <Input
             type="email"
             inputMode="email"
@@ -287,12 +287,13 @@ function ProfileSheet({
           />
         </Field>
 
-        <fieldset className="border-line space-y-4 border-t pt-4">
-          <legend className="sr-only">
-            Responsable de la protection des renseignements personnels
-          </legend>
-          <div aria-hidden>
-            <p className="font-display text-base leading-tight font-bold">
+        <div
+          role="group"
+          aria-labelledby="company-officer"
+          className="border-line space-y-4 border-t pt-4"
+        >
+          <div>
+            <p id="company-officer" className="font-display text-base leading-tight font-bold">
               Responsable de la protection des renseignements personnels
             </p>
             <p className="text-dim mt-1 text-sm text-pretty">
@@ -329,7 +330,7 @@ function ProfileSheet({
               autoComplete="off"
             />
           </Field>
-        </fieldset>
+        </div>
         <ShownError error={save.error} />
       </form>
     </Sheet>

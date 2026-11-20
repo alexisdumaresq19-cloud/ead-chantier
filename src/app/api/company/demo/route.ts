@@ -7,6 +7,7 @@ import {
   readDemoAccess,
   removeDemoAccess,
 } from "@/server/access-code/demo";
+import { demoRemakesPausedUntil } from "@/server/access-code/door";
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { body, route } from "@/server/http";
@@ -30,7 +31,7 @@ async function shown(): Promise<DemoAccessState> {
     : [];
   // The last visit, of the account in place or of one its visitor deleted.
   const [seen] = await db
-    .select({ at: schema.users.lastSeenAt })
+    .select({ at: schema.users.lastSeenAt, active: schema.users.active })
     .from(schema.users)
     .where(and(eq(schema.users.demo, true), isNull(schema.users.deletedAt)))
     .orderBy(raw`${schema.users.lastSeenAt} desc nulls last`)
@@ -43,6 +44,10 @@ async function shown(): Promise<DemoAccessState> {
       changedAt: setting.changedAt.toISOString(),
       changedBy: author?.name ?? null,
       lastSeenAt: seen?.at?.toISOString() ?? null,
+      // Visitors are stuck only while no account stands and none may be made.
+      pausedUntil: seen?.active
+        ? null
+        : ((await demoRemakesPausedUntil(db, new Date()))?.toISOString() ?? null),
     },
   };
 }

@@ -137,6 +137,11 @@ export type InviteLink = {
    * what the link does, once (src/shared/access.ts). A site's QR code has none.
    */
   code?: string;
+  /**
+   * With a code: the link that installs the iPhone app, which no search in
+   * the App Store finds (src/server/app-store.ts); null while none is set.
+   */
+  appStoreUrl?: string | null;
 };
 
 export type UploadTicket = {

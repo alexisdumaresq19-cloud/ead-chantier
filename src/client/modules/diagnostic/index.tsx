@@ -148,7 +148,8 @@ export function DiagnosticScreen() {
       <main className="mx-auto max-w-2xl pt-5 pr-[max(1rem,env(safe-area-inset-right))] pl-[max(1rem,env(safe-area-inset-left))]">
         <h1 className="font-display text-[32px] leading-tight font-bold">Diagnostic</h1>
         <p className="text-dim mt-1 text-[17px] text-pretty">
-          Ce que l&apos;appareil dit de l&apos;app, pour le soutien. Aucune donnée personnelle.
+          Ce que l&apos;appareil dit de l&apos;application, pour le soutien. Aucune donnée
+          personnelle.
         </p>
         <Card className="divide-line mt-5 divide-y">
           {facts === null ? (

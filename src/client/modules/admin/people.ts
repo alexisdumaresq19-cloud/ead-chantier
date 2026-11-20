@@ -78,6 +78,9 @@ export const INVITE_SUBJECT = "Votre accès à EAD Chantier";
  * With a code, the code comes first: in the iPhone app a link tapped in
  * Messages opens Safari, and opening it there would use up the code too.
  * The code screen finds the number and the code in the whole message pasted.
+ * The code works only with the cell number on file: without one, the text
+ * gives the link alone. The app is unlisted, found by no search: when the
+ * office has its App Store link, the text starts with it.
  */
 export function inviteMessage(
   name: string,
@@ -85,18 +88,21 @@ export function inviteMessage(
   days: number,
   code?: string,
   phone?: string | null,
+  appStoreUrl?: string | null,
 ): string {
   const length = days > 1 ? `pendant ${days} jours` : "jusqu'à demain";
   const hello = `Bonjour ${firstName(name)}`;
-  if (!code)
+  if (!code || !phone)
     return `${hello}, voici votre lien personnel pour ouvrir EAD Chantier sur votre téléphone.\n${url}\nIl sert une seule fois, ${length}.`;
-  const cell = phone ? `votre cellulaire (${formatPhone(phone)})` : "votre cellulaire";
   return [
     `${hello}, voici comment entrer dans EAD Chantier.`,
-    `${ACCESS_CODE_HOW} Entrez ${cell} et ce code\u00a0: ${formatAccessCode(code)}`,
+    appStoreUrl ? `Pour installer l'application EAD sur iPhone\u00a0:\n${appStoreUrl}` : null,
+    `${ACCESS_CODE_HOW} Entrez votre cellulaire (${formatPhone(phone)}) et ce code\u00a0: ${formatAccessCode(code)}`,
     `Sans l'application, ouvrez plutôt ce lien\u00a0:\n${url}`,
     `Utilisez l'un ou l'autre\u00a0: ils servent une seule fois, ${length}.`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** How long a site's QR code works (PROJECT_INVITE_DAYS on the server). */

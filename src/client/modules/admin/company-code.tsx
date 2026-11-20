@@ -40,7 +40,7 @@ const useCompanyCode = () =>
     meta: { persist: false },
   });
 
-/** "Changé par Camille Roy le 20 novembre 2026." */
+/** "Code créé par Camille Roy le 20 novembre 2026." */
 const changedText = (code: CompanyCode) =>
   code.changedAt
     ? [

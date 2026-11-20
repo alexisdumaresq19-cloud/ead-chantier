@@ -23,6 +23,7 @@ import {
   accessCounts,
   accessLimits,
   accessRefusal,
+  blockKey,
   holdDemo,
   holdNetwork,
   holdNumber,
@@ -129,13 +130,18 @@ export async function signInWithCode(
 ): Promise<{ userId: string; token: string; expiresAt: Date }> {
   const started = Date.now();
   const typed = cleanAccessCode(input);
-  const keys = { network: networkKey(addressOf(request)), number: numberKey(typed.phone) };
+  const network = addressOf(request);
+  const keys = {
+    network: networkKey(network),
+    block: blockKey(network),
+    number: numberKey(typed.phone),
+  };
 
   // A network that is shut is refused at once, without waiting for a turn.
   const shut = accessRefusal(
     await accessCounts({ network: keys.network, number: null }, null, limits, now),
     limits,
-    keys.network,
+    keys.block,
   );
   if (shut) throw tooManyTries(shut, now);
   const me = await currentUser(request);
@@ -175,7 +181,7 @@ export async function signInWithCode(
     const refusal = accessRefusal(
       await accessCounts(counted, newest, limits, now, tx),
       limits,
-      keys.network,
+      keys.block,
     );
     if (refusal) return { refused: tooManyTries(refusal, now) };
 

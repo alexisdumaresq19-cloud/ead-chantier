@@ -1,10 +1,19 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, Copy, FolderKanban, Presentation, RefreshCw, Trash2 } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Copy,
+  FolderKanban,
+  Presentation,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
 import { useState } from "react";
 
 import {
   ACCESS_CODE_HOW,
   appleReviewText,
+  DEMO_REMAKES_PER_DAY,
   DEMO_SESSION_DAYS,
   formatAccessCode,
   type DemoAccess,
@@ -15,7 +24,7 @@ import type { ProjectSummary } from "@/shared/api";
 
 import { api, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { formatDay } from "../../lib/format";
+import { count, formatDay, formatTime } from "../../lib/format";
 import { queryClient } from "../../lib/query";
 import { useProjects } from "../../lib/session";
 import { Badge, Button, Card, confirmAction, Sheet, Skeleton, toast } from "../../ui";
@@ -40,10 +49,10 @@ const useDemoAccess = () =>
     meta: { persist: false },
   });
 
-/** "Changé par Camille Roy le 20 novembre 2026." */
+/** "Modifié par Camille Roy le 20 novembre 2026.", as the other cards of Équipe say it. */
 const changedText = (access: DemoAccess) =>
   [
-    "Changé",
+    "Modifié",
     access.changedBy ? `par ${access.changedBy}` : null,
     `le ${formatDay(access.changedAt)}.`,
   ]
@@ -132,7 +141,13 @@ export function DemoAccessCard({ className }: { className?: string }) {
             </p>
           ) : null}
         </div>
-        {access ? <Badge tone="good">Actif</Badge> : null}
+        {access ? (
+          access.pausedUntil ? (
+            <Badge tone="warn">En pause</Badge>
+          ) : (
+            <Badge tone="good">Actif</Badge>
+          )
+        ) : null}
       </div>
       <p className="text-dim mt-3 max-w-prose text-[15px] text-pretty">
         Pour montrer l&apos;application à une personne hors de l&apos;équipe, par exemple
@@ -149,6 +164,22 @@ export function DemoAccessCard({ className }: { className?: string }) {
         </div>
       ) : access ? (
         <>
+          {access.pausedUntil ? (
+            <div className="bg-warn-tint text-warn mt-4 rounded-xl px-3.5 py-3" role="status">
+              <p className="flex items-start gap-2.5 text-[15px] text-pretty">
+                <CircleAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
+                <span>
+                  <strong className="font-semibold">
+                    Personne n&apos;entre avant le {formatDay(access.pausedUntil)} à{" "}
+                    {formatTime(access.pausedUntil)}.
+                  </strong>{" "}
+                  Le compte de démonstration a été supprimé et refait {DEMO_REMAKES_PER_DAY}
+                  &nbsp;fois aujourd&apos;hui. Changez le code pour le rouvrir tout de suite, et
+                  donnez le nouveau code au visiteur.
+                </span>
+              </p>
+            </div>
+          ) : null}
           <div className="bg-canvas mt-4 grid gap-4 rounded-2xl p-4 sm:grid-cols-2 sm:p-5">
             <Value label="Cellulaire" value={access.phone} toCopy={access.phone} />
             <Value
@@ -332,13 +363,16 @@ function ProjectsSheet({
   const [chosen, setChosen] = useState(initial);
   const [checked, setChecked] = useState(false);
   const missing = checked && chosen.length === 0;
+  const withoutPlans = projects.filter(
+    (project) => chosen.includes(project.id) && project.sheetCount === 0,
+  );
   return (
     <Sheet
       open={open}
       onClose={onClose}
       title={creating ? "Créer l'accès de démonstration" : "Projets montrés"}
       description={
-        "Choisissez de préférence des projets d'exemple. Le visiteur en verra les plans, les documents, les photos et les rapports, et pourra y ajouter les siens."
+        "Le visiteur verra les plans, les documents, les photos et les rapports de ces projets, avec les noms et les heures de l'équipe, et pourra y ajouter les siens. Choisissez des projets d'exemple."
       }
       footer={
         <>
@@ -357,7 +391,20 @@ function ProjectsSheet({
         </>
       }
     >
-      <ProjectPicker projects={projects} value={chosen} onChange={setChosen} />
+      <ProjectPicker
+        projects={projects}
+        value={chosen}
+        onChange={setChosen}
+        // What the visitor will find there: a project with no plans shows nothing to open.
+        detail={(project) => count(project.sheetCount, "feuille")}
+      />
+      {withoutPlans.length ? (
+        <p className="text-warn mt-2 text-sm font-medium text-pretty" role="status">
+          {withoutPlans.length === 1
+            ? `${withoutPlans[0].name} n'a pas de plans\u00a0: le visiteur n'y verra aucune feuille à ouvrir.`
+            : "Des projets cochés n'ont pas de plans\u00a0: le visiteur n'y verra aucune feuille à ouvrir."}
+        </p>
+      ) : null}
       {missing ? (
         <p className="text-bad mt-2 text-sm font-medium">Cochez au moins un projet à montrer.</p>
       ) : null}

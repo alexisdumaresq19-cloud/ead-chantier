@@ -107,7 +107,7 @@ describe("sending an invitation", () => {
     const lines = text.split("\n");
     expect(lines[0]).toBe("Bonjour Julie, voici comment entrer dans EAD Chantier.");
     expect(lines[1]).toBe(
-      "Dans l'application, touchez J'ai déjà un compte si ce bouton est là, puis Avec un code du bureau. Entrez votre cellulaire (418 555-0142) et ce code\u00a0: 4827\u00a01936",
+      "Dans l'application, touchez «\u00a0J'ai déjà un compte\u00a0» si ce bouton est là, puis «\u00a0Avec un code du bureau\u00a0». Entrez votre cellulaire (418 555-0142) et ce code\u00a0: 4827\u00a01936",
     );
     // The link only after: tapped first on an iPhone, it would use the code up in Safari.
     expect(lines.slice(2)).toEqual([
@@ -116,10 +116,28 @@ describe("sending an invitation", () => {
       "Utilisez l'un ou l'autre\u00a0: ils servent une seule fois, pendant 14 jours.",
     ]);
     expect(readMessage(text)).toEqual({ phone: "418 555-0142", code: "48271936" });
-    // Without a number on file, the text still says which number to type.
-    expect(inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14, "48271936")).toContain(
-      "Entrez votre cellulaire et ce code",
+    // Without a number on file, the code cannot work: the link alone.
+    const noPhone = inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14, "48271936", null);
+    expect(noPhone).not.toContain("4827");
+    expect(noPhone).toBe(inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14));
+  });
+
+  it("starts with the link that installs the app, when the office has it", () => {
+    const store = "https://apps.apple.com/ca/app/ead/id1234567890";
+    const text = inviteMessage(
+      "Julie Cyr",
+      "https://exemple.ca/i/abc",
+      14,
+      "48271936",
+      "4185550142",
+      store,
     );
+    expect(text.split("\n").slice(1, 3)).toEqual([
+      "Pour installer l'application EAD sur iPhone\u00a0:",
+      store,
+    ]);
+    // The code is still found in the whole text, never in the App Store's digits.
+    expect(readMessage(text)).toEqual({ phone: "418 555-0142", code: "48271936" });
   });
 
   it("counts the days a link has left", () => {

@@ -17,7 +17,13 @@ export const ACCESS_CODE_PATH = "/bienvenue/code";
  * bureau" always does.
  */
 export const ACCESS_CODE_HOW =
-  "Dans l'application, touchez J'ai déjà un compte si ce bouton est là, puis Avec un code du bureau.";
+  "Dans l'application, touchez «\u00a0J'ai déjà un compte\u00a0» si ce bouton est là, puis «\u00a0Avec un code du bureau\u00a0».";
+
+/**
+ * How many times a day visitors' sign-ins may make the demonstration account
+ * again after one deleted it (src/server/access-code/door.ts).
+ */
+export const DEMO_REMAKES_PER_DAY = 5;
 
 /** How long a device stays signed in on the demonstration account. */
 export const DEMO_SESSION_DAYS = 1;
@@ -100,6 +106,12 @@ export type DemoAccess = {
   changedBy: string | null;
   /** When a visitor last used it; null if never. */
   lastSeenAt: string | null;
+  /**
+   * Until when no visitor gets in: the account was deleted and made again
+   * too often today (DEMO_REMAKES_PER_DAY on the server), and none stands.
+   * A new code opens it again at once. Null when visitors get in.
+   */
+  pausedUntil: string | null;
 };
 
 export type DemoAccessState = { access: DemoAccess | null };
@@ -115,9 +127,9 @@ export function appleReviewText(access: { phone: string; code: string }): string
     `Nom d'utilisateur / User name\u00a0: ${access.phone}`,
     `Mot de passe / Password\u00a0: ${access.code}`,
     "",
-    `${ACCESS_CODE_HOW} Entrez le cellulaire et le code. Pour supprimer le compte\u00a0: Mon compte, Supprimer mon compte. Le même numéro et le même code rouvrent ensuite le compte de démonstration.`,
+    `${ACCESS_CODE_HOW} Entrez le cellulaire et le code. Pour supprimer le compte\u00a0: Mon compte, Supprimer mon compte. Le supprimer déconnecte tous les appareils qui s'en servent. Le même numéro et le même code rouvrent ensuite le compte de démonstration, ${DEMO_REMAKES_PER_DAY}\u00a0fois par jour au plus.`,
     "",
-    'In the app, tap "J\'ai déjà un compte" if that button is shown, then "Avec un code du bureau", and enter the user name (a cell number) and the password (a code). To delete the account: Mon compte, Supprimer mon compte. Signing in again with the same number and code opens the demonstration account again.',
+    `In the app, tap "J'ai déjà un compte" if that button is shown, then "Avec un code du bureau", and enter the user name (a cell number) and the password (a code). To delete the account: Mon compte, Supprimer mon compte. Deleting it signs out every device using the demonstration account. Signing in again with the same number and code opens the demonstration account again, up to ${DEMO_REMAKES_PER_DAY} times a day.`,
   ].join("\n");
 }
 

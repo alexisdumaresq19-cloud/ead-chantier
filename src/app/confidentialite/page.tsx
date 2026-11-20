@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { officerNamed, phoneHref, type CompanyProfile } from "@/shared/company";
+import { officerNamed, ofCompany, phoneHref, type CompanyProfile } from "@/shared/company";
 import { POLICY_VERSION, profileForPages } from "@/server/legal/profile";
 
 import {
@@ -37,10 +37,10 @@ export default async function PrivacyPage() {
       lead={
         <>
           <p>
-            L&apos;application EAD Chantier sert aux chantiers de l&apos;entreprise {profile.name}
-            &nbsp;: plans, documents, photos et rapports journaliers. Voici ce qu&apos;elle garde
-            sur vous, à qui elle le montre et ce que vous pouvez demander. Cela vaut pour le site
-            Web comme pour l&apos;app EAD sur iPhone.
+            L&apos;application EAD Chantier sert aux chantiers {ofCompany(profile.name)}&nbsp;:
+            plans, documents, photos et rapports journaliers. Voici ce qu&apos;elle garde sur vous,
+            à qui elle le montre et ce que vous pouvez demander. Cela vaut pour le site Web comme
+            pour l&apos;application EAD sur iPhone.
           </p>
           <p className="mt-3 text-base">Version du {version}</p>
         </>
@@ -90,11 +90,12 @@ export default async function PrivacyPage() {
             rapport que vous enregistrez.
           </Point>
           <Point title="Pour protéger l'application">
-            Quand quelqu&apos;un essaie de créer un compte avec le code de l&apos;entreprise,
-            l&apos;application garde une empreinte chiffrée de son adresse réseau, jamais
-            l&apos;adresse elle-même, pour bloquer qui essaie trop de codes. Elle compte aussi les
-            demandes de chacun à l&apos;assistant, pour en limiter le nombre. Ces traces servent
-            seulement à compter les essais des deux derniers jours.
+            Quand quelqu&apos;un essaie de créer un compte avec le code de l&apos;entreprise, ou
+            d&apos;entrer avec un code du bureau, l&apos;application garde une empreinte chiffrée de
+            son adresse réseau et, pour un code du bureau, du numéro de cellulaire tapé. Elle ne
+            garde jamais l&apos;adresse ou le numéro eux-mêmes. Ces empreintes servent seulement à
+            bloquer qui essaie trop de codes, et sont effacées après deux jours. L&apos;application
+            compte aussi les demandes de chacun à l&apos;assistant, pour en limiter le nombre.
           </Point>
           <Point title="Sur votre appareil">
             Pour fonctionner sans réseau, l&apos;application garde une copie de ce que vous avez
@@ -145,7 +146,15 @@ export default async function PrivacyPage() {
           <Point title="Les gens de vos chantiers">
             Ils voient votre nom, votre rôle, votre titre et votre cellulaire, ainsi que les plans,
             documents et photos du chantier. Les rapports journaliers sont réservés aux
-            contremaîtres du chantier et au bureau.
+            contremaîtres du chantier et au bureau, et au visiteur de démonstration décrit
+            ci-dessous.
+          </Point>
+          <Point title="Un visiteur de démonstration">
+            Le bureau peut donner un accès de démonstration à une personne hors de
+            l&apos;entreprise, par exemple l&apos;équipe d&apos;Apple qui vérifie
+            l&apos;application. Cette personne voit alors, comme un contremaître, les chantiers que
+            le bureau a choisis&nbsp;: plans, documents, photos, rapports journaliers, et les noms,
+            les titres et les heures de l&apos;équipe. Elle ne voit pas les numéros de cellulaire.
           </Point>
           <Point title="Les fournisseurs de l'application">
             Vercel héberge l&apos;application, sur des serveurs à Montréal&nbsp;; comme pour tout
