@@ -6,7 +6,13 @@ const nextConfig: NextConfig = {
   // Native and WebAssembly packages are loaded from node_modules at run time.
   serverExternalPackages: ["@hyzyla/pdfium", "sharp", "postgres"],
   outputFileTracingIncludes: {
-    "/api/**": ["./node_modules/@hyzyla/pdfium/dist/**"],
+    "/api/**": [
+      "./node_modules/@hyzyla/pdfium/dist/**",
+      "./node_modules/@hyzyla/pdfium/package.json",
+      // The worker that draws plan pages is started from its own file
+      // (src/server/plans/render.ts): the bundler does not see it.
+      "./src/server/plans/page-drawing.mjs",
+    ],
   },
   turbopack: {
     rules: {

@@ -99,9 +99,12 @@
 }
 
 @media print {
-  .no-print {
+  .no-print,
+  [data-sonner-toaster] {
     display: none !important;
   }
+  /* The root is black for the phone's bars: on paper it would edge every page. */
+  html,
   body {
     background: #fff;
   }

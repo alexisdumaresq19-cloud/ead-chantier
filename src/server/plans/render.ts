@@ -24,7 +24,12 @@ const START_TIME_LIMIT_MS = 30_000;
 // development, after `next build`, under vitest and on Vercel (where it has
 // to be in the function's trace). Its parts are joined at run time so that
 // the bundler leaves it alone instead of making a copy of its own.
-const WORKER_FILE = join(process.cwd(), ...["src", "server", "plans", "page-drawing.mjs"]);
+const WORKER_FILE = join(
+  // Without this mark the bundler, unable to follow the path, puts the whole
+  // project in the trace of every route that draws plans.
+  /* turbopackIgnore: true */ process.cwd(),
+  ...["src", "server", "plans", "page-drawing.mjs"],
+);
 
 export const PDF_UNREADABLE = "Ce PDF est illisible ou protégé par un mot de passe.";
 export const PDF_TOO_SLOW = "La lecture de ce PDF prend trop de temps.";
@@ -93,7 +98,7 @@ function ask<T>(worker: Worker, question: object | null, limitMs: number): Promi
 async function startWorker(): Promise<Worker | null> {
   let worker: Worker | undefined;
   try {
-    const started = new Worker(WORKER_FILE, {
+    const started = new Worker(/* turbopackIgnore: true */ WORKER_FILE, {
       workerData: { planPages: true },
     });
     worker = started;
