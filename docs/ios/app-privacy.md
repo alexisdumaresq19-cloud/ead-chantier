@@ -45,13 +45,13 @@ Answers that apply to every type marked Collected:
 | --- | --- | --- | --- | --- |
 | Contact Info | Name | **Collected** | The person's name, shown to their team and on reports, and written by a foreman or the office in a report's crew lines. Sent with the report to the AI service (to spell names right) when someone who agreed uses the assistant. | `users.name` in `src/server/db/schema.ts` |
 | Contact Info | Email Address | **Collected** | Optional; entered by the office or the person. | `users.email` in `src/server/db/schema.ts`, `src/server/people/rules.ts` |
-| Contact Info | Phone Number | **Collected** | The cell number used to make an account and to reach the person at work. | `users.phone`; `src/app/api/signup/route.ts` |
+| Contact Info | Phone Number | **Collected** | The cell number used to make an account and to reach the person at work. A wrong try at signing in with an office code keeps a keyed digest of the number typed for two days, to count wrong tries per number (`signup_attempts`, outcome `access_number`). | `users.phone`; `src/app/api/signup/route.ts`; `numberKey` in `src/server/access-code/door.ts` |
 | Contact Info | Physical Address | No | Project addresses are sites, not the user's address. The company's own address is entered by the office for the policy page. | `projects.address`; `src/server/company/profile.ts` |
 | Contact Info | Other User Contact Info | No | | |
 | Health & Fitness | Health, Fitness | No | | |
 | Financial Info | Payment Info, Credit Info, Other Financial Info | No | No purchases in the app. | |
 | Location | Precise Location | No | The app never asks for the device's position. A site photo's EXIF (GPS included) is dropped when the server redraws it; the uploaded original is deleted right after. An image added as a *document* (jpg, png, webp, heic) is kept as sent, with whatever metadata the file holds; the app never reads it. It is user content the person chose to upload, declared under Other User Content. | `src/server/photos/process.ts`, `src/server/photos/changes.ts` (`discardUpload`); `src/shared/documents.ts`, `src/server/documents.ts` |
-| Location | Coarse Location | No | Network addresses are kept only as a keyed digest, used only to count the last two days' attempts at account creation; older rows are removed at the next attempt. No location is derived. | `src/server/signup/door.ts` (`addressKey`) |
+| Location | Coarse Location | No | Network addresses are kept only as a keyed digest, used only to count the last two days' attempts at account creation and wrong tries at signing in with an office code; older rows are removed at the next attempt. A wrong office-code try also keeps a keyed digest of the cell number typed, even one nobody has, for the same two days and the same count (declared under Phone Number). No location is derived. | `src/server/signup/door.ts` (`addressKey`); `src/server/access-code/door.ts` (`networkKey`, `numberKey`, `KEPT`) |
 | Sensitive Info | Sensitive Info | No | | |
 | Contacts | Contacts | No | The address book is never read. | |
 | User Content | Emails or Text Messages | No | | |
