@@ -19,6 +19,7 @@ import { ErrorState } from "./ui/states";
 //
 //   /bienvenue, /bienvenue/compte, /inscription,
 //   /demarrer, /i/:token, /j/:token                  before signing in
+//   /diagnostic                                      the iPhone app's check, for support
 //   /                                                the projects
 //   /projets/nouveau, /equipe, /moi                  office and account
 //   /projets/:projectId                              a project's home
@@ -40,6 +41,7 @@ const loaders = {
   photos: () => import("./modules/photos/routes"),
   reports: () => import("./modules/reports/routes"),
   admin: () => import("./modules/admin"),
+  diagnostic: () => import("./modules/diagnostic"),
 };
 
 /** Downloads every screen, so that all of them open without a network. */
@@ -68,6 +70,7 @@ const ProjectSettingsScreen = screen(loaders.admin, "ProjectSettingsScreen");
 const ProjectTeamScreen = screen(loaders.admin, "ProjectTeamScreen");
 const TeamScreen = screen(loaders.admin, "TeamScreen");
 const AccountScreen = screen(loaders.admin, "AccountScreen");
+const DiagnosticScreen = screen(loaders.diagnostic, "DiagnosticScreen");
 
 export function AppRoutes() {
   return (
@@ -88,6 +91,7 @@ function Screens() {
         <Route path="/demarrer" component={SetupScreen} />
         <Route path="/i/:token" component={InviteScreen} />
         <Route path="/j/:token" component={InviteScreen} />
+        <Route path="/diagnostic" component={DiagnosticScreen} />
         <Route component={SignedIn} />
       </Switch>
     </Suspense>

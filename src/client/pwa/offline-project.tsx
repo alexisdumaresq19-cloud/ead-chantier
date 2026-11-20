@@ -17,6 +17,7 @@ import { api } from "../lib/api";
 import { cn } from "../lib/cn";
 import { count, formatDay, formatSize } from "../lib/format";
 import { useOnline } from "../lib/online";
+import { isNativeApp } from "../native";
 import { keys } from "../lib/session";
 import { Section } from "../shell/page";
 import { Button, Card, confirmAction, ProgressBar, Skeleton, toast, type Tone } from "../ui";
@@ -73,6 +74,20 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
   const [free, setFree] = useState<number | null>(null);
   useEffect(() => void freeSpace().then(setFree), []);
 
+  // The iPhone app runs the offline worker only where the shell lets it
+  // (an App-Bound Domain): without it a kept project would not open offline.
+  if (isNativeApp() && !("serviceWorker" in navigator)) {
+    return (
+      <Section title="Sans réseau">
+        <Layout
+          icon={WifiOff}
+          tone="neutral"
+          title="Plans sans réseau indisponibles"
+          text="Dans cette version de l'app, les plans ne peuvent pas être gardés sur le téléphone. Ils s'ouvrent quand le réseau est là."
+        />
+      </Section>
+    );
+  }
   // No cache storage in this browser: nothing can be kept, nothing to offer.
   if (!canStore()) return null;
   if (kept === undefined) {

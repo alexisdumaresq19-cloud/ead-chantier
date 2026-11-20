@@ -1,6 +1,7 @@
 import { EllipsisVertical, MonitorSmartphone, Share, SquarePlus } from "lucide-react";
 import { useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { isNativeApp } from "../native";
 import { Button, Card, toast } from "../ui";
 import { acceptInstallOffer, useInstallOffer } from "./install-offer";
 
@@ -37,7 +38,8 @@ export function InstallApp() {
   const standalone = useStandalone();
   const [asking, setAsking] = useState(false);
 
-  if (standalone || installed) return null;
+  // The App Store's app is installed by definition.
+  if (standalone || installed || isNativeApp()) return null;
   // A browser that can offer but has not is either waiting to, or has the
   // app installed already: nothing to explain.
   if (!offer && !isApple() && "onbeforeinstallprompt" in window) return null;

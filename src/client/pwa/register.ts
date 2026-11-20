@@ -1,3 +1,4 @@
+import { isNativeApp } from "../native";
 import { preloadScreens } from "../routes";
 import { canStore, SHELL_CACHE, STATIC_CACHE } from "./caches";
 import { watchInstallOffer } from "./install-offer";
@@ -12,7 +13,9 @@ let started = false;
 export function registerPwa() {
   if (started) return;
   started = true;
-  watchInstallOffer();
+  // Inside the iPhone app the shell has its own means; a browser never loads them.
+  if (isNativeApp()) void import("../native/start").then((native) => native.startNativeApp());
+  else watchInstallOffer();
 
   if (process.env.NODE_ENV !== "production") {
     void retireWorker();
