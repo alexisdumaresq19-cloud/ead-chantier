@@ -13,6 +13,8 @@ export DATABASE_URL="$PG/${E2E_DB:-ead_e2e}"
 # A production build on the development file store: it has to be asked for.
 export STORAGE_DRIVER=fs
 export ALLOW_FS_STORAGE=1
+# The dictation answers by fixed rules, so no test ever calls a paid service.
+export AI_FAKE=1
 export STORAGE_DIR=.data/e2e-storage
 export APP_SECRET=e2e-secret-not-for-production
 # Production ignores a setup code shorter than 16 characters.
