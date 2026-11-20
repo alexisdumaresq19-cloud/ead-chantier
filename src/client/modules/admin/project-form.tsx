@@ -10,13 +10,16 @@ import { navigate } from "../../lib/location";
 import { queryClient } from "../../lib/query";
 import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
-import { Badge, Button, Card, Field, Input, Textarea, toast } from "../../ui";
+import { Badge, Button, Card, confirmAction, Field, Input, Textarea, toast } from "../../ui";
 import { OfficeOnly } from "./office-only";
-import { confirmCalmly, ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 
 // Creating a project and correcting it. Only the office writes; everyone on
 // the project may read what it holds.
+
+/** What archiving does, in one sentence, where the office archives or reopens a project. */
+const ARCHIVING =
+  "Archivé, le projet reste lisible pour l'équipe, mais plus rien n'y change et personne de nouveau n'y entre. Le bureau peut le rouvrir.";
 
 type ProjectForm = {
   number: string;
@@ -117,9 +120,7 @@ export function NewProjectScreen() {
       await queryClient.invalidateQueries({ queryKey: keys.projects, exact: true });
       toast.success("Projet créé");
       // The form is left behind: going back from the project must not offer
-      // to create it a second time. A second tap on the button must not open
-      // whatever the project's home puts under the finger.
-      ignoreSecondTap();
+      // to create it a second time.
       navigate(`/projets/${project.id}`, { replace: true });
     },
   });
@@ -207,17 +208,17 @@ function ProjectEditor({ project }: { project: ProjectDetail }) {
     save.mutate();
   };
   const archive = async () => {
-    const ok = await confirmCalmly({
+    const ok = await confirmAction({
       title: "Archiver ce projet?",
-      text: "Il quittera la liste des projets en cours. Ses plans, ses documents et ses photos resteront lisibles, et vous pourrez le rouvrir.",
+      text: `${ARCHIVING} Il quitte aussi la liste des projets en cours.`,
       confirmLabel: "Archiver",
     });
     if (ok) setStatus.mutate("archive");
   };
   const reopen = async () => {
-    const ok = await confirmCalmly({
+    const ok = await confirmAction({
       title: "Rouvrir ce projet?",
-      text: "Il reviendra dans la liste des projets en cours.",
+      text: "Il revient dans la liste des projets en cours, et l'équipe peut de nouveau y ajouter des plans, des documents et des photos.",
       confirmLabel: "Rouvrir",
     });
     if (ok) setStatus.mutate("actif");
@@ -239,9 +240,7 @@ function ProjectEditor({ project }: { project: ProjectDetail }) {
       <Section title={archived ? "Projet archivé" : "Fin du projet"}>
         <Card className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
           <p className="text-dim flex-1 text-[15px] text-pretty">
-            {archived
-              ? "Ce projet est hors de la liste des projets en cours. Tout ce qu'il contient reste lisible."
-              : "Les travaux sont terminés? Archivez le projet : il quitte la liste des projets en cours et reste lisible."}
+            {archived ? ARCHIVING : `Les travaux sont terminés? Archivez le projet. ${ARCHIVING}`}
           </p>
           {archived ? (
             <Button variant="secondary" onClick={reopen} loading={setStatus.isPending}>

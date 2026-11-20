@@ -3,34 +3,22 @@ import { LogOut } from "lucide-react";
 
 import { ROLE_LABELS } from "@/shared/roles";
 
-import { api, errorMessage } from "../../lib/api";
-import { useOnline } from "../../lib/online";
 import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
-import { Avatar, Button, Card, toast } from "../../ui";
+import { Avatar, Button, Card, confirmAction, FormError } from "../../ui";
 import { DeviceList } from "./devices";
-import { confirmCalmly } from "./second-tap";
-import { forgetSiteCodes } from "./site-code";
+import { signOutFailure } from "./people";
 
 /** Who is signed in on this device, their other devices, and the way out. */
 export function AccountScreen() {
   const me = useCurrentUser();
-  const online = useOnline();
-  const leave = useMutation({
-    mutationFn: async () => {
-      // signOut() carries on even when the server could not be reached. The
-      // session is ended here first, so a device never looks signed out
-      // while its session lives on.
-      await api("/api/logout", { method: "POST" });
-      forgetSiteCodes();
-      await signOut();
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  });
+  // signOut() changes nothing until the server has ended the session: on a
+  // failure the device is still signed in, and the screen says so.
+  const leave = useMutation({ mutationFn: () => signOut() });
 
   const askToLeave = async () => {
-    const ok = await confirmCalmly({
+    const ok = await confirmAction({
       title: "Se déconnecter de cet appareil?",
       text: "Pour revenir, il faudra un nouveau lien du bureau ou le code QR d'un chantier.",
       confirmLabel: "Se déconnecter",
@@ -60,31 +48,25 @@ export function AccountScreen() {
       </div>
 
       <Section title="Mes appareils">
-        <Card className="p-4">
-          <DeviceList userId="me" empty="Aucun appareil connecté." />
-        </Card>
+        <DeviceList userId="me" empty="Aucun appareil connecté." />
         <p className="text-dim mt-2 px-1 text-sm text-pretty">
           Chaque appareil reste connecté, sans mot de passe. Déconnectez un appareil perdu ou que
           vous n&apos;utilisez plus.
         </p>
       </Section>
 
-      <div className="mt-8">
+      <div className="mt-8 space-y-3">
         <Button
           variant="secondary"
           size="lg"
           block
           onClick={askToLeave}
+          // Once the server has said yes, the page is on its way to the welcome screen.
           loading={leave.isPending || leave.isSuccess}
-          disabled={!online}
         >
           <LogOut aria-hidden /> Se déconnecter
         </Button>
-        {online ? null : (
-          <p className="text-dim mt-2 text-center text-sm">
-            Il faut du réseau pour se déconnecter.
-          </p>
-        )}
+        {leave.isError ? <FormError>{signOutFailure(leave.error)}</FormError> : null}
       </div>
 
       <p className="text-dim mt-10 text-center text-xs font-medium tracking-wide">EAD Chantier</p>

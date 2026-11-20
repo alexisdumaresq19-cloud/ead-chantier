@@ -10,6 +10,12 @@ import { keys } from "../../lib/session";
 // What the people and project management screens fetch, and what to refresh
 // after a change.
 
+/**
+ * A member as GET /api/projects/:id/members gives them: with, for someone
+ * still to confirm, when they scanned the site's code.
+ */
+export type TeamMember = Member & { scannedAt: string | null };
+
 export const adminKeys = {
   /** GET /api/users — everyone, for the office (`Person[]`). */
   people: ["people"] as const,
@@ -29,8 +35,11 @@ export const usePeople = ({ enabled = true }: { enabled?: boolean } = {}) =>
 export const useMembers = (projectId: string, { watch = false }: { watch?: boolean } = {}) =>
   useQuery({
     queryKey: keys.members(projectId),
-    queryFn: () => api<Member[]>(`/api/projects/${projectId}/members`),
-    // While the QR code is up, people are joining: the list follows.
+    queryFn: () => api<TeamMember[]>(`/api/projects/${projectId}/members`),
+    // People join with the site's code at any moment: opening the screen
+    // always asks again (what the device holds shows meanwhile), and while
+    // the code is up the list follows.
+    staleTime: 0,
     refetchInterval: watch ? 10_000 : false,
   });
 

@@ -1,11 +1,10 @@
-import { and, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, forbidden, notFound, route } from "@/server/http";
-
-import { revokePersonalLinks, settleSiteCodes } from "../_lib/people";
-import { officeLockout, personChange, personProblem } from "../_lib/rules";
+import { endAccess, settleSiteCodes } from "@/server/people/links";
+import { officeLockout, personChange, personProblem } from "@/server/people/rules";
 
 /** The office changes someone's details, role, state or projects. */
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
@@ -18,12 +17,14 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
   await db.transaction(async (tx) => {
     // The office's accounts are locked while a role or a state changes: two
     // people of the office demoting each other at the same moment must not
-    // both succeed and leave nobody in charge.
+    // both succeed and leave nobody in charge. Always in the same order, so
+    // two such changes wait for each other instead of deadlocking.
     const office = changesAccess
       ? await tx
           .select({ id: schema.users.id })
           .from(schema.users)
           .where(and(eq(schema.users.role, "admin"), eq(schema.users.active, true)))
+          .orderBy(asc(schema.users.id))
           .for("update")
       : null;
     const [user] = await tx.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
@@ -45,12 +46,7 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
     if (Object.keys(clean).length)
       await tx.update(schema.users).set(clean).where(eq(schema.users.id, id));
 
-    if (fields.active === false) {
-      // Someone deactivated is out at once: every device is signed out, and a
-      // link not opened yet will not let them back in after a reactivation.
-      await tx.delete(schema.sessions).where(eq(schema.sessions.userId, id));
-      await revokePersonalLinks(tx, id);
-    }
+    if (fields.active === false) await endAccess(tx, id);
 
     if (projectIds) {
       const current = (

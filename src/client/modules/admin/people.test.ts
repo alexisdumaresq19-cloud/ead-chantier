@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { Person } from "@/shared/api";
 
+import { ApiFailure } from "../../lib/api";
 import {
+  accessEndText,
   daysLeft,
   firstName,
   formatPhone,
@@ -10,6 +12,8 @@ import {
   lastSeenText,
   mailHref,
   matchesPerson,
+  scannedText,
+  signOutFailure,
   smsHref,
   sortByName,
   sortMembers,
@@ -190,5 +194,38 @@ describe("the office's list", () => {
     expect(matchesPerson(marc, "418 555")).toBe(true);
     expect(matchesPerson(marc, "0199")).toBe(false);
     expect(matchesPerson(person("Sans Numéro"), "555")).toBe(false);
+  });
+});
+
+describe("people to confirm", () => {
+  const now = new Date("2026-11-20T15:00:00");
+
+  it("says when the code was scanned", () => {
+    expect(scannedText(new Date("2026-11-20T07:30:00").toISOString(), now)).toBe(
+      "Code scanné aujourd'hui à 7 h 30",
+    );
+    expect(scannedText(new Date("2026-11-19T16:05:00").toISOString(), now)).toBe(
+      "Code scanné hier à 16 h 05",
+    );
+    expect(scannedText(new Date("2026-11-17T09:00:00").toISOString(), now)).toBe(
+      "Code scanné il y a 3 jours",
+    );
+  });
+
+  it("gives the day the access ends without a confirmation, seven days after the scan", () => {
+    expect(accessEndText(new Date("2026-11-19T16:05:00").toISOString())).toBe(
+      "Accès jusqu'au jeudi 26 novembre",
+    );
+  });
+});
+
+describe("signOutFailure", () => {
+  it("says the device is still signed in, whatever went wrong", () => {
+    expect(signOutFailure(new ApiFailure(0, "offline", "Pas de réseau."))).toBe(
+      "Pas de réseau\u00a0: vous êtes encore connecté sur cet appareil. Réessayez quand la connexion revient.",
+    );
+    expect(
+      signOutFailure(new ApiFailure(500, "server_error", "Une erreur est survenue. Réessayez.")),
+    ).toBe("Une erreur est survenue. Réessayez. Vous êtes encore connecté sur cet appareil.");
   });
 });

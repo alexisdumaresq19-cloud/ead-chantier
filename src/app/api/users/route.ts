@@ -4,10 +4,9 @@ import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
 import { newId } from "@/server/ids";
+import { personalLink } from "@/server/people/links";
+import { newPerson, personProblem } from "@/server/people/rules";
 import type { Person } from "@/shared/api";
-
-import { personalLink } from "./_lib/people";
-import { newPerson, personProblem } from "./_lib/rules";
 
 /** Everyone, for the office: who they are, their projects, their devices. */
 export const GET = route(async (request) => {
