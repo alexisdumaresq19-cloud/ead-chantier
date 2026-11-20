@@ -6,6 +6,7 @@
 //          text     what was said, typed or dictated with the keyboard
 //          day      the report's day, "2026-10-01"
 //          current  the report as it stands on screen (ReportContent, as JSON)
+//          asked    the questions of the previous answer, if any (JSON list)
 //        → DictationResult
 //
 // For foremen and the office, like the reports themselves. Nothing is saved:

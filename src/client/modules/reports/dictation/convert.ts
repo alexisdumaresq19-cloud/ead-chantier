@@ -1,0 +1,104 @@
+import { isValidHours, REPORT_LIMITS, type CrewLine, type ReportContent } from "@/shared/reports";
+
+import { usualHours, type CrewRow, type ReportForm } from "../form";
+import { hoursText, parseHours, parseTemperature } from "../lib";
+
+// Between the form being typed and the report the dictation works on. The
+// form may hold anything (half a number, a line without a name): what cannot
+// be read yet is simply left out, so dictating never waits on a correction.
+
+const plain = (name: string) => name.trim().toLocaleLowerCase("fr");
+const newKey = () => Math.random().toString(36).slice(2, 10);
+
+/** The form as a report, for the dictation: unreadable numbers count as not given. */
+export function contentForDictation(form: ReportForm): ReportContent {
+  const temperature = parseTemperature(form.temperature);
+  const crew: CrewLine[] = [];
+  for (const row of form.crew) {
+    const name = row.name.trim().slice(0, REPORT_LIMITS.name);
+    if (!name || crew.length >= REPORT_LIMITS.crew) continue;
+    const hours = parseHours(row.hours);
+    // Zero stands for "hours not given yet" on the way to the dictation.
+    crew.push({
+      name,
+      hours: hours !== null && isValidHours(hours) ? hours : 0,
+      userId: row.userId,
+    });
+  }
+  return {
+    day: form.day,
+    weather: {
+      condition: form.condition,
+      temperatureC: temperature === "invalid" ? null : temperature,
+      note: form.weatherNote.slice(0, REPORT_LIMITS.weatherNote),
+    },
+    crew,
+    equipment: form.equipment.slice(0, REPORT_LIMITS.equipment),
+    workDone: form.workDone.slice(0, REPORT_LIMITS.text),
+    notes: form.notes.slice(0, REPORT_LIMITS.text),
+  };
+}
+
+/**
+ * The form once a dictation has been applied. Lines already there keep their
+ * place and what was typed on them; a person named without hours gets an
+ * empty hours field, which the form then asks for.
+ */
+export function formAfterDictation(form: ReportForm, content: ReportContent): ReportForm {
+  const before = contentForDictation(form);
+
+  // A crew dictated into an empty list sets the hours of the day.
+  const given = content.crew.filter((line) => line.hours > 0);
+  const dayHours =
+    form.crew.some((row) => row.name.trim()) || given.length === 0
+      ? form.dayHours
+      : hoursText(usualHours(given));
+  const usual = parseHours(dayHours);
+
+  const rows = form.crew.filter((row) => row.name.trim());
+  const taken = new Set<string>();
+  const crew: CrewRow[] = content.crew.map((line) => {
+    const row = rows.find(
+      (candidate) =>
+        !taken.has(candidate.key) &&
+        (line.userId
+          ? candidate.userId === line.userId
+          : !candidate.userId && plain(candidate.name) === plain(line.name)),
+    );
+    const hours = line.hours > 0 ? hoursText(line.hours) : "";
+    if (!row)
+      return {
+        key: newKey(),
+        userId: line.userId,
+        name: line.name,
+        hours,
+        own: line.hours !== usual,
+      };
+    taken.add(row.key);
+    const typed = parseHours(row.hours);
+    // Hours left as typed when the dictation did not change them ("7 h 30" stays "7 h 30").
+    const untouched = (typed !== null && isValidHours(typed) ? typed : 0) === line.hours;
+    return untouched
+      ? { ...row, name: line.name }
+      : { ...row, name: line.name, hours, own: line.hours !== usual };
+  });
+
+  const temperature =
+    content.weather.temperatureC === before.weather.temperatureC
+      ? form.temperature
+      : content.weather.temperatureC === null
+        ? ""
+        : String(content.weather.temperatureC);
+
+  return {
+    ...form,
+    condition: content.weather.condition,
+    temperature,
+    weatherNote: content.weather.note,
+    dayHours,
+    crew,
+    equipment: content.equipment,
+    workDone: content.workDone,
+    notes: content.notes,
+  };
+}

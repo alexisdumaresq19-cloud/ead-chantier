@@ -34,6 +34,7 @@ Comment remplir :
 - Le texte que tu donnes pour équipement, travaux et notes s'ajoute à ce que la case contient déjà : ne répète pas ce qui s'y trouve. Mets replace à true pour une case seulement s'il demande de la refaire ou de la corriger ; ton texte la remplace alors au complet.
 - Équipe : une entrée par personne nommée. Quand un prénom ou un nom correspond à une seule personne de la liste des membres du projet, donne son nom complet tel qu'il est dans la liste. « Moi » et « je » désignent la personne qui dicte. Les heures sont un nombre décimal (7 h 30 donne 7.5). « Dix heures chacun » vaut pour toutes les personnes qu'il vient de nommer. Laisse hours à null si les heures n'ont pas été dites. Mets remove à true s'il dit qu'une personne n'était pas là ou qu'il faut la retirer. S'il donne un nombre de personnes sans les nommer, n'invente pas de noms : pose plutôt une question.
 - Température : un nombre entier, négatif sous zéro (« moins cinq » donne -5).
+- Quand des questions viennent de lui être posées, ce qu'il dit y répond souvent en peu de mots (« dix heures », « oui, tous les trois ») : rattache alors sa réponse à la question et à la personne concernées.
 - questions : au plus trois questions courtes, au vouvoiement, sur ce qui manque d'essentiel une fois le rapport actuel et la dictée réunis : la météo, les heures d'une personne, les travaux réalisés. Si rien d'essentiel ne manque, la liste est vide.`;
 
 const WEEKDAY = new Intl.DateTimeFormat("fr-CA", {
@@ -43,18 +44,25 @@ const WEEKDAY = new Intl.DateTimeFormat("fr-CA", {
   year: "numeric",
 });
 
-/** What Claude is given: the context first, then what was said. */
-export function dictationMessage(input: {
+export type DictationInput = {
+  /** What was said, as text. */
   heard: string;
   current: ReportContent;
   members: KnownPerson[];
+  /** The name of the person dictating: "moi" is them. */
   speaker: string;
-}): string {
-  const { heard, current, members, speaker } = input;
+  /** The questions asked after the previous dictation: this one may answer them. */
+  asked: string[];
+};
+
+/** What Claude is given: the context first, then what was said. */
+export function dictationMessage(input: DictationInput): string {
+  const { heard, current, members, speaker, asked } = input;
   const day = WEEKDAY.format(new Date(`${current.day}T12:00:00`));
   const report = {
     météo: current.weather,
-    équipe: current.crew.map((line) => ({ nom: line.name, heures: line.hours })),
+    // Hours at zero are hours nobody gave yet.
+    équipe: current.crew.map((line) => ({ nom: line.name, heures: line.hours || null })),
     équipement: current.equipment,
     travaux: current.workDone,
     notes: current.notes,
@@ -64,6 +72,11 @@ export function dictationMessage(input: {
     `Personne qui dicte : ${speaker}`,
     `Membres du projet : ${members.map((member) => member.name).join(" ; ") || "aucun inscrit"}`,
     `Rapport actuel : ${JSON.stringify(report)}`,
+    ...(asked.length > 0
+      ? [
+          `Questions que tu viens de lui poser : ${asked.map((question) => `« ${question} »`).join(" ")}`,
+        ]
+      : []),
     "Ce que le contremaître vient de dicter :",
     `<dictee>\n${heard}\n</dictee>`,
   ].join("\n\n");
@@ -102,12 +115,7 @@ export async function transcribeDictation(
 }
 
 /** What to change in the report, from what was said. */
-export async function readDictation(input: {
-  heard: string;
-  current: ReportContent;
-  members: KnownPerson[];
-  speaker: string;
-}): Promise<DictationPatch> {
+export async function readDictation(input: DictationInput): Promise<DictationPatch> {
   if (aiIsFake()) return fakePatch(input.heard);
   const client = await claude();
   if (!client) throw unavailable();

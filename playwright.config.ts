@@ -23,7 +23,11 @@ export default defineConfig({
     locale: "fr-CA",
     timezoneId: "America/Toronto",
     trace: "off",
-    launchOptions: { executablePath },
+    launchOptions: {
+      executablePath,
+      // A microphone that needs nobody: the dictation tests record from it.
+      args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+    },
   },
   projects: [
     { name: "phone", use: { ...devices["iPhone 14"], browserName: "chromium" } },

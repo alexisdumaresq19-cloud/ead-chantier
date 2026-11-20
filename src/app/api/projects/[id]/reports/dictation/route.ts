@@ -34,6 +34,7 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
     throw badRequest("Rapport illisible. Réessayez.");
   }
   const report = reportOnScreen.parse(current);
+  const asked = questionsAsked(form.get("asked"));
 
   const members = await db
     .select({ id: schema.users.id, name: schema.users.name })
@@ -64,7 +65,28 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
       "Je n'ai rien entendu. Réessayez en parlant plus près du micro.",
     );
 
-  const patch = await readDictation({ heard, current: report, members: known, speaker: user.name });
+  const patch = await readDictation({
+    heard,
+    current: report,
+    members: known,
+    speaker: user.name,
+    asked,
+  });
   const applied = applyDictation(report, patch, known);
   return { heard, ...applied } satisfies DictationResult;
 });
+
+/** The questions of the previous turn, as the screen sends them back: a few short lines at most. */
+function questionsAsked(value: FormDataEntryValue | null): string[] {
+  try {
+    const list: unknown = JSON.parse(typeof value === "string" ? value : "[]");
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((question): question is string => typeof question === "string")
+      .map((question) => question.trim().slice(0, 200))
+      .filter(Boolean)
+      .slice(0, 4);
+  } catch {
+    return [];
+  }
+}

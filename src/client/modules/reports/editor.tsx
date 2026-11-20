@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, TriangleAlert, WifiOff } from "lucide-react";
+import { CircleCheck, Mic, TriangleAlert, WifiOff } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -10,6 +10,7 @@ import {
 } from "react";
 import { Redirect, useParams, useSearch } from "wouter";
 
+import type { DictationField } from "@/shared/dictation";
 import {
   isRealDay,
   REPORT_LIMITS,
@@ -29,6 +30,7 @@ import { useOnline } from "../../lib/online";
 import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
 import {
+  Badge,
   Button,
   ButtonLink,
   Card,
@@ -49,6 +51,7 @@ import {
   useStillShown,
   useToday,
 } from "./data";
+import { DictationCard, DictationSheet, useAssistant } from "./dictation/sheet";
 import { canKeepDrafts, draftKey, readDraft, removeDraft, writeDraft, type Draft } from "./drafts";
 import { Fetched } from "./fetched";
 import {
@@ -153,6 +156,14 @@ function Editor({
   const [refusedDay, setRefusedDay] = useState<string | null>(null);
   const [savedOffline, setSavedOffline] = useState(false);
   const [clash, setClash] = useState<Clash | null>(null);
+  // Dictating: closed, open, or open with the recording started by the same tap.
+  // "?dicter=1" comes from the list's "Dicter" button and opens it at once.
+  const [dictating, setDictating] = useState<"closed" | "open" | "recording">(() =>
+    new URLSearchParams(window.location.search).get("dicter") === "1" ? "open" : "closed",
+  );
+  // The parts of the report filled by voice, marked so the person checks them.
+  const [dictated, setDictated] = useState<DictationField[]>([]);
+  const canDictate = useAssistant().data?.dictation === true;
   // The draft the form was filled from, for the notice that says so.
   const [restored, setRestored] = useState(draft);
 
@@ -420,6 +431,10 @@ function Editor({
           </Notice>
         ) : null}
 
+        {canDictate && !(takenBy && !reportId) ? (
+          <DictationCard onOpen={(record) => setDictating(record ? "recording" : "open")} />
+        ) : null}
+
         <Block title="Date">
           <Input
             id="report-day"
@@ -441,7 +456,7 @@ function Editor({
           )}
         </Block>
 
-        <Block title="Météo">
+        <Block title="Météo" dictated={dictated.includes("weather")}>
           <div role="group" aria-label="Temps qu'il a fait" className="grid grid-cols-3 gap-2">
             {WEATHER_CONDITIONS.map((condition) => {
               const Icon = WEATHER_ICONS[condition];
@@ -514,6 +529,7 @@ function Editor({
 
         <Block
           title="Équipe"
+          dictated={dictated.includes("crew")}
           aside={
             totals.people > 0 ? (
               <span className="text-dim text-sm font-medium">
@@ -532,7 +548,11 @@ function Editor({
           />
         </Block>
 
-        <Block title="Équipement" hint="La machinerie et l'outillage utilisés ce jour-là.">
+        <Block
+          title="Équipement"
+          hint="La machinerie et l'outillage utilisés ce jour-là."
+          dictated={dictated.includes("equipment")}
+        >
           <Textarea
             value={form.equipment}
             onChange={(event) => set({ equipment: event.target.value })}
@@ -544,7 +564,7 @@ function Editor({
           />
         </Block>
 
-        <Block title="Travaux réalisés">
+        <Block title="Travaux réalisés" dictated={dictated.includes("workDone")}>
           <Textarea
             value={form.workDone}
             onChange={(event) => set({ workDone: event.target.value })}
@@ -565,7 +585,11 @@ function Editor({
           ) : null}
         </Block>
 
-        <Block title="Notes" hint="Retards, incidents, visiteurs, directives reçues.">
+        <Block
+          title="Notes"
+          hint="Retards, incidents, visiteurs, directives reçues."
+          dictated={dictated.includes("notes")}
+        >
           <Textarea
             value={form.notes}
             onChange={(event) => set({ notes: event.target.value })}
@@ -613,6 +637,23 @@ function Editor({
         </div>
       </form>
 
+      {canDictate ? (
+        <DictationSheet
+          open={dictating !== "closed"}
+          onClose={() => setDictating("closed")}
+          projectId={project.id}
+          form={form}
+          startRecording={dictating === "recording"}
+          onApply={(next, changed) => {
+            setForm(next);
+            // Putting a dictation back (nothing changed) clears the marks.
+            setDictated((fields) =>
+              changed.length === 0 ? [] : [...new Set([...fields, ...changed])],
+            );
+          }}
+        />
+      ) : null}
+
       <ClashSheet
         clash={clash}
         onClose={() => setClash(null)}
@@ -638,18 +679,29 @@ function Block({
   title,
   aside,
   hint,
+  dictated,
   children,
 }: {
   title: string;
   aside?: ReactNode;
   hint?: string;
+  /** Filled by voice: marked, so the person reads it over before saving. */
+  dictated?: boolean;
   children: ReactNode;
 }) {
   return (
-    <Card className="p-4 sm:p-5">
+    <Card className={cn("p-4 sm:p-5", dictated && "ring-ead/40 ring-2")}>
       <div className="mb-3">
         <div className="flex items-baseline justify-between gap-3">
-          <h2 className="font-display text-lg leading-tight font-bold">{title}</h2>
+          <h2 className="font-display flex items-center gap-2 text-lg leading-tight font-bold">
+            {title}
+            {dictated ? (
+              <Badge tone="blue">
+                <Mic aria-hidden />
+                Dicté
+              </Badge>
+            ) : null}
+          </h2>
           {aside}
         </div>
         {hint ? <p className="text-dim mt-0.5 text-sm">{hint}</p> : null}

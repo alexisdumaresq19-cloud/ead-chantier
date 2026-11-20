@@ -29,8 +29,17 @@ export async function api<T>(path: string, options: Options = {}): Promise<T> {
   try {
     response = await fetch(path, {
       method: options.method ?? "GET",
-      headers: options.body === undefined ? undefined : { "content-type": "application/json" },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      // A form (with a file in it) is sent as it is; anything else goes as JSON.
+      headers:
+        options.body === undefined || options.body instanceof FormData
+          ? undefined
+          : { "content-type": "application/json" },
+      body:
+        options.body === undefined
+          ? undefined
+          : options.body instanceof FormData
+            ? options.body
+            : JSON.stringify(options.body),
       signal: options.signal,
       credentials: "same-origin",
     });
