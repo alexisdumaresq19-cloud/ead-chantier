@@ -610,17 +610,21 @@ check(
   racing.map((answer) => answer.status).join(),
 );
 
-// An unfinished upload has three hours: after that it is not confirmed, and is removed.
+// An unfinished upload has three hours: after that it is not confirmed, and
+// its file is removed. Its row stays the day, for the daily allowance.
 r = await photo(2001);
 ticket = r.json;
 const lateFolder = `${STORAGE_DIR}/private/u/${ticket.uploadId}`;
 await sendFile(ticket.target, bytes(2001));
 await sql`update uploads set created_at = now() - interval '4 hours' where id = ${ticket.uploadId}`;
 r = await worker.call("POST", `/api/uploads/${ticket.uploadId}/complete`);
-[row] = await sql`select status from uploads where id = ${ticket.uploadId}`;
+[row] = await sql`select storage_key from uploads where id = ${ticket.uploadId}`;
 check(
-  "an upload is confirmed within three hours or not at all, and is then removed, row and file",
-  r.status === 400 && /trop tardé/.test(r.json?.error?.message) && !row && !existsSync(lateFolder),
+  "an upload is confirmed within three hours or not at all, and its file is then removed",
+  r.status === 400 &&
+    /trop tardé/.test(r.json?.error?.message) &&
+    row?.storage_key === `u/${ticket.uploadId}/.removed` &&
+    !existsSync(lateFolder),
   { answer: r.json, row },
 );
 
@@ -636,10 +640,12 @@ const hoard = (client: Client, name: string, size = 10, kind = "photo") =>
     contentType: kind === "photo" ? "image/jpeg" : "application/pdf",
     size,
   });
+/** Unfinished uploads whose file may still be there (not those kept only for the day). */
 const pendingOf = async (userId: string) =>
   (
     await sql`select count(*)::int as pending from uploads
-              where created_by = ${userId} and status = 'pending'`
+              where created_by = ${userId} and status = 'pending'
+                and storage_key <> 'u/' || id || '/.removed'`
   )[0].pending as number;
 
 // A send that fails is announced again by the app: it must cost nothing.
@@ -730,10 +736,12 @@ check(
   await pendingOf(greedyId),
 );
 for (let i = 0; i < 2; i++) await hoard(greedy, "apres-trois-heures");
+const [{ keptForTheDay }] = await sql`select count(*)::int as "keptForTheDay" from uploads
+  where created_by = ${greedyId} and storage_key = 'u/' || id || '/.removed'`;
 check(
-  "until none is left, rows and files",
-  (await pendingOf(greedyId)) === 1 && !existsSync(staleFolder),
-  await pendingOf(greedyId),
+  "until no file is left; their rows stay the day, for the daily allowance",
+  (await pendingOf(greedyId)) === 1 && !existsSync(staleFolder) && keptForTheDay === 30,
+  { pending: await pendingOf(greedyId), keptForTheDay },
 );
 
 // What one person may send of each kind in a day, confirmed uploads included.
@@ -797,13 +805,27 @@ r = await anne.call("POST", "/api/uploads", {
 });
 check("which leaves the photos of the day alone", r.status === 200, r.json);
 
+// The office loads whole projects: five times a person's day, and no more.
+const [{ officeToday }] = await sql`select
+  (select count(*) from uploads where created_by = ${adminId} and kind = 'photo'
+     and created_at > now() - interval '1 day')::int
+  + (select count(*) from photos where created_by = ${adminId}
+     and created_at > now() - interval '1 day')::int as "officeToday"`;
 await sql`insert into uploads (id, project_id, kind, storage_key, filename, content_type, size,
                                status, created_by, created_at)
           select 'bureau-' || n, ${projectId}, 'photo', 'u/bureau-' || n || '/p.jpg', 'p.jpg',
                  'image/jpeg', 2000, 'complete', ${adminId}, now() - interval '1 hour'
-          from generate_series(1, 600) as n`;
+          from generate_series(1, ${1499 - officeToday}) as n`;
 r = await hoard(admin, "le-bureau-charge-un-projet");
-check("the office, which loads whole projects, has no daily limit", r.status === 200, r.json);
+check("the office may send 1500 photos in a day, five times a person's", r.status === 200, r.json);
+r = await hoard(admin, "le-bureau-en-envoie-trop");
+check(
+  "and no more",
+  r.status === 429 &&
+    r.json?.error?.message ===
+      "Vous avez atteint la limite d'envois pour une journée. Réessayez demain.",
+  r.json,
+);
 await sql`delete from uploads where id like 'bureau-%' or id like 'jour-%' or id like 'plans-%'`;
 
 // A confirmed upload that nothing used is removed after a day, file and row.

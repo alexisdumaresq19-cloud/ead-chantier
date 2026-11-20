@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   acceptsUpload,
   BUCKET_RULES,
+  DAILY_LIMITS,
+  dailyLimit,
   exceedsAllowance,
   exceedsDailyAllowance,
-  DAILY_LIMITS,
   MAX_PENDING_BYTES,
   MAX_PENDING_UPLOADS,
+  OFFICE_DAILY_FACTOR,
   uploadProblem,
 } from "./uploads";
 
@@ -103,19 +105,46 @@ describe("exceedsDailyAllowance", () => {
   });
 
   it("stops at the number of uploads of the kind", () => {
-    expect(exceedsDailyAllowance("photo", { count: 299, bytes: 0 }, 10)).toBe(false);
-    expect(exceedsDailyAllowance("photo", { count: 300, bytes: 0 }, 10)).toBe(true);
-    expect(exceedsDailyAllowance("plan", { count: 29, bytes: 0 }, 10)).toBe(false);
-    expect(exceedsDailyAllowance("plan", { count: 30, bytes: 0 }, 10)).toBe(true);
-    expect(exceedsDailyAllowance("document", { count: 100, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("photo", "travailleur", { count: 299, bytes: 0 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance("photo", "travailleur", { count: 300, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("plan", "contremaitre", { count: 29, bytes: 0 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance("plan", "contremaitre", { count: 30, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("document", "contremaitre", { count: 100, bytes: 0 }, 10)).toBe(
+      true,
+    );
   });
 
   it("stops at the bytes of the kind", () => {
-    // Eleven 500 MB plans fit in 6 GB, a thirteenth does not.
-    expect(exceedsDailyAllowance("plan", { count: 11, bytes: 5500 * MB }, 500 * MB)).toBe(false);
-    expect(exceedsDailyAllowance("plan", { count: 12, bytes: 6000 * MB }, 500 * MB)).toBe(true);
-    expect(exceedsDailyAllowance("photo", { count: 100, bytes: 3 * GB - 10 }, 10)).toBe(false);
-    expect(exceedsDailyAllowance("photo", { count: 100, bytes: 3 * GB - 10 }, 11)).toBe(true);
+    // Twelve 500 MB plans fit in 6 GB, a thirteenth does not.
+    const foreman = "contremaitre";
+    expect(exceedsDailyAllowance("plan", foreman, { count: 11, bytes: 5500 * MB }, 500 * MB)).toBe(
+      false,
+    );
+    expect(exceedsDailyAllowance("plan", foreman, { count: 12, bytes: 6000 * MB }, 500 * MB)).toBe(
+      true,
+    );
+    expect(exceedsDailyAllowance("photo", foreman, { count: 100, bytes: 3 * GB - 10 }, 10)).toBe(
+      false,
+    );
+    expect(exceedsDailyAllowance("photo", foreman, { count: 100, bytes: 3 * GB - 10 }, 11)).toBe(
+      true,
+    );
+  });
+
+  it("gives the office five times as much, and no more", () => {
+    expect(OFFICE_DAILY_FACTOR).toBe(5);
+    expect(dailyLimit("plan", "admin")).toEqual({ count: 150, bytes: 30 * GB });
+    expect(dailyLimit("plan", "contremaitre")).toEqual(DAILY_LIMITS.plan);
+    expect(dailyLimit("photo", "travailleur")).toEqual(DAILY_LIMITS.photo);
+    expect(exceedsDailyAllowance("plan", "admin", { count: 149, bytes: 0 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance("plan", "admin", { count: 150, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("document", "admin", { count: 10, bytes: 20 * GB }, 1)).toBe(true);
+    expect(exceedsDailyAllowance("document", "admin", { count: 10, bytes: 20 * GB - 1 }, 1)).toBe(
+      false,
+    );
+    // What stops a foreman lets the office through.
+    expect(exceedsDailyAllowance("plan", "contremaitre", { count: 30, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("plan", "admin", { count: 30, bytes: 0 }, 10)).toBe(false);
   });
 });
 

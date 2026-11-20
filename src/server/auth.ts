@@ -299,11 +299,15 @@ export async function findInvite(token: string): Promise<Invite | null> {
  * A line of text as people type or paste it (a name, a phone number): runs
  * of spaces, tabs and line breaks become one space. Null when any other
  * control character is left, which no one types and the database may refuse
- * (a NUL): such a line is refused before an invitation is touched.
+ * (a NUL), when it holds an invisible or direction-changing character (a
+ * zero-width space, a right-to-left override: a name that looks like
+ * another's in the member list), or half of a character (a lone surrogate,
+ * which the database would store as "�"). Such a line is refused before an
+ * invitation is touched.
  */
 export function typedLine(text: string): string | null {
   const line = text.replace(/\s+/gu, " ").trim();
-  return /\p{Cc}/u.test(line) ? null : line;
+  return /[\p{Cc}\p{Cf}\p{Cs}]/u.test(line) ? null : line;
 }
 
 /** Whether every use of the invitation has been taken. */
