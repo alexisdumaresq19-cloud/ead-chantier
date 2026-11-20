@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { looksLikeEmail, newPerson, officeLockout, personChange, personProblem } from "./rules";
+import {
+  looksLikeEmail,
+  newPerson,
+  officeLockout,
+  personChange,
+  personProblem,
+  reviewRefusal,
+} from "./rules";
 
 const office = { id: "a", role: "admin", active: true } as const;
 
@@ -95,6 +102,11 @@ describe("person input", () => {
     expect(personChange.parse({})).toEqual({});
   });
 
+  it("confirms someone, and never puts them back to confirm", () => {
+    expect(personChange.parse({ unreviewed: false })).toEqual({ unreviewed: false });
+    expect(personChange.safeParse({ unreviewed: true }).success).toBe(false);
+  });
+
   it("refuses an unknown role and a name too long", () => {
     expect(personChange.safeParse({ role: "patron" }).success).toBe(false);
     expect(newPerson.safeParse({ name: "J".repeat(81), role: "travailleur" }).success).toBe(false);
@@ -117,5 +129,31 @@ describe("person input", () => {
     expect(looksLikeEmail("julie.cyr@exemple.ca")).toBe(true);
     expect(looksLikeEmail("julie.cyr")).toBe(false);
     expect(looksLikeEmail("julie @exemple.ca")).toBe(false);
+  });
+});
+
+describe("reviewRefusal", () => {
+  const scanned = { role: "travailleur", active: true, unreviewed: true, onProject: true } as const;
+
+  it("lets the foreman decide about a worker who came in by the code", () => {
+    expect(reviewRefusal(scanned)).toBeNull();
+  });
+
+  it("knows nothing of someone off the project, gone, or not a worker", () => {
+    for (const target of [
+      null,
+      { ...scanned, onProject: false },
+      { ...scanned, active: false },
+      { ...scanned, role: "contremaitre" as const },
+      { ...scanned, role: "admin" as const },
+    ])
+      expect(reviewRefusal(target)?.status).toBe(404);
+  });
+
+  it("says when someone else has already confirmed the person", () => {
+    expect(reviewRefusal({ ...scanned, unreviewed: false })).toEqual({
+      status: 409,
+      message: "Cette personne est déjà confirmée.",
+    });
   });
 });

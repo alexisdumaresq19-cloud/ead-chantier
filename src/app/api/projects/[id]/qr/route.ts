@@ -1,9 +1,9 @@
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 
-import { projectToManage } from "@/server/access";
+import { projectToChange, projectToManage } from "@/server/access";
 import { createProjectInvite, requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { originOf, route } from "@/server/http";
+import { forbidden, originOf, route } from "@/server/http";
 import type { InviteLink } from "@/shared/api";
 
 /**
@@ -32,10 +32,16 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
   return { expiresAt: invite?.expiresAt.toISOString() ?? null };
 });
 
-/** A fresh QR code for the site, good for a day. It replaces the caller's previous one. */
+/**
+ * A fresh QR code for the site, good for a day. It replaces the caller's
+ * previous one. An archived project admits nobody: no code is made for it,
+ * even for the office.
+ */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  await projectToManage(user, id);
+  const project = await projectToChange(user, id);
+  if (project.status === "archive")
+    throw forbidden("Ce projet est archivé : personne de nouveau n'y entre.");
   const { token, expiresAt } = await createProjectInvite(id, user.id);
   return {
     url: `${originOf(request)}/j/${token}`,

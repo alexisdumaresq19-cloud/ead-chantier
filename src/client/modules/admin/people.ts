@@ -1,6 +1,7 @@
 import type { Person } from "@/shared/api";
 import { ROLE_LABELS, type Role } from "@/shared/roles";
 
+import { ApiFailure, errorMessage } from "../../lib/api";
 import { formatAgo, formatTime, formatWeekday, todayKey } from "../../lib/format";
 
 // Words and links about people: phone numbers as written in Québec, what an
@@ -88,6 +89,29 @@ export function validUntilText(expiresAt: string, now: Date): string {
   return `Valide jusqu'au ${formatWeekday(end)}`;
 }
 
+// --- People to confirm ------------------------------------------------------
+
+/** How long someone who came in by a site's QR code stays in without a confirmation (UNREVIEWED_SESSION_DAYS on the server). */
+const UNREVIEWED_DAYS = 7;
+
+/** What happens to someone who came in by a site's QR code, said where they are to confirm. */
+export const UNREVIEWED_RULE = `Sans confirmation, l'accès prend fin ${UNREVIEWED_DAYS} jours après le scan du code.`;
+
+/** "Code scanné aujourd'hui à 7 h 30", "Code scanné il y a 3 jours". */
+export function scannedText(scannedAt: string, now = new Date()): string {
+  const ago = formatAgo(scannedAt, now);
+  if (/^\d/.test(ago)) return `Code scanné le ${ago}`;
+  return ago === "aujourd'hui" || ago === "hier"
+    ? `Code scanné ${ago} à ${formatTime(scannedAt)}`
+    : `Code scanné ${ago}`;
+}
+
+/** "Accès jusqu'au jeudi 26 novembre": when the device of someone not confirmed is signed out. */
+export function accessEndText(scannedAt: string): string {
+  const end = new Date(new Date(scannedAt).getTime() + UNREVIEWED_DAYS * 86_400_000);
+  return `Accès jusqu'au ${formatWeekday(end)}`;
+}
+
 // --- The office's list ------------------------------------------------------
 
 /** "Opérateur" if a title was given, otherwise the role: "Travailleur". */
@@ -135,4 +159,13 @@ export function matchesPerson(
     [person.name, person.title, ROLE_LABELS[person.role], person.email].filter(Boolean).join(" "),
   );
   return wanted.split(/\s+/).every((word) => text.includes(word));
+}
+
+// --- Signing out ------------------------------------------------------------
+
+/** Why signing out did not happen: the person is still signed in on this device. */
+export function signOutFailure(error: unknown): string {
+  return error instanceof ApiFailure && error.offline
+    ? "Pas de réseau : vous êtes encore connecté sur cet appareil. Réessayez quand la connexion revient."
+    : `${errorMessage(error)} Vous êtes encore connecté sur cet appareil.`;
 }

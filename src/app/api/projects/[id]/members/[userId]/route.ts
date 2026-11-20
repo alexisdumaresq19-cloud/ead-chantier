@@ -1,10 +1,10 @@
 import { and, eq } from "drizzle-orm";
 
-import { settleSiteCodes } from "@/app/api/users/_lib/people";
 import { projectFor } from "@/server/access";
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { route } from "@/server/http";
+import { settleSiteCodes } from "@/server/people/links";
 
 /** The office takes someone off the project. Their account stays. */
 export const DELETE = route<{ id: string; userId: string }>(async (request, { id, userId }) => {

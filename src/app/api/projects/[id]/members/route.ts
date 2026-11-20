@@ -11,28 +11,36 @@ import { canManageProject } from "@/shared/roles";
 /** The people on the project, as every member sees them (a contact list). */
 export const GET = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
-  await projectFor(user, id);
-  // Who the office has yet to check is for those who manage the project.
-  const manages = canManageProject(user.role);
+  const project = await projectFor(user, id);
+  // Who is still to confirm is for those who may confirm them: the office,
+  // and the project's foremen while it is open.
+  const reviews =
+    canManageProject(user.role) && (project.status !== "archive" || user.role === "admin");
   const rows = await db
     .select({ user: schema.users })
     .from(schema.projectMembers)
     .innerJoin(schema.users, eq(schema.users.id, schema.projectMembers.userId))
-    .where(eq(schema.projectMembers.projectId, id))
+    .where(and(eq(schema.projectMembers.projectId, id), eq(schema.users.active, true)))
     .orderBy(asc(schema.users.name));
-  return rows
-    .filter((r) => r.user.active)
-    .map(({ user: u }): Member => ({
+  return rows.map(({ user: u }) => {
+    const unreviewed = reviews && u.unreviewed;
+    return {
       id: u.id,
       name: u.name,
       role: u.role,
       title: u.title,
       phone: u.phone,
-      unreviewed: manages && u.unreviewed,
-    }));
+      unreviewed,
+      // Someone to confirm got their account when they scanned the code.
+      scannedAt: unreviewed ? u.createdAt.toISOString() : null,
+    } satisfies Member & { scannedAt: string | null };
+  });
 });
 
-/** The office puts existing people on the project. */
+/**
+ * The office puts existing people on the project, archived or not (the
+ * office may still change an archived project).
+ */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const admin = await requireAdmin(request);
   await projectFor(admin, id);

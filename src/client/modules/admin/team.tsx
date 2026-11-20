@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { ChevronRight, ShieldAlert, UserPlus, Users } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
+import { useId, useLayoutEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "wouter";
 
 import type { InviteLink, Person, ProjectSummary } from "@/shared/api";
@@ -18,18 +18,17 @@ import {
   buttonClass,
   Card,
   EmptyState,
+  QueryState,
   SearchInput,
   Sheet,
   Skeleton,
 } from "../../ui";
 import { refreshPeople, usePeople } from "./data";
-import { Fetched } from "./fetched";
 import { InviteLinkPanel } from "./invite-link";
 import { OfficeOnly } from "./office-only";
-import { firstName, lastSeenText, matchesPerson, sortPeople } from "./people";
+import { firstName, lastSeenText, matchesPerson, sortPeople, UNREVIEWED_RULE } from "./people";
 import { NEW_PERSON, personBody, PersonFields, type PersonForm } from "./person-fields";
 import { PersonView } from "./person";
-import { ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 
 // Everyone who has, or had, a way into the app: the office's list. A person
@@ -47,10 +46,6 @@ export function TeamScreen() {
   useLayoutEffect(() => {
     window.scrollTo(0, personId ? 0 : listScroll.current);
   }, [personId]);
-  // Going back from a person to the list with the browser's button leaves the
-  // app believing the next screen is also reached by going back, and it would
-  // open that screen scrolled down. Leaving this one always starts at the top.
-  useEffect(() => () => window.scrollTo(0, 0), []);
 
   if (!isAdmin(me.role)) return <OfficeOnly title="Équipe" />;
   return (
@@ -76,10 +71,7 @@ function PeopleList({ onOpen }: { onOpen: () => void }) {
   const projects = useProjects();
   const [search, setSearch] = useState("");
   const [adding, setAdding] = useState(false);
-  const add = () => {
-    ignoreSecondTap();
-    setAdding(true);
-  };
+  const add = () => setAdding(true);
 
   return (
     <Page
@@ -98,7 +90,7 @@ function PeopleList({ onOpen }: { onOpen: () => void }) {
       <Button size="lg" block className="mb-6 sm:hidden" onClick={add}>
         <UserPlus aria-hidden /> Ajouter une personne
       </Button>
-      <Fetched
+      <QueryState
         query={people}
         loading={
           <div className="space-y-2">
@@ -124,7 +116,7 @@ function PeopleList({ onOpen }: { onOpen: () => void }) {
             )}
           </>
         )}
-      </Fetched>
+      </QueryState>
       <AddPersonSheet
         open={adding}
         onClose={() => setAdding(false)}
@@ -163,12 +155,15 @@ function Everyone({ people, onOpen }: { people: Person[]; onOpen: () => void }) 
     // The first section sits right under the search box.
     <div>
       {waiting.length > 0 ? (
-        <Section title={`À vérifier (${waiting.length})`}>
+        <Section title={`À confirmer (${waiting.length})`}>
           <p className="bg-warn-tint text-warn mb-3 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty">
             <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
-            {waiting.length > 1
-              ? "Ces personnes sont entrées avec le code QR d'un chantier. Ouvrez chaque fiche pour confirmer que vous les connaissez."
-              : "Cette personne est entrée avec le code QR d'un chantier. Ouvrez sa fiche pour confirmer que vous la connaissez."}
+            <span>
+              {waiting.length > 1
+                ? "Ces personnes sont entrées avec le code QR d'un chantier. Ouvrez une fiche pour confirmer la personne ou couper son accès."
+                : "Cette personne est entrée avec le code QR d'un chantier. Ouvrez sa fiche pour la confirmer ou couper son accès."}{" "}
+              {UNREVIEWED_RULE}
+            </span>
           </p>
           <PeopleTable people={waiting} onOpen={onOpen} />
         </Section>
@@ -270,7 +265,7 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
             <span className="font-semibold wrap-anywhere">{person.name}</span>
             {person.unreviewed ? (
               <Badge tone="warn">
-                <ShieldAlert aria-hidden /> À vérifier
+                <ShieldAlert aria-hidden /> À confirmer
               </Badge>
             ) : null}
             {person.active ? null : <Badge>Accès désactivé</Badge>}
@@ -324,20 +319,10 @@ function AddPersonSheet({
       // The window keeps its scroll from one step to the next: the link must
       // not open half hidden where the bottom of the form was.
       document.getElementById(formId)?.scrollIntoView({ block: "start" });
-      // "Terminé" takes the place of the button just pressed: a second tap
-      // must not close the link, which shows only once.
-      ignoreSecondTap();
       setInvited({ person: form, link: invite });
       return refreshPeople();
     },
   });
-
-  // A window gives the focus to its close button when it opens; the name is
-  // what the office is about to type, for the first person and the next.
-  const typing = open && invited === null;
-  useEffect(() => {
-    if (typing) document.getElementById(formId)?.querySelector("input")?.focus();
-  }, [typing, formId]);
 
   const startOver = () => {
     setForm(NEW_PERSON);
@@ -399,7 +384,8 @@ function AddPersonSheet({
       }
     >
       <form id={formId} onSubmit={submit} className="space-y-4">
-        <PersonFields form={form} onChange={setForm} projects={projects} />
+        {/* The name is what the office is about to type, for the first person and the next. */}
+        <PersonFields form={form} onChange={setForm} projects={projects} focusName />
         <ShownError error={create.error} />
       </form>
     </Sheet>

@@ -6,7 +6,6 @@ import {
   QrCode as QrIcon,
   RefreshCw,
   Share2,
-  ShieldAlert,
   UserMinus,
   UserPlus,
   Users,
@@ -28,10 +27,12 @@ import {
   Button,
   ButtonLink,
   Card,
+  confirmAction,
   EmptyState,
   FormError,
   IconButton,
   LogoFull,
+  QueryState,
   SearchInput,
   Sheet,
   Skeleton,
@@ -39,7 +40,6 @@ import {
   toast,
 } from "../../ui";
 import { adminKeys, refreshPeople, useMembers, useNow, usePeople } from "./data";
-import { Fetched } from "./fetched";
 import { canShare, LinkField, shareLink } from "./invite-link";
 import {
   formatPhone,
@@ -52,9 +52,9 @@ import {
 } from "./people";
 import { CheckRow } from "./project-picker";
 import { QrCode } from "./qr";
-import { confirmCalmly, ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 import { hasRunOut, storeSiteCode, useStoredSiteCode } from "./site-code";
+import { ToConfirm } from "./to-confirm";
 
 // A project's people and its way in: the QR code shown at the site, which
 // workers scan to join.
@@ -63,6 +63,9 @@ export function ProjectTeamScreen() {
   const me = useCurrentUser();
   const project = useCurrentProject();
   const office = isAdmin(me.role);
+  // An archived project admits nobody new: it has no code to show.
+  const open = project.status !== "archive";
+  const showsCode = project.canManage && open;
   const [codeOpen, setCodeOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const members = useMembers(project.id, { watch: codeOpen });
@@ -71,26 +74,28 @@ export function ProjectTeamScreen() {
   const poster = codeOpen && code.state === "ready" ? code.link : null;
 
   const openCode = () => {
-    ignoreSecondTap();
     setCodeOpen(true);
     code.show();
   };
-  const openAdding = () => {
-    ignoreSecondTap();
-    setAdding(true);
-  };
-  const actions = project.canManage ? (
-    <>
-      {office ? (
-        <Button variant="secondary" size="lg" onClick={openAdding}>
-          <UserPlus aria-hidden /> Ajouter des personnes
-        </Button>
-      ) : null}
-      <Button size="lg" onClick={openCode}>
-        <QrIcon aria-hidden /> Code QR du chantier
-      </Button>
-    </>
-  ) : null;
+  const actions =
+    office || showsCode ? (
+      <>
+        {office ? (
+          <Button
+            variant={showsCode ? "secondary" : "primary"}
+            size="lg"
+            onClick={() => setAdding(true)}
+          >
+            <UserPlus aria-hidden /> Ajouter des personnes
+          </Button>
+        ) : null}
+        {showsCode ? (
+          <Button size="lg" onClick={openCode}>
+            <QrIcon aria-hidden /> Code QR du chantier
+          </Button>
+        ) : null}
+      </>
+    ) : null;
 
   return (
     // A name without a space breaks where the line ends, in the windows and
@@ -108,27 +113,48 @@ export function ProjectTeamScreen() {
               {actions}
             </div>
           ) : null}
-          <Fetched query={members} loading={<Skeleton className="h-48" />}>
+          <QueryState query={members} loading={<Skeleton className="h-48" />}>
             {(list) =>
               list.length === 0 ? (
                 <EmptyState
                   icon={Users}
                   title="Personne sur ce projet pour l'instant"
                   text={
-                    project.canManage
+                    showsCode
                       ? "Au chantier, montrez le code QR : chacun le scanne avec son téléphone et inscrit son nom."
-                      : "Le bureau ou votre contremaître y ajoutera l'équipe."
+                      : open
+                        ? "Le bureau ou votre contremaître y ajoutera l'équipe."
+                        : "Ce projet est archivé."
                   }
                 />
               ) : (
-                <MemberList project={project} members={list} office={office} />
+                <>
+                  {list.some((member) => member.unreviewed) ? (
+                    <ToConfirm
+                      projectId={project.id}
+                      people={list.filter((member) => member.unreviewed)}
+                    />
+                  ) : null}
+                  {/* Under the people to confirm, the rest of the team gets its own title. */}
+                  {list.some((member) => member.unreviewed) &&
+                  list.some((member) => !member.unreviewed) ? (
+                    <h2 className="font-display text-dim mb-3 text-sm font-bold tracking-wider uppercase">
+                      Équipe confirmée
+                    </h2>
+                  ) : null}
+                  <MemberList
+                    project={project}
+                    members={list.filter((member) => !member.unreviewed)}
+                    office={office}
+                  />
+                </>
               )
             }
-          </Fetched>
+          </QueryState>
         </Page>
       </div>
       {poster ? <SitePoster project={project} link={poster} /> : null}
-      {project.canManage ? (
+      {showsCode ? (
         <SiteCodeSheet
           open={codeOpen}
           onClose={() => setCodeOpen(false)}
@@ -169,7 +195,7 @@ function MemberList({
     onSettled: refreshPeople,
   });
   const askToRemove = async (member: Member) => {
-    const ok = await confirmCalmly({
+    const ok = await confirmAction({
       title: `Retirer ${member.name} du projet?`,
       text:
         member.role === "admin"
@@ -181,23 +207,10 @@ function MemberList({
     if (ok) remove.mutate(member);
   };
 
-  const waiting = members.filter((member) => member.unreviewed).length;
+  if (members.length === 0) return null;
   const shown = sortMembers(members.filter((member) => matchesPerson(member, search)));
   return (
     <>
-      {waiting > 0 ? (
-        <p className="bg-warn-tint text-warn mb-4 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty">
-          <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
-          <span>
-            {waiting > 1
-              ? `${waiting} personnes sont entrées avec le code QR et attendent la vérification du bureau.`
-              : "1 personne est entrée avec le code QR et attend la vérification du bureau."}{" "}
-            {office
-              ? "Touchez un nom pour ouvrir la fiche."
-              : "Un nom que vous ne reconnaissez pas? Avisez le bureau."}
-          </span>
-        </p>
-      ) : null}
       {members.length > 8 ? (
         <SearchInput
           value={search}
@@ -264,11 +277,6 @@ function MemberRow({
           {member.role === "travailleur" ? null : (
             <Badge tone="blue">{ROLE_LABELS[member.role]}</Badge>
           )}
-          {member.unreviewed ? (
-            <Badge tone="warn">
-              <ShieldAlert aria-hidden /> À vérifier
-            </Badge>
-          ) : null}
         </p>
         {detail ? <p className="text-dim text-sm wrap-anywhere">{detail}</p> : null}
         {/* Beside the name on a wide screen, the number is in the call button. */}
@@ -354,7 +362,7 @@ function AddPeopleSheet({
         </>
       }
     >
-      <Fetched query={people} errorClassName="border-0 bg-transparent px-0 py-6">
+      <QueryState query={people}>
         {(all) => {
           const onProject = new Set(members.map((member) => member.id));
           const available = sortByName(
@@ -413,7 +421,7 @@ function AddPeopleSheet({
             </div>
           );
         }}
-      </Fetched>
+      </QueryState>
     </Sheet>
   );
 }
@@ -498,7 +506,7 @@ function SiteCodeSheet({
   memberCount: number | undefined;
 }) {
   const renew = async () => {
-    const ok = await confirmCalmly({
+    const ok = await confirmAction({
       title: "Créer un nouveau code?",
       text: "Le code actuel cessera de fonctionner, sur cet écran comme sur l'affiche imprimée.",
       confirmLabel: "Créer un nouveau code",

@@ -10,6 +10,7 @@ import type { InviteLink } from "@/shared/api";
 // restarting it shows the same code, and a poster printed in the morning
 // still works at noon. It lives in localStorage, apart from the fetched data:
 // it cannot be fetched again, and it must be there the moment the screen opens.
+// Signing out removes it (signOut() in lib/session.ts).
 
 const PREFIX = "ead-site-code:";
 const keyOf = (userId: string, projectId: string) => `${PREFIX}${userId}:${projectId}`;
@@ -62,19 +63,6 @@ export function storeSiteCode(userId: string, projectId: string, link: InviteLin
     window.localStorage.setItem(key, raw);
   } catch {
     // Kept in memory above.
-  }
-  notify();
-}
-
-/** Lets go of every code on this device (signing out). */
-export function forgetSiteCodes() {
-  memory.clear();
-  try {
-    for (const key of Object.keys(window.localStorage)) {
-      if (key.startsWith(PREFIX)) window.localStorage.removeItem(key);
-    }
-  } catch {
-    // Nothing was stored.
   }
   notify();
 }

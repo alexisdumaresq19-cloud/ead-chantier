@@ -9,14 +9,23 @@ import { api, errorMessage } from "../../lib/api";
 import { queryClient } from "../../lib/query";
 import { keys, useCurrentUser, useProjects } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
-import { Badge, Button, ButtonLink, Card, EmptyState, Sheet, Skeleton, toast } from "../../ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Card,
+  confirmAction,
+  EmptyState,
+  QueryState,
+  Sheet,
+  Skeleton,
+  toast,
+} from "../../ui";
 import { adminKeys, refreshPeople, usePeople } from "./data";
 import { DeviceList } from "./devices";
-import { Fetched } from "./fetched";
 import { InviteLinkPanel } from "./invite-link";
-import { firstName, formatPhone, lastSeenText, telHref } from "./people";
+import { firstName, formatPhone, lastSeenText, telHref, UNREVIEWED_RULE } from "./people";
 import { personBody, PersonFields, type PersonForm } from "./person-fields";
-import { confirmCalmly, ignoreSecondTap } from "./second-tap";
 import { ShownError } from "./shown-error";
 
 // One person, for the office: their details, role and projects, their
@@ -44,9 +53,9 @@ export function PersonView({ id }: { id: string }) {
   }
   return (
     <Page title="Équipe" back={BACK}>
-      <Fetched query={people} loading={<Skeleton className="h-72" />}>
+      <QueryState query={people} loading={<Skeleton className="h-72" />}>
         {() => null}
-      </Fetched>
+      </QueryState>
     </Page>
   );
 }
@@ -109,7 +118,7 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
     mutationFn: (body: { unreviewed: false } | { active: boolean }) =>
       api(path, { method: "PATCH", body }),
     onSuccess: (_, body) => {
-      if ("unreviewed" in body) toast.success("Personne vérifiée");
+      if ("unreviewed" in body) toast.success("Personne confirmée");
       else if (body.active) toast.success("Accès réactivé. Envoyez-lui un nouveau lien.");
       else toast.success("Accès désactivé. Ses appareils sont déconnectés.");
       return applied("active" in body && !body.active ? { ...body, deviceCount: 0 } : body);
@@ -119,9 +128,9 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
   const invite = useMutation({
     mutationFn: () => api<InviteLink>(`${path}/invite`, { method: "POST" }),
     onSuccess: (made) => {
-      // The link shows only once: a second tap on the button must not close it.
-      ignoreSecondTap();
       setLink(made);
+      // Sending a link vouches for the person: the server has confirmed them.
+      return person.unreviewed ? applied({ unreviewed: false }) : undefined;
     },
     onError: (error) => toast.error(errorMessage(error)),
   });
@@ -129,7 +138,7 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (form.role === "admin" && person.role !== "admin") {
-      const ok = await confirmCalmly({
+      const ok = await confirmAction({
         title: `Donner à ${first} l'accès du bureau?`,
         text: "Cette personne verra tous les projets et pourra gérer les personnes, comme vous.",
         confirmLabel: "Donner l'accès",
@@ -139,7 +148,7 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
     save.mutate();
   };
   const deactivate = async () => {
-    const ok = await confirmCalmly({
+    const ok = await confirmAction({
       title: `Désactiver l'accès de ${first}?`,
       text: "Ses appareils seront déconnectés sur-le-champ et ses liens cesseront de fonctionner. Sa fiche reste, et vous pourrez réactiver son accès.",
       confirmLabel: "Désactiver l'accès",
@@ -180,14 +189,15 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
               <strong className="font-semibold">
                 {first} a utilisé le code QR d&apos;un chantier pour entrer.
               </strong>{" "}
-              Vous connaissez cette personne? Confirmez-le. Sinon, désactivez son accès.
+              Vous connaissez cette personne? Confirmez-la. Sinon, désactivez son accès.{" "}
+              {UNREVIEWED_RULE}
             </span>
           </p>
           <Button
             onClick={() => change.mutate({ unreviewed: false })}
             loading={pending !== null && "unreviewed" in pending}
           >
-            <ShieldCheck aria-hidden /> Je connais cette personne
+            <ShieldCheck aria-hidden /> Confirmer
           </Button>
         </div>
       ) : null}
@@ -237,7 +247,9 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
             <Card className="p-4">
               <p className="text-dim text-[15px] text-pretty">
                 {person.active
-                  ? "Pour un nouveau téléphone ou un lien expiré. Un nouveau lien remplace celui qui n'a pas encore servi."
+                  ? person.unreviewed
+                    ? "Envoyer un lien personnel confirme aussi la personne. Un nouveau lien remplace celui qui n'a pas encore servi."
+                    : "Pour un nouveau téléphone ou un lien expiré. Un nouveau lien remplace celui qui n'a pas encore servi."
                   : "Réactivez l'accès de cette personne pour lui envoyer un lien."}
               </p>
               <Button
@@ -254,16 +266,14 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
           </Section>
 
           <Section title="Appareils connectés">
-            <Card className="p-4">
-              <DeviceList
-                userId={person.id}
-                empty={
-                  person.active
-                    ? "Aucun appareil pour l'instant. Cette personne entre en ouvrant son lien, ou avec le code QR d'un chantier."
-                    : "Aucun appareil connecté."
-                }
-              />
-            </Card>
+            <DeviceList
+              userId={person.id}
+              empty={
+                person.active
+                  ? "Aucun appareil pour l'instant. Cette personne entre en ouvrant son lien, ou avec le code QR d'un chantier."
+                  : "Aucun appareil connecté."
+              }
+            />
           </Section>
 
           {person.active ? (

@@ -34,7 +34,8 @@ export const personChange = z
     phone: fields.phone.nullable(),
     email: fields.email.nullable(),
     active: z.boolean(),
-    unreviewed: z.boolean(),
+    // Confirming is one way: nobody is put back under the seven-day limit.
+    unreviewed: z.literal(false),
     projectIds: fields.projectIds,
   })
   .partial();
@@ -76,5 +77,20 @@ export function officeLockout({
     return "Vous ne pouvez pas retirer votre propre accès au bureau. Demandez à une autre personne du bureau de le faire.";
   }
   if (otherActiveAdmins < 1) return "Il doit rester au moins une personne active au bureau.";
+  return null;
+}
+
+/**
+ * Why a foreman may not confirm or refuse this person on their project, or
+ * null when they may. It is only for someone who came in by the site's QR
+ * code and that nobody has confirmed yet, on that project: the rest of a
+ * person's record is the office's.
+ */
+export function reviewRefusal(
+  target: { role: Role; active: boolean; unreviewed: boolean; onProject: boolean } | null,
+): { status: 404 | 409; message: string } | null {
+  if (!target || !target.onProject || !target.active || target.role !== "travailleur")
+    return { status: 404, message: "Cette personne n'est pas sur ce projet." };
+  if (!target.unreviewed) return { status: 409, message: "Cette personne est déjà confirmée." };
   return null;
 }

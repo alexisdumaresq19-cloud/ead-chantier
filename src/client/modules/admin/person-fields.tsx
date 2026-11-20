@@ -49,12 +49,15 @@ export function PersonFields({
   onChange,
   projects,
   roleLocked,
+  focusName,
 }: {
   form: PersonForm;
   onChange: (form: PersonForm) => void;
   projects: ProjectSummary[];
   /** Why the role cannot be changed here, when it cannot. */
   roleLocked?: string;
+  /** The name field takes the focus when the form appears. */
+  focusName?: boolean;
 }) {
   const set =
     (key: "name" | "title" | "phone" | "email") => (event: { target: { value: string } }) =>
@@ -70,6 +73,10 @@ export function PersonFields({
           maxLength={80}
           autoComplete="off"
           autoCapitalize="words"
+          // The window focuses data-autofocus when it opens; autoFocus covers
+          // a form that comes back inside a window already open.
+          data-autofocus={focusName || undefined}
+          autoFocus={focusName}
         />
       </Field>
       <Field label="Rôle" hint={roleLocked ?? ROLE_HINTS[form.role]} className="sm:col-span-2">

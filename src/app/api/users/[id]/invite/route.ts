@@ -3,8 +3,7 @@ import { eq } from "drizzle-orm";
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, notFound, route } from "@/server/http";
-
-import { personalLink } from "../../_lib/people";
+import { personalLink } from "@/server/people/links";
 
 /** A new link for someone: a first invitation, a new phone, a lost session. */
 export const POST = route<{ id: string }>(async (request, { id }) => {
