@@ -1,15 +1,26 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Printer, QrCode as QrIcon, RefreshCw, Share2 } from "lucide-react";
+import {
+  Check,
+  Copy,
+  KeyRound,
+  CirclePause,
+  Printer,
+  QrCode as QrIcon,
+  RefreshCw,
+  Share2,
+} from "lucide-react";
 import { useState } from "react";
+import { createPortal } from "react-dom";
 
 import { formatCompanyCode, signupLink, type CompanyCode } from "@/shared/signup";
 
 import { api, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
-import { formatDay } from "../../lib/format";
+import { count, formatDay } from "../../lib/format";
 import { queryClient } from "../../lib/query";
 import { Badge, Button, Card, confirmAction, LogoFull, Sheet, Skeleton, toast } from "../../ui";
 import { canShare, LinkField, shareLink } from "./invite-link";
+import { pauseText } from "./people";
 import { QrCode } from "./qr";
 import { ShownError } from "./shown-error";
 
@@ -104,11 +115,21 @@ export function CompanyCodeCard({ className }: { className?: string }) {
           </h2>
           {data ? (
             <p className="text-dim text-sm">
-              {data.code ? "Création de comptes ouverte" : "Création de comptes fermée"}
+              {!data.code
+                ? "Création de comptes fermée"
+                : data.pause
+                  ? "Création de comptes en pause"
+                  : "Création de comptes ouverte"}
             </p>
           ) : null}
         </div>
-        {data?.code ? <Badge tone="good">Ouvert</Badge> : null}
+        {data?.code ? (
+          data.pause ? (
+            <Badge tone="warn">En pause</Badge>
+          ) : (
+            <Badge tone="good">Ouvert</Badge>
+          )
+        ) : null}
       </div>
       <p className="text-dim mt-3 max-w-prose text-[15px] text-pretty">
         Avec ce code, une personne de l&apos;équipe crée elle-même son compte, comme travailleur.
@@ -140,11 +161,25 @@ export function CompanyCodeCard({ className }: { className?: string }) {
               </Button>
             </div>
           </div>
-          {changedText(data) ? <p className="text-dim mt-2 text-sm">{changedText(data)}</p> : null}
+          {data.pause ? (
+            <Paused pause={data.pause} onReplace={replace} replacing={pending === "new"} />
+          ) : null}
+          <p className="text-dim mt-2 text-sm">
+            {[
+              changedText(data),
+              data.accountsToday > 0
+                ? `${count(data.accountsToday, "compte créé", "comptes créés")} depuis 24\u00a0heures.`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          </p>
           <div className="mt-2 -ml-4 flex flex-wrap gap-x-1">
-            <Button variant="ghost" onClick={replace} loading={pending === "new"}>
-              <RefreshCw aria-hidden /> Changer le code
-            </Button>
+            {data.pause ? null : (
+              <Button variant="ghost" onClick={replace} loading={pending === "new"}>
+                <RefreshCw aria-hidden /> Changer le code
+              </Button>
+            )}
             <Button
               variant="ghost"
               className="text-dim"
@@ -173,6 +208,35 @@ export function CompanyCodeCard({ className }: { className?: string }) {
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * Account creation paused for everyone (too many wrong codes, or the day's
+ * accounts all made): said plainly, with the one way to reopen at once.
+ */
+function Paused({
+  pause,
+  onReplace,
+  replacing,
+}: {
+  pause: NonNullable<CompanyCode["pause"]>;
+  onReplace: () => void;
+  replacing: boolean;
+}) {
+  const { title, text } = pauseText(pause);
+  return (
+    <div className="bg-warn-tint text-warn mt-3 rounded-xl px-3.5 py-3" role="status">
+      <p className="flex items-start gap-2.5 text-[15px] text-pretty">
+        <CirclePause className="mt-0.5 size-5 shrink-0" aria-hidden />
+        <span>
+          <strong className="font-semibold">{title}.</strong> {text}
+        </span>
+      </p>
+      <Button className="mt-3 w-full sm:w-auto" onClick={onReplace} loading={replacing}>
+        <RefreshCw aria-hidden /> Changer le code
+      </Button>
+    </div>
   );
 }
 
@@ -215,20 +279,24 @@ function CodeSheet({ code, open, onClose }: { code: string; open: boolean; onClo
   );
 }
 
-// Letter paper without margins: the poster sets its own. The window open
-// over the screen stays out of the print.
+// Letter paper without margins: the poster sets its own. The poster is put
+// straight in the page's body, so that printing leaves out everything else
+// (the window, the team list) and fits one sheet.
 const PRINT_RULES = `
 @page { size: letter portrait; margin: 0; }
 @media print {
   html, body { background: #fff !important; }
-  dialog { display: none !important; }
+  body > :not([data-poster]) { display: none !important; }
 }`;
 
 /** The poster for the trailer: hidden on screen, alone on the sheet when printed. */
 function CodePoster({ code }: { code: string }) {
   const url = signupLink(window.location.origin, code);
-  return (
-    <div className="hidden bg-white text-black print:fixed print:inset-0 print:flex print:flex-col">
+  return createPortal(
+    <div
+      data-poster
+      className="hidden bg-white text-black print:fixed print:inset-0 print:z-50 print:flex print:flex-col"
+    >
       <style>{PRINT_RULES}</style>
       <div className="bg-ink flex items-center justify-between gap-8 px-[0.7in] py-[0.3in] text-white [-webkit-print-color-adjust:exact] [print-color-adjust:exact]">
         <LogoFull className="w-[1.7in]" />
@@ -268,6 +336,7 @@ function CodePoster({ code }: { code: string }) {
           Les Entreprises Allen Dumaresq · EAD Chantier
         </p>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,11 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ChevronLeft } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "wouter";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link } from "wouter";
 
 import {
   canadianPhone,
   codeDigits,
+  codeFromFragment,
   COMPANY_CODE_LENGTH,
   PHONE_HINT,
   type SignupInput,
@@ -19,7 +20,7 @@ import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 import { focusNamed, Heading, NAME_MISSING, nameMissing } from "./parts";
 
 // A newcomer makes their own account with the code the office gave them
-// (/inscription, or /inscription?code=… from the office's link or QR code).
+// (/inscription, or /inscription#code=… from the office's link or QR code).
 // They come in as a worker, on no project; the office then adds them to
 // their sites.
 
@@ -58,8 +59,13 @@ const FIELD_OF: Record<string, FieldName> = {
 
 export function SignUpScreen() {
   const me = useMe();
-  const [params] = useSearchParams();
-  const fromLink = shownCode(params.get("code") ?? "");
+  const [fromLink] = useState(() => shownCode(codeFromFragment(window.location.hash)));
+  // Once read, the code leaves the address: it stays neither in the
+  // history nor in a shortcut saved from this screen.
+  useEffect(() => {
+    if (window.location.hash)
+      window.history.replaceState(window.history.state, "", window.location.pathname);
+  }, []);
   const status = useQuery({
     queryKey: ["signup"],
     queryFn: () => api<SignupStatus>("/api/signup"),
@@ -96,7 +102,12 @@ export function SignUpScreen() {
       </PublicLayout>
     );
   }
-  if (status.isPending || me.isPending) {
+  // Without a network the requests wait, paused: the form is shown, and
+  // sending it says what is wrong.
+  if (
+    (status.isPending && status.fetchStatus === "fetching") ||
+    (me.isPending && me.fetchStatus === "fetching")
+  ) {
     return (
       <PublicLayout>
         <div className="flex justify-center py-10" role="status" aria-label="Chargement">
@@ -197,7 +208,8 @@ export function SignUpScreen() {
             pattern="[0-9 ]*"
             autoComplete="off"
             enterKeyHint="go"
-            maxLength={COMPANY_CODE_LENGTH + 1}
+            // Room for a code pasted with text around it: only its digits are kept.
+            maxLength={80}
             className="font-display h-14 text-center text-2xl font-bold tracking-[0.2em] tabular-nums"
             aria-invalid={Boolean(errorOf("code")) || undefined}
           />

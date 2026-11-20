@@ -2,7 +2,7 @@ import type { JoinedWith, Person } from "@/shared/api";
 import { ROLE_LABELS, type Role } from "@/shared/roles";
 
 import { ApiFailure, errorMessage } from "../../lib/api";
-import { formatAgo, formatTime, formatWeekday } from "../../lib/format";
+import { formatAgo, formatDay, formatTime, formatWeekday, todayKey } from "../../lib/format";
 
 // Words and links about people: phone numbers as written in Québec, what an
 // invitation says, how the office's list is sorted and searched. No React
@@ -132,6 +132,55 @@ export function toConfirmText(people: { joinedWith?: JoinedWith | null }[]): str
     : "Ces personnes sont entrées avec le code QR d'un chantier. Ouvrez une fiche pour confirmer la personne ou couper son accès.";
 }
 
+/**
+ * Someone else, active, with the same name as a newcomer to confirm, or
+ * undefined. A stranger holding the company's code could take the name of
+ * someone the office knows; the office is told before confirming.
+ */
+export function sameNameAs<T extends { id: string; name: string; active: boolean }>(
+  person: T,
+  people: T[],
+): T | undefined {
+  const name = plain(person.name).replace(/\s+/g, " ").trim();
+  return people.find(
+    (other) =>
+      other.id !== person.id &&
+      other.active &&
+      plain(other.name).replace(/\s+/g, " ").trim() === name,
+  );
+}
+
+/** "Même nom que Camille Roy (Bureau), déjà dans l'équipe." */
+export const sameNameText = (other: { name: string; role: Role }) =>
+  `Même nom que ${other.name} (${ROLE_LABELS[other.role]}), déjà dans l'équipe.`;
+
+// --- The company code -------------------------------------------------------
+
+/** "jusqu'à 14 h 30", "jusqu'à demain 9 h 05", "jusqu'au 2 décembre 2026 9 h 05". */
+export function untilText(until: string, now = new Date()): string {
+  const days = Math.round(
+    (new Date(todayKey(new Date(until))).getTime() - new Date(todayKey(now)).getTime()) /
+      86_400_000,
+  );
+  const time = formatTime(until);
+  if (days <= 0) return `jusqu'à ${time}`;
+  return days === 1 ? `jusqu'à demain ${time}` : `jusqu'au ${formatDay(until)} ${time}`;
+}
+
+/** Why account creation is paused for everyone, and how the office reopens it. */
+export function pauseText(
+  pause: { reason: "wrong_codes" | "accounts"; until: string },
+  now = new Date(),
+): { title: string; text: string } {
+  return {
+    title: `En pause ${untilText(pause.until, now)}`,
+    text:
+      pause.reason === "wrong_codes"
+        ? "Trop de codes erronés ont été essayés aujourd'hui. Changez le code pour rouvrir tout de suite\u00a0: l'ancien cessera de fonctionner."
+        : "Le nombre de comptes permis par jour est atteint. Changez le code pour rouvrir tout de suite\u00a0: l'ancien cessera de fonctionner.",
+  };
+}
+
 /** "Accès jusqu'au jeudi 26 novembre": when the device of someone not confirmed is signed out. */
 export function accessEndText(scannedAt: string): string {
   const end = new Date(new Date(scannedAt).getTime() + UNREVIEWED_DAYS * 86_400_000);
@@ -212,6 +261,13 @@ export function matchesPerson(
 }
 
 // --- Signing out ------------------------------------------------------------
+
+/**
+ * Why the last active office account is not offered deletion, and what to do
+ * instead (the server's deletionRefusal says the same if asked anyway).
+ */
+export const LAST_OFFICE_TEXT =
+  "Vous êtes la seule personne active au bureau\u00a0: votre compte ne peut pas être supprimé. Donnez d'abord l'accès du bureau à une autre personne (Équipe), puis revenez ici.";
 
 /** Why signing out did not happen: the person is still signed in on this device. */
 export function signOutFailure(error: unknown): string {

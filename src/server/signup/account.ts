@@ -4,13 +4,21 @@ import { z } from "zod";
 
 import { canadianPhone, codeDigits, COMPANY_CODE_LENGTH, PHONE_HINT } from "@/shared/signup";
 
-import { openSession, typedLine, UNREVIEWED_SESSION_DAYS } from "../auth";
+import { openSession, typedLine, UNREVIEWED_SESSION_DAYS, type Executor } from "../auth";
 import { db, schema } from "../db/client";
 import { env, type SignupLimits } from "../env";
 import { badRequest, HttpError } from "../http";
 import { newId } from "../ids";
 import { isCompanyCode } from "./code";
-import { addressKey, addressOf, doorCounts, doorRefusal, noteAttempt, tooMany } from "./door";
+import {
+  addressKey,
+  addressOf,
+  doorCounts,
+  doorRefusal,
+  holdDoor,
+  noteAttempt,
+  tooMany,
+} from "./door";
 import { readCompanyCode } from "./settings";
 
 // A newcomer makes their own account with the company's code: a worker,
@@ -29,6 +37,18 @@ export type SignupFields = z.infer<typeof signupInput>;
 const fieldError = (code: "bad_name" | "bad_phone" | "bad_code", message: string) =>
   badRequest(message, code);
 
+const SCRIPTS = [/\p{Script=Latin}/u, /\p{Script=Cyrillic}/u, /\p{Script=Greek}/u];
+
+/**
+ * Whether a word mixes look-alike alphabets, as "Самille" (Cyrillic С, а and
+ * м with Latin letters) does to pass for "Camille" on the office's lists.
+ */
+export function mixesScripts(name: string): boolean {
+  return name
+    .split(/[\s'’-]+/u)
+    .some((word) => SCRIPTS.filter((script) => script.test(word)).length > 1);
+}
+
 /**
  * What was typed, cleaned, or the refusal of the first field that is wrong.
  * Nothing here looks at the code in force: its form is no secret.
@@ -37,6 +57,8 @@ export function cleanSignup(input: SignupFields): { name: string; phone: string;
   const name = typedLine(input.name);
   if (name === null)
     throw fieldError("bad_name", "Ce nom contient des caractères non permis. Retapez-le.");
+  if (mixesScripts(name))
+    throw fieldError("bad_name", "Ce nom mélange des alphabets différents. Retapez-le.");
   if (name.length < 2) throw fieldError("bad_name", "Entrez votre prénom et votre nom.");
   if (name.length > 80) throw fieldError("bad_name", "Ce nom est trop long.");
   const phone = canadianPhone(input.phone);
@@ -68,10 +90,10 @@ const phoneTaken = () =>
   );
 
 /** Whether an active account already has this number, however it was typed. */
-async function phoneInUse(phone: string): Promise<boolean> {
+async function phoneInUse(phone: string, executor: Executor): Promise<boolean> {
   const digits = phone.replace(/\D/g, "");
   const typed = raw`regexp_replace(${schema.users.phone}, '\\D', '', 'g')`;
-  const [found] = await db
+  const [found] = await executor
     .select({ id: schema.users.id })
     .from(schema.users)
     .where(
@@ -86,9 +108,10 @@ async function phoneInUse(phone: string): Promise<boolean> {
 }
 
 /**
- * Makes the account and opens this device's session, or refuses. Everything
- * is written in one transaction; the caller gives the cookie once it is
- * committed. `now` and `limits` are given by the tests.
+ * Makes the account and opens this device's session, or refuses. The door is
+ * counted, the try noted and the account made in one transaction, one
+ * request at a time; the caller gives the cookie once it is committed.
+ * `now` and `limits` are given by the tests.
  */
 export async function createAccountWithCode(
   request: NextRequest,
@@ -97,32 +120,35 @@ export async function createAccountWithCode(
 ): Promise<{ userId: string; token: string; expiresAt: Date }> {
   const typed = cleanSignup(input);
   const address = addressKey(addressOf(request));
-  const setting = await readCompanyCode();
 
-  // The door is asked before the code is looked at: once it is shut, the
-  // right code gets the same refusal as any other.
-  const refusal = doorRefusal(await doorCounts(address, setting.changedAt, limits, now), limits);
-  if (refusal) throw tooMany(refusal, now);
+  // While the door is shut, refused at once, without waiting for a turn.
+  const shut = doorRefusal(
+    await doorCounts(address, (await readCompanyCode()).changedAt, limits, now),
+    limits,
+  );
+  if (shut) throw tooMany(shut, now);
 
-  if (!isCompanyCode(typed.code, setting.code)) {
-    await noteAttempt(address, "wrong_code", now);
-    throw wrongCode();
-  }
-  if (await phoneInUse(typed.phone)) {
-    await noteAttempt(address, "phone_taken", now);
-    throw phoneTaken();
-  }
-
-  return db.transaction(async (tx) => {
-    // One creation at a time: the day's ceiling of accounts is counted again
-    // here, so requests sent together cannot pass it, and the code is read
-    // again, so one replaced a moment ago no longer opens anything.
-    await tx.execute(raw`select pg_advisory_xact_lock(hashtext('ead:signup'))`);
-    const current = await readCompanyCode(tx);
-    if (!isCompanyCode(typed.code, current.code)) throw wrongCode();
-    const counted = await doorCounts(address, current.changedAt, limits, now, tx);
-    const late = doorRefusal({ ...counted, address: [], wrongCodes: [] }, limits);
-    if (late) throw tooMany(late, now);
+  // A refused try is noted, and the note kept: the transaction hands the
+  // refusal back instead of throwing it, which would undo the note.
+  const outcome = await db.transaction(async (tx) => {
+    await holdDoor(tx);
+    // Read again in turn: a code replaced a moment ago no longer opens anything.
+    const setting = await readCompanyCode(tx);
+    // The door is asked before the code is looked at: once it is shut, the
+    // right code gets the same refusal as any other.
+    const refusal = doorRefusal(
+      await doorCounts(address, setting.changedAt, limits, now, tx),
+      limits,
+    );
+    if (refusal) return { refused: tooMany(refusal, now) };
+    if (!isCompanyCode(typed.code, setting.code)) {
+      await noteAttempt(address, "wrong_code", now, tx);
+      return { refused: wrongCode() };
+    }
+    if (await phoneInUse(typed.phone, tx)) {
+      await noteAttempt(address, "phone_taken", now, tx);
+      return { refused: phoneTaken() };
+    }
 
     const userId = newId();
     await tx.insert(schema.users).values({
@@ -138,6 +164,8 @@ export async function createAccountWithCode(
     // Until the office confirms the person, the device stays signed in for a
     // few days only (see sessionRenewal).
     const session = await openSession(userId, request, UNREVIEWED_SESSION_DAYS, tx);
-    return { userId, ...session };
+    return { made: { userId, ...session } };
   });
+  if ("refused" in outcome) throw outcome.refused;
+  return outcome.made;
 }

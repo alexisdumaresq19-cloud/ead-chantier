@@ -21,9 +21,20 @@ export function formatCompanyCode(code: string): string {
     : digits;
 }
 
-/** The link that opens the account-creation screen with the code already filled. */
+/**
+ * The link that opens the account-creation screen with the code already
+ * filled, in the fragment, which never reaches a server.
+ */
 export const signupLink = (origin: string, code: string) =>
-  `${origin}${SIGNUP_PATH}?code=${codeDigits(code)}`;
+  `${origin}${SIGNUP_PATH}#code=${codeDigits(code)}`;
+
+/**
+ * The code a link carries, from the address's fragment ("#code=48271936"):
+ * a browser never sends the fragment, so the code stays out of the host's
+ * logs. Empty when there is none.
+ */
+export const codeFromFragment = (hash: string) =>
+  codeDigits(new URLSearchParams(hash.replace(/^#/, "")).get("code") ?? "");
 
 /**
  * A Canadian cell number as stored and shown, "418 555-0123", or null when
@@ -55,4 +66,12 @@ export type CompanyCode = {
   /** When it was last turned on, changed or turned off, and by whom. */
   changedAt: string | null;
   changedBy: string | null;
+  /**
+   * While the code is open: account creation paused for everyone, until when
+   * and why (too many wrong codes, or the day's accounts all made). A new
+   * code lifts it.
+   */
+  pause: { reason: "wrong_codes" | "accounts"; until: string } | null;
+  /** Accounts made with the code in force in the last 24 hours. */
+  accountsToday: number;
 };

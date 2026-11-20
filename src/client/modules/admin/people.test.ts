@@ -12,7 +12,10 @@ import {
   lastSeenText,
   mailHref,
   matchesPerson,
+  pauseText,
   roleAndTitle,
+  sameNameAs,
+  sameNameText,
   scannedText,
   signOutFailure,
   smsHref,
@@ -24,6 +27,7 @@ import {
   titleIsRole,
   toConfirmText,
   joinedWithText,
+  untilText,
   whenText,
   titleOrRole,
 } from "./people";
@@ -265,5 +269,42 @@ describe("people who came in by themself", () => {
     expect(toConfirmText([{ joinedWith: "company_code" }, {}])).toMatch(
       /code QR d'un chantier ou le code d'entreprise/,
     );
+  });
+});
+
+describe("a newcomer with someone's name", () => {
+  const camille = { id: "a", name: "Camille Roy", active: true, role: "admin" as const };
+  it("is matched whatever the accents, capitals and spaces", () => {
+    const twin = { id: "b", name: " camille  roy", active: true, role: "travailleur" as const };
+    expect(sameNameAs(twin, [camille, twin])).toBe(camille);
+    expect(sameNameAs({ ...twin, name: "Camille Rioux" }, [camille, twin])).toBeUndefined();
+    // Someone switched off holds no name.
+    expect(sameNameAs(twin, [{ ...camille, active: false }, twin])).toBeUndefined();
+    expect(sameNameText(camille)).toBe("Même nom que Camille Roy (Bureau), déjà dans l'équipe.");
+  });
+});
+
+describe("the company code's pause", () => {
+  const now = new Date("2026-11-20T10:00:00");
+  it("says until when, today or later", () => {
+    expect(untilText(new Date("2026-11-20T14:30:00").toISOString(), now)).toMatch(
+      /^jusqu'à 14\sh\s30$/,
+    );
+    expect(untilText(new Date("2026-11-21T09:05:00").toISOString(), now)).toMatch(
+      /^jusqu'à demain 9\sh\s05$/,
+    );
+  });
+
+  it("names the reason and the way to reopen", () => {
+    const paused = pauseText(
+      { reason: "wrong_codes", until: new Date("2026-11-21T09:05:00").toISOString() },
+      now,
+    );
+    expect(paused.title).toMatch(/^En pause jusqu'à demain 9/);
+    expect(paused.text).toMatch(/^Trop de codes erronés.*Changez le code pour rouvrir/);
+    expect(
+      pauseText({ reason: "accounts", until: new Date("2026-11-20T14:30:00").toISOString() }, now)
+        .text,
+    ).toMatch(/^Le nombre de comptes permis par jour est atteint/);
   });
 });

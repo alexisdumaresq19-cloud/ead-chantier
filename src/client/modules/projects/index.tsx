@@ -94,24 +94,19 @@ export function ProjectsScreen() {
           const sorted = lastOpenedFirst(all);
           const active = sorted.filter((project) => project.status === "actif");
           const archived = sorted.filter((project) => project.status === "archive");
-          // Someone just arrived, whom the office has not put on a site yet.
-          if (all.length === 0 && !admin && me.unreviewed) return <WelcomeAboard name={me.name} />;
+          // Someone the office has not put on a site yet, confirmed or not.
+          if (all.length === 0 && !admin)
+            return <WelcomeAboard name={me.name} confirmed={!me.unreviewed} />;
           if (all.length === 0) {
             return (
               <EmptyState
                 icon={LayoutGrid}
                 title="Aucun projet pour l'instant"
-                text={
-                  admin
-                    ? "Créez votre premier projet, puis ajoutez-y les plans."
-                    : "Votre contremaître ou le bureau doit vous ajouter à un projet. Au chantier, scannez son code QR."
-                }
+                text="Créez votre premier projet, puis ajoutez-y les plans."
                 action={
-                  admin ? (
-                    <ButtonLink href="/projets/nouveau" size="lg">
-                      <Plus aria-hidden /> Créer un projet
-                    </ButtonLink>
-                  ) : undefined
+                  <ButtonLink href="/projets/nouveau" size="lg">
+                    <Plus aria-hidden /> Créer un projet
+                  </ButtonLink>
                 }
               />
             );
@@ -179,16 +174,19 @@ export function ProjectsScreen() {
 const WAITING_REFRESH_MS = 30_000;
 
 /**
- * The list of a newcomer on no project yet: a welcome, what happens next,
- * and the list asking again on its own until the sites appear (also as soon
- * as the app comes back to the front).
+ * The list of someone on no project yet: a welcome, what happens next, and
+ * the list asking again on its own until the sites appear (also as soon as
+ * the app comes back to the front). The office may confirm the person before
+ * it adds their sites: the wait goes on, with one step done.
  */
-function WelcomeAboard({ name }: { name: string }) {
+function WelcomeAboard({ name, confirmed }: { name: string; confirmed: boolean }) {
   const queryClient = useQueryClient();
   useEffect(() => {
+    // The person is asked again too: once confirmed, the steps say so.
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible")
-        void queryClient.invalidateQueries({ queryKey: keys.projects, exact: true });
+      if (document.visibilityState !== "visible") return;
+      void queryClient.invalidateQueries({ queryKey: keys.projects, exact: true });
+      void queryClient.invalidateQueries({ queryKey: keys.me, exact: true });
     }, WAITING_REFRESH_MS);
     return () => clearInterval(timer);
   }, [queryClient]);
@@ -196,14 +194,16 @@ function WelcomeAboard({ name }: { name: string }) {
   const steps: { icon: LucideIcon; title: string; text: string; done?: boolean }[] = [
     {
       icon: CircleCheck,
-      title: "Votre compte est créé",
+      title: confirmed ? "Votre compte est confirmé" : "Votre compte est créé",
       text: "Vous êtes connecté sur cet appareil.",
       done: true,
     },
     {
       icon: Users,
       title: "Le bureau vous ajoute à vos chantiers",
-      text: "Il confirme aussi votre compte, d'ici 7\u00a0jours. Sans confirmation, l'accès prend fin.",
+      text: confirmed
+        ? "Ou votre contremaître, au chantier."
+        : "Il confirme aussi votre compte, d'ici 7\u00a0jours. Sans confirmation, l'accès prend fin.",
     },
     {
       icon: LayoutGrid,

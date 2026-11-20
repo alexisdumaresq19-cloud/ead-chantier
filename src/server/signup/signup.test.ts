@@ -45,6 +45,7 @@ process.env.DATABASE_URL = databaseUrl;
 const { sql } = await import("../db/client");
 const { createAccountWithCode } = await import("./account");
 const { closeSignup, newCompanyCodeBy, readCompanyCode } = await import("./settings");
+const { doorState } = await import("./door");
 const { deleteOwnAccount } = await import("../people/delete");
 const { currentUser } = await import("../auth");
 const { hashToken } = await import("../ids");
@@ -186,6 +187,10 @@ describe.skipIf(!ready)("with a database", () => {
       limits,
     });
     expect(await answer(paused)).toBe("429 too_many_signups");
+    // The office sees it, with when it ends: a day after the first wrong code.
+    expect(
+      (await doorState((await readCompanyCode()).changedAt, limits, at(10 * MINUTE))).pause,
+    ).toEqual({ reason: "everyone", until: new Date(start.getTime() + 24 * HOUR) });
     await expect(paused).rejects.toThrow(/en pause/);
     code = await newCompanyCodeBy("office", at(11 * MINUTE));
     expect(
@@ -208,6 +213,107 @@ describe.skipIf(!ready)("with a database", () => {
     const [{ n }] =
       await sql`select count(*)::int as n from users where joined_with = 'company_code'`;
     expect(n).toBe(4);
+  });
+
+  it("holds an address to its handful of tries, even sent all at once", async () => {
+    const answers = await Promise.all(
+      Array.from({ length: limits.triesPerHour * 10 }, () =>
+        answer(
+          createAccountWithCode(from("198.51.100.7"), newcomer("11112222"), { now: start, limits }),
+        ),
+      ),
+    );
+    expect(answers.filter((a) => a === "400 wrong_code")).toHaveLength(limits.triesPerHour);
+    expect(answers.filter((a) => a === "429 too_many_signups")).toHaveLength(
+      limits.triesPerHour * 9,
+    );
+  });
+
+  it("holds the day's wrong codes for everyone, even sent all at once", async () => {
+    const answers = await Promise.all(
+      Array.from({ length: limits.wrongCodesPerDay * 10 }, (_, i) =>
+        answer(
+          createAccountWithCode(from(`10.1.${i >> 8}.${i & 255}`), newcomer("11112222"), {
+            now: start,
+            limits,
+          }),
+        ),
+      ),
+    );
+    expect(answers.filter((a) => a === "400 wrong_code")).toHaveLength(limits.wrongCodesPerDay);
+    const [{ n }] =
+      await sql`select count(*)::int as n from signup_attempts where outcome = 'wrong_code'`;
+    expect(n).toBe(limits.wrongCodesPerDay);
+  });
+
+  it("counts one home's IPv6 addresses as one network", async () => {
+    const tries = (i: number) =>
+      answer(
+        createAccountWithCode(from(`2001:db8:1:2::${i.toString(16)}`), newcomer("11112222"), {
+          now: at(i * MINUTE),
+          limits,
+        }),
+      );
+    for (let i = 1; i <= 3; i++) expect(await tries(i)).toBe("400 wrong_code");
+    expect(await tries(4)).toBe("429 too_many_signups");
+  });
+
+  it("makes one account for one number, even sent twice at once", async () => {
+    const twice = await Promise.all(
+      ["203.0.113.20", "203.0.113.21"].map((address) =>
+        answer(
+          createAccountWithCode(
+            from(address),
+            { name: "Luc Roy", phone: "418 555-0177", code },
+            { now: start, limits },
+          ),
+        ),
+      ),
+    );
+    expect(twice.sort()).toEqual(["409 phone_taken", "accepted"]);
+  });
+
+  it("refuses a name that mixes alphabets to pass for someone else", async () => {
+    const lookalike = createAccountWithCode(
+      from("203.0.113.30"),
+      { ...newcomer(code), name: "\u0421\u0430\u043cille Roy" },
+      { now: start, limits },
+    );
+    expect(await answer(lookalike)).toBe("400 bad_name");
+  });
+
+  it("tells the office about a pause, and a new code reopens after the day's accounts", async () => {
+    for (let i = 0; i < limits.accountsPerDay; i++)
+      expect(
+        await answer(
+          createAccountWithCode(from(`100.64.1.${i}`), newcomer(code), {
+            now: at(i * MINUTE),
+            limits,
+          }),
+        ),
+      ).toBe("accepted");
+    const later = at(limits.accountsPerDay * MINUTE);
+    const setting = await readCompanyCode();
+    expect(await doorState(setting.changedAt, limits, later)).toEqual({
+      pause: { reason: "accounts", until: new Date(start.getTime() + 24 * HOUR) },
+      accounts: limits.accountsPerDay,
+    });
+    expect(
+      await answer(
+        createAccountWithCode(from("100.64.1.99"), newcomer(code), { now: later, limits }),
+      ),
+    ).toBe("429 too_many_signups");
+    code = await newCompanyCodeBy("office", later);
+    const next = new Date(later.getTime() + MINUTE);
+    expect(await doorState((await readCompanyCode()).changedAt, limits, next)).toEqual({
+      pause: null,
+      accounts: 0,
+    });
+    expect(
+      await answer(
+        createAccountWithCode(from("100.64.1.99"), newcomer(code), { now: next, limits }),
+      ),
+    ).toBe("accepted");
   });
 
   it("lets go of attempts that no longer count", async () => {

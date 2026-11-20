@@ -72,7 +72,7 @@ test("the office opens account creation and reads the code; nobody else can", as
   await card.getByRole("button", { name: "Code QR" }).click();
   await windowOpen(page);
   await expect(page.getByLabel("Lien pour créer son compte")).toHaveValue(
-    `${seed.base}/inscription?code=${code}`,
+    `${seed.base}/inscription#code=${code}`,
   );
   await page.getByRole("button", { name: "Fermer", exact: true }).click();
 
@@ -119,7 +119,8 @@ test("a newcomer makes an account from the first screen, then the office puts th
   await expect(page.getByLabel("Cellulaire")).toBeFocused();
   const number = phone();
   await page.getByLabel("Cellulaire").fill(number.replace(/\D/g, ""));
-  await page.getByLabel("Code d'entreprise").fill(code);
+  // Pasted with spaces around it: no digit is lost.
+  await page.getByLabel("Code d'entreprise").fill(` ${code.slice(0, 4)} ${code.slice(4)} `);
   // Typed as eight digits, shown as two groups.
   await expect(page.getByLabel("Code d'entreprise")).toHaveValue(
     `${code.slice(0, 4)} ${code.slice(4)}`,
@@ -147,6 +148,9 @@ test("a newcomer makes an account from the first screen, then the office puts th
   await expect(desk.getByText(/418 \d{3}-\d{4}/).first()).toBeVisible();
   await desk.getByRole("button", { name: "Confirmer" }).click();
   await expect(desk.getByText("Personne confirmée")).toBeVisible();
+  // Confirmed before being put on a site: the newcomer's welcome says so by itself.
+  await expect(page.getByText("Votre compte est confirmé")).toBeVisible({ timeout: 45_000 });
+  await expect(page.getByText(/Le bureau vous ajoute à vos chantiers/)).toBeVisible();
   await desk.getByRole("checkbox", { name: /Réfection de la rue Principale/ }).check();
   await desk.getByRole("button", { name: "Enregistrer" }).click();
   await expect(desk.getByText("Fiche enregistrée")).toBeVisible();
@@ -203,6 +207,33 @@ test("a worker on no project reaches nothing of the company's", async ({ browser
   await Promise.all([device.close(), office.close()]);
 });
 
+test("a newcomer with someone's name is flagged to the office", async ({ browser }) => {
+  const office = await contextAs(browser, "admin");
+  const code = await openSignup(office);
+  const { device, id } = await signUp(browser, code, seed.people.foreman);
+  const page = await office.newPage();
+  await page.goto("/equipe");
+  const row = page
+    .getByRole("link", { name: /À confirmer/ })
+    .filter({ hasText: seed.people.foreman });
+  await expect(row).toContainText(`Même nom que ${seed.people.foreman} (Contremaître)`);
+  await row.click();
+  await expect(
+    page.getByText(/Assurez-vous que c'est une autre personne avant de confirmer/),
+  ).toBeVisible();
+  // A look-alike written with letters of another alphabet is refused outright.
+  const lookalike = await call(
+    (await deviceAt(browser, address())).request,
+    "POST",
+    "/api/signup",
+    { name: "\u0421amille Roy", phone: phone(), code },
+  );
+  expect(lookalike.status).toBe(400);
+  expect(lookalike.body.error.code).toBe("bad_name");
+  await call(office.request, "PATCH", `/api/users/${id}`, { active: false });
+  await Promise.all([device.close(), office.close()]);
+});
+
 test("a wrong code, a closed door and a replaced code all get the same answer", async ({
   browser,
 }) => {
@@ -242,7 +273,7 @@ test("a wrong code, a closed door and a replaced code all get the same answer", 
   await expect(page.getByRole("heading", { name: "Bienvenue" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Créer mon compte" })).toHaveCount(0);
   await expect(page.getByText("Nouveau téléphone ou lien expiré?")).toBeVisible();
-  await page.goto(`/inscription?code=${second}`);
+  await page.goto(`/inscription#code=${second}`);
   await expect(
     page.getByRole("heading", { name: "La création de comptes est fermée" }),
   ).toBeVisible();
@@ -264,12 +295,14 @@ test("too many tries: from one address, then from everyone together", async ({ b
   expect(shut.status).toBe(429);
   expect(shut.body.error.message).toMatch(/^Trop d'essais à partir de ce réseau\. Réessayez à \d/);
   const page = await device.newPage();
-  await page.goto(`/inscription?code=${code}`);
+  await page.goto(`/inscription#code=${code}`);
   await page.getByLabel("Prénom et nom").fill("Essai Trop");
   await page.getByLabel("Cellulaire").fill(phone());
   await page.getByRole("button", { name: "Créer mon compte" }).click();
   await expect(
-    page.getByRole("alert").filter({ hasText: "Trop d'essais à partir de ce réseau." }),
+    page.getByRole("alert").filter({
+      hasText: /Trop d'essais à partir de ce réseau\. .*demandez au bureau un lien pour entrer\./,
+    }),
   ).toBeVisible();
 
   // The day's wrong codes from everyone (twenty on this test server; five
@@ -280,8 +313,18 @@ test("too many tries: from one address, then from everyone together", async ({ b
   const paused = await send(code, elsewhere);
   expect(paused.status).toBe(429);
   expect(paused.body.error.message).toMatch(/^La création de comptes est en pause\. Réessayez/);
-  // A new code from the office starts a new count.
-  const fresh = await openSignup(office);
+  // The office sees the pause on its card, and reopens with a new code,
+  // which starts a new count.
+  const desk = await office.newPage();
+  await desk.goto("/equipe");
+  const card = desk.getByRole("region", { name: "Code d'entreprise" });
+  await expect(card.getByText("En pause", { exact: true })).toBeVisible();
+  await expect(card.getByRole("status")).toContainText(/^En pause jusqu'à .*Trop de codes erronés/);
+  await card.getByRole("status").getByRole("button", { name: "Changer le code" }).click();
+  await confirm(desk, "Changer le code");
+  await expect(card.getByText("Création de comptes ouverte")).toBeVisible();
+  const fresh = (await call(office.request, "GET", "/api/company/code")).body.code as string;
+  expect(fresh).not.toBe(code);
   const made = await send(fresh, elsewhere);
   expect(made.status, JSON.stringify(made.body)).toBe(200);
   const id = (await call(elsewhere.request, "GET", "/api/me")).body.id;
@@ -294,6 +337,10 @@ test("too many tries: from one address, then from everyone together", async ({ b
   const full = await send(fresh, later);
   expect(full.status).toBe(429);
   expect(full.body.error.message).toMatch(/^Beaucoup de comptes ont été créés aujourd'hui/);
+  await desk.reload();
+  await expect(card.getByRole("status")).toContainText(
+    "Le nombre de comptes permis par jour est atteint.",
+  );
   await sql`delete from signup_attempts where address_hash = 'e2e'`;
   await Promise.all([device.close(), elsewhere.close(), later.close(), office.close()]);
   await sql.end();
@@ -304,7 +351,7 @@ test("a device already signed in is told so, and the link fills the code", async
   const code = await openSignup(office);
   const worker = await contextAs(browser, "worker");
   const page = await worker.newPage();
-  await page.goto(`/inscription?code=${code}`);
+  await page.goto(`/inscription#code=${code}`);
   await expect(page.getByRole("heading", { name: "Cet appareil est déjà connecté" })).toBeVisible();
   await expect(
     page.getByText(`Il est connecté sous le nom de ${seed.people.worker}.`),
@@ -323,10 +370,12 @@ test("a device already signed in is told so, and the link fills the code", async
   // From the office's link, on a clean device, the code is already there.
   const device = await deviceAt(browser, address());
   const fresh = await device.newPage();
-  await fresh.goto(`/inscription?code=${code}`);
+  await fresh.goto(`/inscription#code=${code}`);
   await expect(fresh.getByLabel("Code d'entreprise")).toHaveValue(
     `${code.slice(0, 4)} ${code.slice(4)}`,
   );
+  // Once read, the code leaves the address (and the history).
+  await expect(fresh).toHaveURL(/\/inscription$/);
   await expect(fresh.getByText("Rempli à partir du lien du bureau.")).toBeVisible();
   // A number that already belongs to an account: ask the office for a link.
   await fresh.getByLabel("Prénom et nom").fill("Essai Même Numéro");
@@ -409,17 +458,19 @@ test("the last office account cannot be deleted, and says what to do instead", a
   for (const other of people.filter((p) => p.role === "admin" && p.active && p.id !== me))
     await call(office.request, "PATCH", `/api/users/${other.id}`, { active: false });
 
+  // Said before anything is asked: no button that would only be refused.
   const page = await office.newPage();
   await page.goto("/moi");
-  await page.getByRole("button", { name: "Supprimer mon compte" }).click();
-  await confirm(page, "Supprimer mon compte");
   await expect(
-    page.getByRole("alert").filter({
-      hasText:
-        "Vous êtes la seule personne active au bureau. Donnez d'abord l'accès du bureau à une autre personne, puis supprimez votre compte.",
-    }),
+    page.getByText(
+      /^Vous êtes la seule personne active au bureau.*Donnez d'abord l'accès du bureau à une autre personne/,
+    ),
   ).toBeVisible();
-  await expect(page).toHaveURL(/\/moi$/);
+  await expect(page.getByRole("button", { name: "Supprimer mon compte" })).toHaveCount(0);
+  // Asked anyway, the server refuses.
+  const refused = await call(office.request, "DELETE", "/api/me");
+  expect(refused.status).toBe(400);
+  expect(refused.body.error.code).toBe("last_office_account");
   expect((await call(office.request, "GET", "/api/me")).body.id).toBe(me);
   await office.close();
 });

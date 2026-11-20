@@ -70,14 +70,18 @@ export type SignupLimits = {
   triesPerHour: number;
   /** Wrong codes from everyone in a day, against the code in force; then creation pauses. */
   wrongCodesPerDay: number;
-  /** Accounts made with the code in a day, by everyone. */
+  /**
+   * Accounts made in a day with the code in force, by everyone: against a
+   * flood of accounts from someone who saw the poster. Above a whole crew
+   * signing up on its first day; a new code starts a new count.
+   */
   accountsPerDay: number;
 };
 
 export const SIGNUP_LIMITS: SignupLimits = {
   triesPerHour: 5,
   wrongCodesPerDay: 40,
-  accountsPerDay: 30,
+  accountsPerDay: 100,
 };
 
 /**

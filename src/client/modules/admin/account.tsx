@@ -1,14 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 import { LogOut, UserRoundX } from "lucide-react";
 
+import { isAdmin } from "@/shared/roles";
+
 import { api, errorMessage } from "../../lib/api";
 import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
 import { Avatar, Button, Card, confirmAction, FormError } from "../../ui";
+import { usePeople } from "./data";
 import { DeviceList } from "./devices";
 import { Meta } from "./meta";
-import { roleAndTitle, signOutFailure } from "./people";
+import { LAST_OFFICE_TEXT, roleAndTitle, signOutFailure } from "./people";
 
 /**
  * Deletes the account, then lets go of this device. The server has already
@@ -33,6 +36,14 @@ export function AccountScreen() {
   const leave = useMutation({ mutationFn: () => signOut() });
 
   const remove = useMutation({ mutationFn: deleteAccount });
+  // The last active office account cannot be deleted (the server refuses it
+  // too): it is said before anything is asked, with what to do instead.
+  const office = isAdmin(me.role);
+  const people = usePeople({ enabled: office });
+  const lastOffice =
+    office &&
+    people.data !== undefined &&
+    !people.data.some((person) => person.id !== me.id && person.role === "admin" && person.active);
   const askToRemove = async () => {
     const ok = await confirmAction({
       title: "Supprimer votre compte?",
@@ -95,25 +106,31 @@ export function AccountScreen() {
 
       <Section title="Supprimer mon compte" className="mt-10">
         <Card className="p-4">
-          <p className="text-dim text-[15px] text-pretty">
-            Vous n&apos;utilisez plus l&apos;application? Supprimez votre compte. Ce que vous avez
-            ajouté aux chantiers reste à l&apos;entreprise, avec votre nom. Pour revenir, il faudra
-            un nouveau compte.
-          </p>
-          <Button
-            variant="secondary"
-            block
-            className="text-bad mt-3"
-            onClick={askToRemove}
-            loading={remove.isPending || remove.isSuccess}
-          >
-            <UserRoundX aria-hidden /> Supprimer mon compte
-          </Button>
-          {remove.isError ? (
-            <div className="mt-3">
-              <FormError>{errorMessage(remove.error)}</FormError>
-            </div>
-          ) : null}
+          {lastOffice ? (
+            <p className="text-dim text-[15px] text-pretty">{LAST_OFFICE_TEXT}</p>
+          ) : (
+            <>
+              <p className="text-dim text-[15px] text-pretty">
+                Vous n&apos;utilisez plus l&apos;application? Supprimez votre compte. Ce que vous
+                avez ajouté aux chantiers reste à l&apos;entreprise, avec votre nom. Pour revenir,
+                il faudra un nouveau compte.
+              </p>
+              <Button
+                variant="secondary"
+                block
+                className="text-bad mt-3"
+                onClick={askToRemove}
+                loading={remove.isPending || remove.isSuccess}
+              >
+                <UserRoundX aria-hidden /> Supprimer mon compte
+              </Button>
+              {remove.isError ? (
+                <div className="mt-3">
+                  <FormError>{errorMessage(remove.error)}</FormError>
+                </div>
+              ) : null}
+            </>
+          )}
         </Card>
       </Section>
 

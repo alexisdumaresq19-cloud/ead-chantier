@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { canadianPhone, codeDigits, formatCompanyCode, signupLink } from "./signup";
+import {
+  canadianPhone,
+  codeDigits,
+  codeFromFragment,
+  formatCompanyCode,
+  signupLink,
+} from "./signup";
 
 describe("the company code", () => {
   it("is shown in two groups of four that never break apart", () => {
@@ -13,10 +19,17 @@ describe("the company code", () => {
     expect(codeDigits("4827\u00a01936")).toBe("48271936");
   });
 
-  it("makes a link that fills the code", () => {
-    expect(signupLink("https://chantier.exemple.ca", "4827 1936")).toBe(
-      "https://chantier.exemple.ca/inscription?code=48271936",
-    );
+  it("makes a link that fills the code, in the part a browser never sends", () => {
+    const link = signupLink("https://chantier.exemple.ca", "4827 1936");
+    expect(link).toBe("https://chantier.exemple.ca/inscription#code=48271936");
+    const url = new URL(link);
+    expect(url.search).toBe("");
+    expect(codeFromFragment(url.hash)).toBe("48271936");
+  });
+
+  it("reads nothing from a fragment without a code", () => {
+    expect(codeFromFragment("")).toBe("");
+    expect(codeFromFragment("#autre=1")).toBe("");
   });
 });
 

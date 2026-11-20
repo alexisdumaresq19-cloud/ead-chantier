@@ -50,8 +50,9 @@ export function WelcomeScreen() {
   const signup = useSignupOpen();
   if (me.data) return <Redirect to="/" replace />;
   // The first answer is awaited on the logo, as the app opens. Without a
-  // network, the ways in that need no code are shown.
-  if (signup.isPending) return <Splash />;
+  // network (the request then waits, paused, for one to come back), the ways
+  // in that need no code are shown.
+  if (signup.isPending && signup.fetchStatus === "fetching") return <Splash />;
   if (!signup.data?.open) return <WaysIn />;
 
   return (

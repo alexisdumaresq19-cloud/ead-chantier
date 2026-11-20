@@ -33,6 +33,8 @@ import {
   lastSeenText,
   matchesPerson,
   roleAndTitle,
+  sameNameAs,
+  sameNameText,
   sortPeople,
   toConfirmText,
   UNREVIEWED_RULE,
@@ -258,6 +260,10 @@ function PeopleTable({ people, onOpen }: { people: Person[]; onOpen: () => void 
 }
 
 function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
+  // The whole team (already loaded): a newcomer with someone's name is flagged.
+  const everyone = usePeople();
+  const twin =
+    person.unreviewed && person.active ? sameNameAs(person, everyone.data ?? []) : undefined;
   const projects =
     person.role === "admin"
       ? "Tous les projets"
@@ -294,6 +300,9 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
             <span className="text-warn block text-sm font-medium">
               {joinedWithText(person.joinedWith)} · {whenText(person.createdAt)}
             </span>
+          ) : null}
+          {twin ? (
+            <span className="text-warn block text-sm font-semibold">{sameNameText(twin)}</span>
           ) : null}
           <Meta items={[role, title]} className="text-dim text-sm wrap-anywhere lg:hidden" />
           {/* "Jamais connecté" already says there is no device. */}
