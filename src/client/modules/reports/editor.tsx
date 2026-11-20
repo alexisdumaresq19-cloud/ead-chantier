@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CircleCheck, Mic, TriangleAlert, WifiOff } from "lucide-react";
+import { CalendarDays, CircleCheck, Mic, TriangleAlert, WifiOff } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -43,6 +43,7 @@ import {
   toast,
 } from "../../ui";
 import { ReportsArchived } from "./archived";
+import { BottomBar } from "./bar";
 import { authorHas, ClashSheet, type Clash } from "./clash";
 import { CrewEditor } from "./crew";
 import {
@@ -425,7 +426,16 @@ function Editor({
   return (
     <Page
       title={reportId ? "Modifier le rapport" : "Nouveau rapport"}
-      subtitle={isRealDay(form.day) ? capitalize(formatFullDay(form.day)) : undefined}
+      subtitle={
+        <DayControl
+          day={form.day}
+          text={dayText}
+          relative={relative}
+          today={today}
+          problem={problemAt("day")}
+          onChange={changeDay}
+        />
+      }
       back={
         reportId
           ? { href: `${base}/${reportId}`, label: "Rapport" }
@@ -455,29 +465,11 @@ function Editor({
         ) : null}
 
         {canDictate && !(takenBy && !reportId) ? (
-          <DictationCard onOpen={(record) => setDictating(record ? "recording" : "open")} />
-        ) : null}
-
-        <Block title="Date">
-          <Input
-            id="report-day"
-            type="date"
-            value={dayText}
-            max={today}
-            onChange={(event) => changeDay(event.target.value)}
-            aria-label="Date du rapport"
-            aria-invalid={Boolean(problemAt("day"))}
-            className="sm:max-w-64"
+          <DictationCard
+            compact={dictated.length > 0}
+            onOpen={(record) => setDictating(record ? "recording" : "open")}
           />
-          {problemAt("day") ? (
-            <FieldProblem>{problemAt("day")}</FieldProblem>
-          ) : (
-            <p className="text-dim mt-1.5 text-sm">
-              {capitalize(formatWeekday(form.day))}
-              {relative}
-            </p>
-          )}
-        </Block>
+        ) : null}
 
         <Block title="Météo" dictated={dictated.includes("weather")}>
           <div role="group" aria-label="Temps qu'il a fait" className="grid grid-cols-3 gap-2">
@@ -640,31 +632,36 @@ function Editor({
               : null)}
         </FormError>
 
-        {/* Stays above the tabs of a phone, so saving is always one tap away. */}
-        <div className="from-canvas sticky bottom-[calc(4rem+1px+env(safe-area-inset-bottom))] z-20 -mx-4 bg-linear-to-t from-60% to-transparent px-4 pt-3 pb-2 sm:-mx-6 sm:px-6 lg:bottom-0 lg:pb-4">
-          <div className="border-line bg-surface/95 flex items-center gap-3 rounded-2xl border py-2.5 pr-2.5 pl-4 shadow-lg backdrop-blur">
-            <div className="min-w-0 flex-1">
-              <p className="text-dim text-xs font-semibold tracking-wide uppercase">Total</p>
-              <p className="font-display truncate text-lg leading-tight font-bold">
-                {formatHours(totals.hours)}
-                <span className="text-dim font-sans text-sm font-medium">
-                  {" "}
-                  · {totals.people > 0 ? count(totals.people, "personne") : "aucune personne"}
-                </span>
-              </p>
-            </div>
-            <Button type="submit" size="lg" loading={save.isPending}>
-              Enregistrer
-            </Button>
+        <BottomBar>
+          <div className="min-w-0 flex-1 pl-1.5">
+            <p className="text-dim text-xs font-semibold tracking-wide uppercase">Total</p>
+            <p className="font-display truncate text-lg leading-tight font-bold">
+              {formatHours(totals.hours)}
+              <span className="text-dim font-sans text-sm font-medium">
+                {" "}
+                · {totals.people > 0 ? count(totals.people, "personne") : "aucune personne"}
+              </span>
+            </p>
           </div>
-        </div>
+          <Button type="submit" size="lg" loading={save.isPending}>
+            Enregistrer
+          </Button>
+        </BottomBar>
       </form>
 
       {/* An open window stays, whatever becomes of the service: it holds what was said. */}
       {canDictate || dictating !== "closed" ? (
         <DictationSheet
           open={dictating !== "closed"}
-          onClose={() => setDictating("closed")}
+          onClose={() => {
+            setDictating("closed");
+            // What was filled comes into view, to be read over.
+            requestAnimationFrame(() =>
+              document
+                .querySelector("[data-dictated]")
+                ?.scrollIntoView({ block: "center", behavior: "smooth" }),
+            );
+          }}
           projectId={project.id}
           form={form}
           startRecording={dictating === "recording"}
@@ -714,7 +711,10 @@ function Block({
   children: ReactNode;
 }) {
   return (
-    <Card className={cn("p-4 sm:p-5", dictated && "ring-ead/40 ring-2")}>
+    <Card
+      data-dictated={dictated || undefined}
+      className={cn("p-4 sm:p-5", dictated && "ring-ead/40 ring-2")}
+    >
       <div className="mb-3">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="font-display flex items-center gap-2 text-lg leading-tight font-bold">
@@ -732,6 +732,65 @@ function Block({
       </div>
       {children}
     </Card>
+  );
+}
+
+/**
+ * The day of the report, under the title, with the way to change it: the
+ * phone's own date picker, opened by "Changer". The date field itself lies
+ * over that word, so a tap, the keyboard and a test all reach it.
+ */
+function DayControl({
+  day,
+  text,
+  relative,
+  today,
+  problem,
+  onChange,
+}: {
+  day: string;
+  /** What the date field holds, possibly not a day yet. */
+  text: string;
+  relative: string;
+  today: string;
+  problem?: string;
+  onChange: (text: string) => void;
+}) {
+  const open = (input: HTMLInputElement) => {
+    // A computer's browser opens its calendar only on its own small icon.
+    try {
+      input.showPicker();
+    } catch {
+      // Already open, or a browser without it: the field takes the tap itself.
+    }
+  };
+  return (
+    <>
+      <span className="flex flex-wrap items-center gap-x-2">
+        <span>
+          <span className="text-text font-semibold">
+            {isRealDay(day) ? capitalize(formatFullDay(day)) : "Date à choisir"}
+          </span>
+          {relative}
+        </span>
+        <span className="text-ead-dark hover:bg-ead-tint has-[:focus-visible]:ring-ead/40 relative -my-1.5 -ml-2 inline-flex h-11 items-center gap-1 rounded-lg px-2 font-semibold has-[:focus-visible]:ring-3">
+          <CalendarDays className="size-4.5" aria-hidden />
+          Changer
+          <input
+            id="report-day"
+            type="date"
+            value={text}
+            max={today}
+            onChange={(event) => onChange(event.target.value)}
+            onClick={(event) => open(event.currentTarget)}
+            aria-label="Date du rapport"
+            aria-invalid={Boolean(problem)}
+            className="absolute inset-0 size-full cursor-pointer opacity-0"
+          />
+        </span>
+      </span>
+      {problem ? <FieldProblem>{problem}</FieldProblem> : null}
+    </>
   );
 }
 

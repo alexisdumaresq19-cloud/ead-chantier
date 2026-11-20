@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ReportContent } from "@/shared/reports";
 
 import { emptyForm, type ReportForm } from "../form";
-import { contentForDictation, formAfterDictation } from "./convert";
+import { contentForDictation, dictationChips, formAfterDictation } from "./convert";
 
 const form = (change: Partial<ReportForm> = {}): ReportForm => ({
   ...emptyForm("2026-11-19"),
@@ -113,5 +113,88 @@ describe("formAfterDictation", () => {
       workDone: "Déneigement.",
     });
     expect(formAfterDictation(before, contentForDictation(before))).toEqual(before);
+  });
+});
+
+describe("dictationChips", () => {
+  const blank = contentForDictation(form());
+  const line = (name: string, hours: number, userId: string | null = null) => ({
+    name,
+    hours,
+    userId,
+  });
+
+  it("reads back the weather and the people, with a true minus sign", () => {
+    const after: ReportContent = {
+      ...blank,
+      weather: { condition: "soleil", temperatureC: -2, note: "" },
+      crew: [line("Marc Lévesque", 10, "u2")],
+      workDone: "Pose de la conduite.",
+    };
+    expect(dictationChips(blank, after, ["weather", "crew", "workDone"])).toEqual([
+      "Soleil, \u22122\u00a0°C",
+      "Marc Lévesque · 10\u00a0h",
+      "Travaux réalisés\u00a0: ajouté",
+    ]);
+  });
+
+  it("names only the people whose hours changed, and those taken off", () => {
+    const before: ReportContent = {
+      ...blank,
+      crew: [line("Julie Cyr", 10, "u1"), line("Marc Lévesque", 10, "u2"), line("Kevin Roy", 8)],
+    };
+    const after: ReportContent = {
+      ...before,
+      crew: [line("Julie Cyr", 10, "u1"), line("Marc Lévesque", 7.5, "u2"), line("Simon", 0)],
+    };
+    expect(dictationChips(before, after, ["crew"])).toEqual([
+      "Marc Lévesque · 7,5\u00a0h",
+      "Simon",
+      "Équipe\u00a0: Kevin Roy en moins",
+    ]);
+  });
+
+  it("shows four people at most, then counts the others", () => {
+    const after: ReportContent = {
+      ...blank,
+      crew: ["A", "B", "C", "D", "E", "F"].map((name) => line(name, 8)),
+    };
+    expect(dictationChips(blank, after, ["crew"])).toEqual([
+      "A · 8\u00a0h",
+      "B · 8\u00a0h",
+      "C · 8\u00a0h",
+      "D · 8\u00a0h",
+      "+\u00a02\u00a0autres",
+    ]);
+  });
+
+  it("says whether a text was added to, corrected or emptied", () => {
+    const before: ReportContent = {
+      ...blank,
+      equipment: "Pelle.",
+      notes: "Visite.",
+      workDone: "x",
+    };
+    const after: ReportContent = {
+      ...before,
+      equipment: "Pelle.\nRouleau.",
+      notes: "Visite.\nIngénieur à 10 h.",
+      workDone: "",
+    };
+    expect(dictationChips(before, after, ["equipment", "notes", "workDone"])).toEqual([
+      "Équipement\u00a0: ajouté",
+      "Notes\u00a0: ajouté",
+      "Travaux réalisés\u00a0: effacé",
+    ]);
+    const corrected = { ...before, notes: "Aucune visite." };
+    expect(dictationChips(before, corrected, ["notes"])).toEqual(["Notes\u00a0: corrigé"]);
+  });
+
+  it("names the weather when only a note was said", () => {
+    const after: ReportContent = {
+      ...blank,
+      weather: { condition: null, temperatureC: null, note: "Vent fort" },
+    };
+    expect(dictationChips(blank, after, ["weather"])).toEqual(["Météo\u00a0: note ajoutée"]);
   });
 });

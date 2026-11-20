@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
+  ChevronRight,
   CircleHelp,
   Keyboard,
   LoaderCircle,
   Mic,
+  MicOff,
   RotateCcw,
   Send,
   Square,
@@ -12,6 +14,7 @@ import {
   Volume2,
   VolumeX,
   WifiOff,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -29,7 +32,7 @@ import { useOnline } from "../../../lib/online";
 import { Button, Sheet, Textarea, toast } from "../../../ui";
 import type { ReportForm } from "../form";
 import { Notice } from "../status";
-import { contentForDictation, formAfterDictation } from "./convert";
+import { contentForDictation, dictationChips, formAfterDictation } from "./convert";
 import { canRecord, useRecorder, type RecorderProblem, type Recording } from "./recorder";
 import {
   canSpeak,
@@ -50,6 +53,8 @@ type Turn = {
   id: number;
   heard: string;
   changed: DictationField[];
+  /** What was understood, value by value ("Soleil, −2 °C"). */
+  chips: string[];
   questions: string[];
   /** The form as it was before this turn, while it can still be put back. */
   before: ReportForm | null;
@@ -102,6 +107,8 @@ export function DictationSheet({
   const [writing, setWriting] = useState(() => !canRecord());
   const [aloud, setAloud] = useState(wantsAnswersAloud);
   const [text, setText] = useState("");
+  // Once the person has dictated, the example has served.
+  const [hasDictated, setHasDictated] = useState(false);
   /** What could not be sent, kept so nothing has to be said twice. */
   const [failed, setFailed] = useState<{ job: Job; message: string; offline: boolean } | null>(
     null,
@@ -136,11 +143,13 @@ export function DictationSheet({
           id: nextId.current++,
           heard: result.heard,
           changed: result.changed,
+          chips: dictationChips(contentForDictation(before), result.content, result.changed),
           questions: result.questions,
           before,
         },
       ]);
       if (job.text !== undefined) setText("");
+      setHasDictated(true);
       if (aloud) speak(spokenAnswer(result));
     },
     onError: (error, job) => {
@@ -217,9 +226,9 @@ export function DictationSheet({
     <Sheet
       open={open}
       onClose={onClose}
-      title="Dicter le rapport"
+      title={recording ? "J'écoute…" : "Dicter le rapport"}
       description={
-        turns.length === 0
+        turns.length === 0 && !recording
           ? "Racontez votre journée. Le rapport se remplit, vous le vérifiez, puis vous l'enregistrez."
           : undefined
       }
@@ -256,14 +265,21 @@ export function DictationSheet({
               </div>
             </div>
           ) : (
+            // Three places that never move: what else to do, the microphone, done.
             <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
               <div className="justify-self-start">
                 {recording ? (
-                  <Button variant="ghost" onClick={cancel}>
+                  <Button variant="ghost" onClick={cancel} className="-ml-2 px-3">
+                    <X aria-hidden />
                     Annuler
                   </Button>
                 ) : (
-                  <Button variant="ghost" onClick={() => setWriting(true)} disabled={busy}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setWriting(true)}
+                    disabled={busy}
+                    className="-ml-2 px-3"
+                  >
                     <Keyboard aria-hidden />
                     Écrire
                   </Button>
@@ -273,6 +289,7 @@ export function DictationSheet({
                 recording={recording}
                 waiting={phase === "asking" || busy}
                 level={recorder.level}
+                quiet={recorder.silent || recorder.level < 0.08}
                 disabled={!online}
                 onPress={
                   recording
@@ -289,18 +306,26 @@ export function DictationSheet({
                 }
               />
               <div className="justify-self-end">
-                {turns.length > 0 && !recording ? (
-                  <Button variant="secondary" onClick={onClose} disabled={busy}>
-                    Terminé
-                  </Button>
-                ) : null}
+                {/* Kept in place while hidden, so the microphone stays put. */}
+                <Button
+                  variant="secondary"
+                  onClick={onClose}
+                  disabled={busy}
+                  className={cn((turns.length === 0 || recording) && "invisible")}
+                >
+                  Terminé
+                </Button>
               </div>
               <p
                 aria-live="polite"
                 className="text-dim col-span-3 text-center text-sm font-medium tabular-nums"
               >
                 {recording ? (
-                  <span className="text-text font-display mr-2 text-base font-bold">
+                  <span className="text-text font-display mr-2 inline-flex items-center gap-1.5 text-base font-bold">
+                    <span
+                      aria-hidden
+                      className="bg-bad size-2.5 rounded-full motion-safe:animate-pulse"
+                    />
                     {clock(recorder.seconds)}
                   </span>
                 ) : null}
@@ -323,31 +348,45 @@ export function DictationSheet({
               setAnswersAloud(next);
               if (next) prepareSpeech();
             }}
-            className={cn(
-              "flex h-10 cursor-pointer items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition-colors",
-              aloud
-                ? "border-ead-dark bg-ead-tint text-ead-dark"
-                : "border-line text-dim hover:text-text",
-            )}
+            className="-mx-1 flex min-h-12 w-[calc(100%+0.5rem)] cursor-pointer items-center gap-3 rounded-xl px-1 text-left"
           >
             {aloud ? (
-              <Volume2 className="size-4.5" aria-hidden />
+              <Volume2 className="text-ead-dark size-5 shrink-0" aria-hidden />
             ) : (
-              <VolumeX className="size-4.5" aria-hidden />
+              <VolumeX className="text-dim size-5 shrink-0" aria-hidden />
             )}
-            Réponses à voix haute
+            <span className="min-w-0 flex-1 text-[15px] font-semibold">Réponses à voix haute</span>
+            <span
+              aria-hidden
+              className={cn(
+                "relative h-7 w-12 shrink-0 rounded-full transition-colors",
+                aloud ? "bg-ead-dark" : "bg-dim/35",
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0.5 left-0.5 size-6 rounded-full bg-white shadow-sm transition-transform",
+                  aloud && "translate-x-5",
+                )}
+              />
+            </span>
           </button>
         ) : null}
 
-        {turns.length === 0 && !busy ? <Example /> : null}
+        {!hasDictated && !busy ? <Example compact={recording} /> : null}
 
-        {turns.map((turn, index) => (
+        {recording && recorder.silent ? (
+          <div role="status">
+            <Notice tone="warn" icon={<MicOff aria-hidden />}>
+              Je n&apos;entends rien. Approchez le téléphone.
+            </Notice>
+          </div>
+        ) : null}
+
+        {turns.map((turn) => (
           <TurnView
             key={turn.id}
             turn={turn}
-            crew={
-              index === turns.length - 1 ? form.crew.filter((row) => row.name.trim()).length : 0
-            }
             onUndo={turn.before && !busy && !recording ? () => undo(turn) : null}
           />
         ))}
@@ -404,33 +443,31 @@ export function DictationSheet({
   );
 }
 
-function Example() {
+// U+2011, a hyphen that never ends a line: "R‑4" stays in one piece.
+const EXAMPLE =
+  "«\u00a0Soleil, moins deux ce matin. Marc, Simon et moi, dix heures chacun. On a posé quarante mètres d'aqueduc entre R\u20113 et R\u20114. La pelle et deux camions. L'ingénieur est passé, il veut un essai de compaction demain.\u00a0»";
+const PRIVACY =
+  "Votre voix est transcrite par un service d'intelligence artificielle. L'application ne garde pas l'enregistrement.";
+
+/** What to say, before the first dictation; a small reminder while recording. */
+function Example({ compact }: { compact: boolean }) {
+  if (compact)
+    return (
+      <div className="text-dim space-y-1.5 text-[13px] leading-snug">
+        <p>Par exemple&nbsp;: {EXAMPLE}</p>
+        <p>{PRIVACY}</p>
+      </div>
+    );
   return (
     <div className="bg-canvas rounded-2xl px-4 py-3.5">
       <p className="text-dim text-xs font-semibold tracking-wide uppercase">Par exemple</p>
-      <p className="mt-1.5 text-[15px] leading-relaxed">
-        «&nbsp;Soleil, moins deux ce matin. Marc, Simon et moi, dix heures chacun. On a posé
-        quarante mètres d&apos;aqueduc entre R-3 et R-4. La pelle et deux camions. L&apos;ingénieur
-        est passé, il veut un essai de compaction demain.&nbsp;»
-      </p>
-      <p className="text-dim mt-2.5 text-sm">
-        Votre voix est transcrite par un service d&apos;intelligence artificielle.
-        L&apos;application ne garde pas l&apos;enregistrement.
-      </p>
+      <p className="mt-1.5 text-[15px] leading-relaxed">{EXAMPLE}</p>
+      <p className="text-dim mt-2.5 text-sm">{PRIVACY}</p>
     </div>
   );
 }
 
-function TurnView({
-  turn,
-  crew,
-  onUndo,
-}: {
-  turn: Turn;
-  /** The people now in the report, for the latest turn (0 hides the count). */
-  crew: number;
-  onUndo: (() => void) | null;
-}) {
+function TurnView({ turn, onUndo }: { turn: Turn; onUndo: (() => void) | null }) {
   const [whole, setWhole] = useState(false);
   const long = turn.heard.length > 220;
   return (
@@ -455,14 +492,13 @@ function TurnView({
           <>
             <p className="text-sm font-semibold">C&apos;est noté</p>
             <ul className="mt-1.5 flex flex-wrap gap-1.5">
-              {turn.changed.map((field) => (
+              {turn.chips.map((chip) => (
                 <li
-                  key={field}
-                  className="bg-good-tint text-good inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-semibold"
+                  key={chip}
+                  className="bg-good-tint text-good inline-flex max-w-full items-start gap-1 rounded-lg px-2 py-1 text-sm font-semibold"
                 >
-                  <Check className="size-4" aria-hidden />
-                  {DICTATION_FIELD_LABELS[field]}
-                  {field === "crew" && crew > 0 ? ` · ${crew}` : null}
+                  <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+                  <span className="min-w-0 wrap-anywhere">{chip}</span>
                 </li>
               ))}
             </ul>
@@ -502,31 +538,51 @@ function TurnView({
   );
 }
 
+/** A slow swell, so a quiet room never looks like a frozen screen. */
+const BREATHE = `@keyframes dictation-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.22); opacity: 1; }
+}`;
+
 /** The one large control: press to talk, press again when done. */
 function MicButton({
   recording,
   waiting,
   level,
+  quiet,
   disabled,
   onPress,
 }: {
   recording: boolean;
   waiting: boolean;
   level: number;
+  /** Little or no sound right now. */
+  quiet: boolean;
   disabled: boolean;
   onPress: () => void;
 }) {
   return (
     <span className="relative grid size-22 place-items-center">
-      {/* The ring follows the voice, so the person sees they are heard. */}
-      <span
-        aria-hidden
-        className={cn(
-          "absolute inset-2 rounded-full transition-transform duration-100 ease-out",
-          recording ? "bg-bad/20" : "bg-ead/15",
-        )}
-        style={{ transform: `scale(${recording ? 1 + level * 0.35 : 1})` }}
-      />
+      {recording ? (
+        <>
+          <style>{BREATHE}</style>
+          <span
+            aria-hidden
+            className={cn(
+              "bg-bad/20 absolute inset-2 rounded-full transition-opacity duration-300 motion-safe:animate-[dictation-breathe_2.4s_ease-in-out_infinite]",
+              quiet ? "opacity-100" : "opacity-0",
+            )}
+          />
+          {/* The ring follows the voice, so the person sees they are heard. */}
+          <span
+            aria-hidden
+            className="bg-bad/20 ring-bad/25 absolute inset-2 rounded-full ring-2 transition-transform duration-100 ease-out"
+            style={{ transform: `scale(${1 + level * 0.8})` }}
+          />
+        </>
+      ) : (
+        <span aria-hidden className="bg-ead/15 absolute inset-2 rounded-full" />
+      )}
       <button
         type="button"
         onClick={onPress}
@@ -552,14 +608,35 @@ function MicButton({
   );
 }
 
-/** The way in, at the top of the report: one tap and the person is talking. */
+/**
+ * The way in, at the top of the report: one tap and the person is talking.
+ * Once something was dictated it shrinks to a row, so what was filled shows.
+ */
 export function DictationCard({
+  compact,
   onOpen,
 }: {
+  compact: boolean;
   /** `record` is true when the tap should start the recording at once. */
   onOpen: (record: boolean) => void;
 }) {
   const online = useOnline();
+  if (compact)
+    return (
+      <button
+        type="button"
+        onClick={() => onOpen(online)}
+        className="bg-ink flex h-14 w-full cursor-pointer items-center gap-3 rounded-2xl pr-4 pl-2.5 text-left text-white shadow-sm transition-transform active:scale-[0.99]"
+      >
+        <span className="bg-ead grid size-9 shrink-0 place-items-center rounded-full">
+          <Mic className="size-5" aria-hidden />
+        </span>
+        <span className="font-display min-w-0 flex-1 truncate text-base font-bold">
+          Continuer la dictée
+        </span>
+        <ChevronRight className="size-5 shrink-0 text-white/70" aria-hidden />
+      </button>
+    );
   return (
     <button
       type="button"

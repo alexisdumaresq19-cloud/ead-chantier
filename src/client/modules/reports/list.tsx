@@ -47,8 +47,10 @@ import {
   capitalize,
   formatFullDay,
   formatHours,
+  formatBriefDay,
   formatWhen,
   groupByMonth,
+  isWorkday,
   lastDays,
   monthLabel,
   shiftDay,
@@ -90,11 +92,12 @@ export function ReportListScreen() {
   };
   const todayReport = byDay.get(today);
   // Saved, it is added to through the day; only on this device, it is still to save.
+  // Short, with the day under it: two lines at most on a 360 px phone.
   const todayLabel = todayReport
-    ? "Compléter le rapport d'aujourd'hui"
+    ? "Compléter le rapport du jour"
     : draftDays.has(today)
-      ? "Continuer le rapport d'aujourd'hui"
-      : "Rapport d'aujourd'hui";
+      ? "Continuer le rapport du jour"
+      : "Rapport du jour";
 
   const todayHref = todayReport
     ? `${base}/${todayReport.id}/modifier`
@@ -118,7 +121,7 @@ export function ReportListScreen() {
                   {todayLabel}
                 </span>
                 <span className="mt-0.5 block text-sm text-white/85">
-                  {capitalize(formatWeekday(today))}
+                  {capitalize(formatBriefDay(today))}
                 </span>
               </span>
               <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
@@ -127,8 +130,8 @@ export function ReportListScreen() {
               // Talking is the fastest way to write it: one tap and the recording starts.
               <Link
                 href={`${todayHref}${todayHref.includes("?") ? "&" : "?"}dicter=1`}
-                aria-label="Dicter le rapport d'aujourd'hui"
-                className="bg-ink flex min-h-18 w-19 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl text-white shadow-sm transition active:scale-[0.97]"
+                aria-label="Dicter le rapport du jour"
+                className="bg-ink flex min-h-18 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-2xl text-white shadow-sm transition active:scale-[0.97]"
               >
                 <span className="bg-ead grid size-9 place-items-center rounded-full">
                   <Mic className="size-5" aria-hidden />
@@ -159,9 +162,11 @@ export function ReportListScreen() {
                         ? "done"
                         : draftDays.has(day)
                           ? "draft"
-                          : reports.data
-                            ? "none"
-                            : "unknown"
+                          : !reports.data
+                            ? "unknown"
+                            : day < today && isWorkday(day)
+                              ? "missing"
+                              : "none"
                     }
                     isToday={day === today}
                   />
@@ -248,8 +253,9 @@ export function ReportListScreen() {
 }
 
 /**
- * One of the last seven days: done, started on this device, or still to
- * write — or not known yet, while the list is on its way or out of reach.
+ * One of the last seven days: done, started on this device, missing (a
+ * working day gone by without one), still to write — or not known yet,
+ * while the list is on its way or out of reach.
  */
 function DayCell({
   day,
@@ -259,37 +265,48 @@ function DayCell({
 }: {
   day: string;
   href: string;
-  state: "done" | "draft" | "none" | "unknown";
+  state: "done" | "draft" | "missing" | "none" | "unknown";
   isToday: boolean;
 }) {
-  const Icon = { done: Check, draft: PencilLine, none: Plus, unknown: null }[state];
+  const Icon = { done: Check, draft: PencilLine, missing: null, none: Plus, unknown: null }[state];
   const meaning = {
     done: "rapport fait",
     draft: "brouillon à enregistrer",
+    missing: "rapport manquant",
     none: "aucun rapport, en commencer un",
     unknown: "ouvrir cette journée",
   }[state];
   return (
     <Link
       href={href}
-      aria-label={`${formatWeekday(day)}\u00a0: ${meaning}`}
+      aria-label={`${capitalize(formatWeekday(day))}, ${meaning}`}
       className={cn(
         "flex min-h-18 flex-col items-center justify-center gap-0.5 rounded-xl border py-1.5 transition-colors",
         state === "done" && "border-ead/30 bg-ead-tint text-ead-dark hover:border-ead/60",
-        state === "draft" && "border-warn/30 bg-warn-tint text-warn hover:border-warn/60",
-        state === "none" &&
-          "border-line bg-surface text-dim hover:border-ead/60 hover:text-text border-dashed",
+        (state === "draft" || state === "missing") &&
+          "border-warn/30 bg-warn-tint text-warn hover:border-warn/60",
+        state === "none" && "border-line bg-surface text-dim hover:border-ead/60 hover:text-text",
         state === "unknown" && "border-line bg-surface text-dim",
-        isToday && "ring-ead/40 ring-2 ring-offset-1",
+        // Days off without a report are nothing to worry about: drawn lightly.
+        state === "none" && !isToday && "border-dashed",
+        isToday && "border-ead-dark border-2",
       )}
     >
-      <span className="text-[11px] leading-none font-semibold">
+      <span className="text-xs leading-none font-semibold">
         {isToday ? "auj." : weekdayShort(day)}
       </span>
       <span className="font-display text-text text-lg leading-tight font-bold">
         {Number(day.slice(8))}
       </span>
-      {Icon ? <Icon className="size-4" strokeWidth={2.5} aria-hidden /> : <span className="h-4" />}
+      {Icon ? (
+        <Icon className="size-4" strokeWidth={2.5} aria-hidden />
+      ) : state === "missing" ? (
+        <span aria-hidden className="font-display h-4 text-base leading-4 font-extrabold">
+          !
+        </span>
+      ) : (
+        <span className="h-4" />
+      )}
     </Link>
   );
 }

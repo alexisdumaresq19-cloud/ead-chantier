@@ -1,7 +1,15 @@
-import { isValidHours, REPORT_LIMITS, type CrewLine, type ReportContent } from "@/shared/reports";
+import { DICTATION_FIELD_LABELS, type DictationField } from "@/shared/dictation";
+import {
+  isValidHours,
+  REPORT_LIMITS,
+  WEATHER_LABELS,
+  type CrewLine,
+  type ReportContent,
+} from "@/shared/reports";
 
+import { count } from "../../../lib/format";
 import { usualHours, type CrewRow, type ReportForm } from "../form";
-import { hoursText, parseHours, parseTemperature } from "../lib";
+import { formatHours, formatTemperature, hoursText, parseHours, parseTemperature } from "../lib";
 
 // Between the form being typed and the report the dictation works on. The
 // form may hold anything (half a number, a line without a name): what cannot
@@ -101,4 +109,61 @@ export function formAfterDictation(form: ReportForm, content: ReportContent): Re
     workDone: content.workDone,
     notes: content.notes,
   };
+}
+
+const NBSP = " ";
+/** People named one by one in an answer; the others are counted. */
+const PEOPLE_SHOWN = 4;
+
+/**
+ * What a dictation understood, as the short labels of its answer: the values
+ * themselves ("Soleil, −2 °C", "Marc Lévesque · 10 h"), so the person checks
+ * them without leaving the window. `before` is the report the dictation
+ * worked on, `after` the one it gave back.
+ */
+export function dictationChips(
+  before: ReportContent,
+  after: ReportContent,
+  changed: DictationField[],
+): string[] {
+  const chips: string[] = [];
+  for (const field of changed) {
+    if (field === "weather") chips.push(weatherChip(after));
+    else if (field === "crew") chips.push(...crewChips(before.crew, after.crew));
+    else {
+      const was = before[field].trim();
+      const now = after[field].trim();
+      const what = !now ? "effacé" : !was || now.startsWith(was) ? "ajouté" : "corrigé";
+      chips.push(`${DICTATION_FIELD_LABELS[field]}${NBSP}: ${what}`);
+    }
+  }
+  return chips;
+}
+
+function weatherChip({ weather }: ReportContent): string {
+  const parts = [
+    weather.condition ? WEATHER_LABELS[weather.condition] : null,
+    weather.temperatureC === null ? null : formatTemperature(weather.temperatureC),
+  ].filter((part) => part !== null);
+  if (parts.length > 0) return parts.join(", ");
+  return `${DICTATION_FIELD_LABELS.weather}${NBSP}: ${weather.note ? "note ajoutée" : "effacée"}`;
+}
+
+const sameLine = (a: CrewLine, b: CrewLine) =>
+  a.userId || b.userId ? a.userId === b.userId : plain(a.name) === plain(b.name);
+
+function crewChips(before: CrewLine[], after: CrewLine[]): string[] {
+  const people: string[] = [];
+  for (const line of after) {
+    const was = before.find((other) => sameLine(other, line));
+    if (was && was.hours === line.hours && was.name === line.name) continue;
+    people.push(line.hours > 0 ? `${line.name} · ${formatHours(line.hours)}` : line.name);
+  }
+  for (const line of before)
+    if (!after.some((other) => sameLine(other, line)))
+      people.push(`${DICTATION_FIELD_LABELS.crew}${NBSP}: ${line.name} en moins`);
+  if (people.length === 0) return [DICTATION_FIELD_LABELS.crew];
+  if (people.length <= PEOPLE_SHOWN) return people;
+  const others = count(people.length - PEOPLE_SHOWN, "autre");
+  return [...people.slice(0, PEOPLE_SHOWN), `+${NBSP}${others}`];
 }

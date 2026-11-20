@@ -17,6 +17,10 @@ export type Recording = { audio: Blob; seconds: number };
 // What phones record, best first: Android and recent iPhones (webm), older iPhones (mp4).
 const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
 
+/** Below this level (0 to 1), the room is taken as silent. */
+const HEARD = 0.04;
+const SILENCE_MS = 3000;
+
 /** Whether this device can record at all. */
 export const canRecord = () =>
   typeof window !== "undefined" &&
@@ -52,6 +56,8 @@ export function useRecorder({
   const [seconds, setSeconds] = useState(0);
   /** How loud the voice is right now, from 0 to 1. */
   const [level, setLevel] = useState(0);
+  /** Nothing heard for a few seconds: a muted or covered microphone, or someone too far. */
+  const [silent, setSilent] = useState(false);
   const session = useRef<Session | null>(null);
   /** Set when the person gave up while the phone was still asking for the microphone. */
   const gaveUp = useRef(false);
@@ -68,6 +74,7 @@ export function useRecorder({
     void current.lock?.release().catch(() => {});
     if (session.current === current) session.current = null;
     setLevel(0);
+    setSilent(false);
   }, []);
 
   const finish = useCallback((keep: boolean) => {
@@ -161,6 +168,7 @@ export function useRecorder({
       current.context = context;
       const samples = new Uint8Array(analyser.fftSize);
       let shownAt = 0;
+      let heardAt = performance.now();
       const measure = (now: number) => {
         current.frame = requestAnimationFrame(measure);
         if (now - shownAt < 70) return;
@@ -169,7 +177,10 @@ export function useRecorder({
         let sum = 0;
         for (const sample of samples) sum += ((sample - 128) / 128) ** 2;
         // Speech sits around 0.05 to 0.3: stretched so the ring moves visibly.
-        setLevel(Math.min(1, Math.sqrt(sum / samples.length) * 4));
+        const level = Math.min(1, Math.sqrt(sum / samples.length) * 4);
+        setLevel(level);
+        if (level > HEARD) heardAt = now;
+        setSilent(now - heardAt > SILENCE_MS);
       };
       current.frame = requestAnimationFrame(measure);
     } catch {
@@ -220,5 +231,5 @@ export function useRecorder({
     [release],
   );
 
-  return { phase, problem, seconds, level, start, stop, cancel };
+  return { phase, problem, seconds, level, silent, start, stop, cancel };
 }

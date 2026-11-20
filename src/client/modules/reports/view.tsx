@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Printer, Trash2 } from "lucide-react";
+import { Ellipsis, Pencil, Printer, Trash2, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Link, useParams } from "wouter";
 
@@ -8,6 +8,7 @@ import type { Photo } from "@/shared/photos";
 import { crewTotals, type Report } from "@/shared/reports";
 
 import { api, ApiFailure, errorMessage } from "../../lib/api";
+import { cn } from "../../lib/cn";
 import { count, formatTime, formatWeekday } from "../../lib/format";
 import { navigate } from "../../lib/location";
 import { keys, useCurrentProject } from "../../lib/session";
@@ -22,6 +23,7 @@ import {
   Skeleton,
   toast,
 } from "../../ui";
+import { BottomBar } from "./bar";
 import {
   reportKeys,
   reportsPath,
@@ -66,6 +68,7 @@ function ReportView({ reportId }: { reportId: string }) {
   const stillShown = useStillShown();
   const canChange = useCanChangeReports();
   const base = reportsPath(project.id);
+  const [menu, setMenu] = useState(false);
 
   const remove = useMutation({
     mutationFn: () => api(`/api/reports/${reportId}`, { method: "DELETE" }),
@@ -91,6 +94,12 @@ function ReportView({ reportId }: { reportId: string }) {
   if (report.error instanceof ApiFailure && report.error.status === 404) return <ReportMissing />;
 
   const shown = report.data;
+  const canDelete = Boolean(shown?.canDelete && canChange);
+  const print = () => {
+    setMenu(false);
+    // Once the window has closed, or it would be printed over the report.
+    window.setTimeout(() => window.print(), 150);
+  };
   return (
     <Page
       title="Rapport journalier"
@@ -106,24 +115,34 @@ function ReportView({ reportId }: { reportId: string }) {
       actions={
         shown ? (
           <>
-            {canChange ? (
-              <ButtonLink href={`${base}/${reportId}/modifier`}>
-                <Pencil aria-hidden /> Modifier
-              </ButtonLink>
-            ) : null}
-            <Button variant="secondary" onClick={() => window.print()}>
-              <Printer aria-hidden /> Imprimer
-            </Button>
-            {shown.canDelete && canChange ? (
-              <IconButton
-                label="Supprimer le rapport"
-                disabled={remove.isPending || remove.isSuccess}
-                onClick={() => askToRemove(shown.day)}
-                className="text-bad hover:bg-bad-tint hover:text-bad active:bg-bad-tint"
-              >
-                <Trash2 aria-hidden />
-              </IconButton>
-            ) : null}
+            {/* A computer has the room for every button; a phone keeps the rare ones in a menu. */}
+            <div className="hidden items-center gap-2 lg:flex">
+              {canChange ? (
+                <ButtonLink href={`${base}/${reportId}/modifier`}>
+                  <Pencil aria-hidden /> Modifier
+                </ButtonLink>
+              ) : null}
+              <Button variant="secondary" onClick={() => window.print()}>
+                <Printer aria-hidden /> Imprimer
+              </Button>
+              {canDelete ? (
+                <IconButton
+                  label="Supprimer le rapport"
+                  disabled={remove.isPending || remove.isSuccess}
+                  onClick={() => askToRemove(shown.day)}
+                  className="text-bad hover:bg-bad-tint hover:text-bad active:bg-bad-tint"
+                >
+                  <Trash2 aria-hidden />
+                </IconButton>
+              ) : null}
+            </div>
+            <IconButton
+              label="Autres actions"
+              onClick={() => setMenu(true)}
+              className="border-line bg-surface text-text -mr-1 border lg:hidden"
+            >
+              <Ellipsis aria-hidden />
+            </IconButton>
           </>
         ) : null
       }
@@ -144,9 +163,39 @@ function ReportView({ reportId }: { reportId: string }) {
             {photos.data?.length ? (
               <DayPhotos photos={photos.data} project={project} day={loaded.day} />
             ) : null}
+            {canChange ? (
+              <BottomBar className="no-print mt-6 lg:hidden">
+                <ButtonLink href={`${base}/${reportId}/modifier`} size="lg" block>
+                  <Pencil aria-hidden /> Modifier
+                </ButtonLink>
+              </BottomBar>
+            ) : null}
           </>
         )}
       </QueryState>
+
+      <Sheet
+        open={menu && shown !== undefined}
+        onClose={() => setMenu(false)}
+        title="Rapport journalier"
+        description={shown ? capitalize(formatFullDay(shown.day)) : undefined}
+      >
+        <div className="divide-line border-line divide-y overflow-hidden rounded-2xl border">
+          <MenuChoice icon={Printer} label="Imprimer" onClick={print} />
+          {canDelete && shown ? (
+            <MenuChoice
+              icon={Trash2}
+              label="Supprimer le rapport"
+              danger
+              disabled={remove.isPending || remove.isSuccess}
+              onClick={() => {
+                setMenu(false);
+                void askToRemove(shown.day);
+              }}
+            />
+          ) : null}
+        </div>
+      </Sheet>
     </Page>
   );
 }
@@ -161,8 +210,9 @@ function ReportDocument({ report, project }: { report: Report; project: ProjectD
       <div className="border-line border-b px-4 py-4 sm:px-6 print:border-b-2 print:border-black print:px-0 print:pt-0">
         <p className="font-display hidden text-lg font-bold print:block">{COMPANY}</p>
         <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-[15px] print:mt-2">
-          <dt className="text-dim">Projet</dt>
-          <dd className="font-semibold">
+          {/* The frame already names the project on screen. */}
+          <dt className="text-dim hidden print:block">Projet</dt>
+          <dd className="hidden font-semibold print:block">
             {project.number ? `${project.number} · ` : ""}
             {project.name}
           </dd>
@@ -350,5 +400,34 @@ function DayPhotos({
         </Sheet>
       </Section>
     </div>
+  );
+}
+
+function MenuChoice({
+  icon: Icon,
+  label,
+  danger,
+  disabled,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "hover:bg-canvas active:bg-canvas flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-2 text-left font-semibold transition-colors disabled:pointer-events-none disabled:opacity-60",
+        danger && "text-bad",
+      )}
+    >
+      <Icon className={cn("size-5 shrink-0", !danger && "text-ead-dark")} aria-hidden />
+      {label}
+    </button>
   );
 }
