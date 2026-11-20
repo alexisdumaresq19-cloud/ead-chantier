@@ -12,8 +12,8 @@ import {
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { Link, useLocation } from "wouter";
+import { useLayoutEffect, type ReactNode } from "react";
+import { Link, useLocation, useSearch } from "wouter";
 
 import type { ProjectDetail } from "@/shared/api";
 import { isAdmin, ROLE_LABELS } from "@/shared/roles";
@@ -23,6 +23,7 @@ import { useOnline } from "../lib/online";
 import { useCurrentUser } from "../lib/session";
 import { Avatar } from "../ui/bits";
 import { LogoMark } from "../ui/logo";
+import { useBack } from "./back";
 
 // The frame around every signed-in screen. On a phone: a black bar on top and
 // tabs under the thumb. On a computer or a wide tablet: a black sidebar.
@@ -64,12 +65,45 @@ function generalTabs(admin: boolean): NavItem[] {
   ];
 }
 
+/**
+ * Forms are filled in a hurry, on screens where a save bar takes the bottom:
+ * on a phone, the tabs make way, and leaving goes through the top bar's arrow.
+ */
+const FORMS = [
+  /^\/projets\/nouveau$/,
+  /^\/projets\/[^/]+\/rapports\/nouveau$/,
+  /^\/projets\/[^/]+\/rapports\/[^/]+\/modifier$/,
+  /^\/projets\/[^/]+\/documents\/ajouter$/,
+  /^\/projets\/[^/]+\/plans\/import\/[^/]+$/,
+  /^\/projets\/[^/]+\/reglages$/,
+];
+const isForm = (path: string, search: string) =>
+  FORMS.some((form) => form.test(path)) ||
+  (path === "/equipe" && new URLSearchParams(search).has("personne"));
+
+/**
+ * Tells the bars that stick to the bottom of a screen where to sit: the
+ * stylesheet turns this mark into the --ead-tabs height (globals.css).
+ */
+function useTabsMark(shown: boolean) {
+  useLayoutEffect(() => {
+    const root = document.documentElement;
+    root.dataset.tabs = shown ? "shown" : "hidden";
+    return () => {
+      delete root.dataset.tabs;
+    };
+  }, [shown]);
+}
+
 export function Shell({ project, children }: { project?: ProjectDetail; children: ReactNode }) {
   const me = useCurrentUser();
   const [path] = useLocation();
   const online = useOnline();
   const admin = isAdmin(me.role);
   const tabs = project ? projectTabs(project) : generalTabs(admin);
+  const back = useBack();
+  const showTabs = !isForm(path, useSearch());
+  useTabsMark(showTabs);
 
   return (
     <div className="min-h-dvh lg:pl-64">
@@ -145,24 +179,22 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
       {/* Phone: the top bar */}
       <header className="no-print bg-ink sticky top-0 z-30 pt-[env(safe-area-inset-top)] text-white lg:hidden">
         <div className="flex h-14 items-center gap-1 pr-2 pl-1">
-          {project ? (
+          {project || back ? (
             <>
               <Link
-                href="/"
-                aria-label="Tous les projets"
-                className="flex h-11 items-center gap-0.5 rounded-xl pr-2 pl-1 text-white/80 active:bg-white/10"
+                href={back?.href ?? "/"}
+                aria-label={back ? `Retour\u00a0: ${back.label}` : "Tous les projets"}
+                className="flex h-11 shrink-0 items-center gap-0.5 rounded-xl pr-2 pl-1 text-white/80 active:bg-white/10"
               >
                 <ChevronLeft className="size-6" aria-hidden />
                 <LogoMark className="h-6" />
               </Link>
               {/* The project's home shows its name in large just below. */}
               <div className="min-w-0 flex-1 pl-1">
-                {path === `/projets/${project.id}` ? (
-                  <p className="font-display text-lg font-bold tracking-tight">Chantier</p>
-                ) : (
+                {project && path !== `/projets/${project.id}` ? (
                   <>
                     {project.number ? (
-                      <p className="font-display text-ead text-[11px] leading-none font-semibold tracking-wider uppercase">
+                      <p className="font-display text-ead text-xs leading-none font-semibold tracking-wider uppercase">
                         {project.number}
                       </p>
                     ) : null}
@@ -170,6 +202,8 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
                       {project.name}
                     </p>
                   </>
+                ) : (
+                  <p className="font-display text-lg font-bold tracking-tight">Chantier</p>
                 )}
               </div>
             </>
@@ -198,11 +232,15 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
         </div>
       </header>
 
-      <main className="pb-[calc(4.75rem+env(safe-area-inset-bottom))] lg:pb-0">{children}</main>
+      {/* Room under the content for the tabs, or for the home indicator without them. */}
+      <main className="pb-[calc(max(var(--ead-tabs,0px),env(safe-area-inset-bottom))+0.75rem)] lg:pb-0">
+        {children}
+      </main>
 
       {/* Phone: the tabs */}
       <nav
         aria-label="Navigation"
+        hidden={!showTabs}
         className="no-print border-line bg-surface/95 fixed inset-x-0 bottom-0 z-30 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
       >
         <ul className="mx-auto flex max-w-lg">
@@ -214,8 +252,8 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
                   href={item.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "flex h-16 flex-col items-center justify-center gap-1 text-[11px] font-semibold transition-colors",
-                    active ? "text-ead-dark" : "text-dim active:text-text",
+                    "flex h-16 flex-col items-center justify-center gap-1 text-xs font-semibold transition-colors",
+                    active ? "text-ead-dark" : "text-text/75 active:text-text",
                   )}
                 >
                   <span

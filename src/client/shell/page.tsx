@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Link } from "wouter";
 
 import { cn } from "../lib/cn";
+import { useOfferBack } from "./back";
 
 /**
  * A screen's content: an optional way back, the title, its buttons, then the
@@ -26,6 +27,7 @@ export function Page({
   narrow?: boolean;
   children: ReactNode;
 }) {
+  useOfferBack(back);
   return (
     <div
       className={cn(
@@ -33,10 +35,11 @@ export function Page({
         narrow ? "max-w-2xl" : "max-w-6xl",
       )}
     >
+      {/* On a phone, the top bar's arrow leads there instead. */}
       {back ? (
         <Link
           href={back.href}
-          className="no-print text-ead-dark hover:bg-ead-tint mb-1 -ml-1.5 inline-flex h-11 items-center gap-0.5 rounded-lg pr-2 text-sm font-semibold"
+          className="no-print text-ead-dark hover:bg-ead-tint mb-1 -ml-1.5 hidden h-11 items-center gap-0.5 rounded-lg pr-2 text-sm font-semibold lg:inline-flex"
         >
           <ChevronLeft className="size-5" aria-hidden />
           {back.label}

@@ -21,6 +21,7 @@ import { useState, type ChangeEvent } from "react";
 import { Link } from "wouter";
 
 import type { ProjectDetail, ProjectSummary } from "@/shared/api";
+import type { Sheet } from "@/shared/plans";
 import { crewTotals } from "@/shared/reports";
 import { isAdmin } from "@/shared/roles";
 
@@ -28,7 +29,7 @@ import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
 import { navigate } from "../../lib/location";
-import { recentSheetIds } from "../../lib/recents";
+import { projectsOpenedAt, recentSheetIds } from "../../lib/recents";
 import { useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
 import { planPaths, usePlans, warmSheet } from "../plans/data";
 import { PlanThumb } from "../plans/parts";
@@ -64,6 +65,11 @@ export function ProjectsScreen() {
   const [search, setSearch] = useState("");
   const [showArchived, setShowArchived] = useState(false);
   const admin = isAdmin(me.role);
+  // Read when the screen opens: the project just left comes first.
+  const [openedAt] = useState(() => projectsOpenedAt(me.id));
+  // A stable sort: projects never opened here keep the server's order.
+  const lastOpenedFirst = (list: ProjectSummary[]) =>
+    [...list].sort((a, b) => (openedAt[b.id] ?? 0) - (openedAt[a.id] ?? 0));
 
   return (
     <Page
@@ -87,8 +93,9 @@ export function ProjectsScreen() {
         }
       >
         {(all) => {
-          const active = all.filter((project) => project.status === "actif");
-          const archived = all.filter((project) => project.status === "archive");
+          const sorted = lastOpenedFirst(all);
+          const active = sorted.filter((project) => project.status === "actif");
+          const archived = sorted.filter((project) => project.status === "archive");
           if (all.length === 0) {
             return (
               <EmptyState
@@ -109,7 +116,7 @@ export function ProjectsScreen() {
               />
             );
           }
-          const shown = search ? all.filter((project) => matches(project, search)) : active;
+          const shown = search ? sorted.filter((project) => matches(project, search)) : active;
           return (
             <>
               {all.length > 5 ? (
@@ -192,12 +199,19 @@ function ProjectCard({ project }: { project: ProjectSummary }) {
         {project.name}
       </h2>
       {place ? <p className="text-dim mt-1 truncate text-sm">{place}</p> : null}
-      <div className="text-dim mt-auto flex gap-4 pt-4 text-sm font-medium">
-        <span className="flex items-center gap-1.5">
-          <Layers className="size-4" aria-hidden /> {count(project.sheetCount, "feuille")}
+      {/* A project not set up yet says what it lacks, quietly. */}
+      <div className="text-dim mt-auto flex flex-wrap gap-x-4 gap-y-1 pt-4 text-sm font-medium">
+        <span
+          className={cn("flex items-center gap-1.5", project.sheetCount === 0 && "text-dim/75")}
+        >
+          <Layers className="size-4" aria-hidden />
+          {project.sheetCount === 0 ? "Aucun plan" : count(project.sheetCount, "feuille")}
         </span>
-        <span className="flex items-center gap-1.5">
-          <Users className="size-4" aria-hidden /> {count(project.memberCount, "personne")}
+        <span
+          className={cn("flex items-center gap-1.5", project.memberCount === 0 && "text-dim/75")}
+        >
+          <Users className="size-4" aria-hidden />
+          {project.memberCount === 0 ? "Personne encore" : count(project.memberCount, "personne")}
         </span>
       </div>
     </Link>
@@ -209,7 +223,18 @@ export function ProjectHomeScreen() {
   const base = `/projets/${project.id}`;
   const address = [project.address, project.city].filter(Boolean).join(", ");
   const archived = project.status === "archive";
-  const office = isAdmin(useCurrentUser().role);
+  const me = useCurrentUser();
+  const office = isAdmin(me.role);
+  // The sheets this person opened last: a crew works off the same few for
+  // days. Read when the screen opens, so coming back from a sheet shows it.
+  const plans = usePlans(project.id);
+  const [recentIds] = useState(() => recentSheetIds(me.id, project.id));
+  const recent = recentIds.flatMap(
+    (id) => plans.data?.sheets.find((sheet) => sheet.id === id) ?? [],
+  );
+  const [resumed, ...others] = recent;
+  const waitingForPlans =
+    recentIds.length > 0 && plans.data === undefined && plans.fetchStatus === "fetching";
 
   return (
     <div className="animate-fade">
@@ -254,44 +279,7 @@ export function ProjectHomeScreen() {
       </div>
 
       <div className="mx-auto -mt-11 max-w-6xl px-4 pb-8 sm:px-6 lg:-mt-12 lg:px-18">
-        <div
-          className={cn(
-            "grid gap-2.5 sm:gap-3 lg:grid-cols-4",
-            project.canManage ? "grid-cols-3" : "grid-cols-2",
-          )}
-        >
-          <ModuleTile
-            href={`${base}/plans`}
-            icon={Layers}
-            label="Plans"
-            detail={count(project.sheetCount, "feuille")}
-            main
-          />
-          <ModuleTile
-            href={`${base}/documents`}
-            icon={FileText}
-            label="Documents"
-            detail={count(project.documentCount, "document")}
-            short={project.documentCount.toLocaleString("fr-CA")}
-          />
-          <ModuleTile
-            href={`${base}/photos`}
-            icon={Camera}
-            label="Photos"
-            detail={count(project.photoCount, "photo")}
-            short={project.photoCount.toLocaleString("fr-CA")}
-          />
-          {project.canManage ? (
-            <ModuleTile
-              href={`${base}/rapports`}
-              icon={ClipboardList}
-              label="Rapports"
-              detail={count(project.reportCount, "rapport")}
-              short={project.reportCount.toLocaleString("fr-CA")}
-            />
-          ) : null}
-        </div>
-
+        <PlansCard project={project} resumed={resumed} waiting={waitingForPlans} />
         {archived ? (
           <p className="border-line bg-surface text-dim mt-5 rounded-2xl border px-4 py-3 text-[15px] leading-snug">
             Ce projet est archivé&nbsp;: il se consulte, mais rien ne s&apos;y ajoute.
@@ -307,7 +295,8 @@ export function ProjectHomeScreen() {
         ) : null}
 
         <Today project={project} />
-        <RecentPlans projectId={project.id} />
+        <RecentPlans projectId={project.id} sheets={others} />
+        <ModuleLinks project={project} />
 
         <OfflineProject project={project} />
 
@@ -518,18 +507,13 @@ function ActionRow({
   );
 }
 
-/** The sheets this person opened last: a crew works off the same few for days. */
-function RecentPlans({ projectId }: { projectId: string }) {
-  const me = useCurrentUser();
+/** The other sheets opened lately, after the one the home offers to resume. */
+function RecentPlans({ projectId, sheets }: { projectId: string; sheets: Sheet[] }) {
   const client = useQueryClient();
-  const plans = usePlans(projectId);
-  // Read when the screen opens: coming back from a sheet shows it first.
-  const [ids] = useState(() => recentSheetIds(me.id, projectId));
-  const sheets = ids.flatMap((id) => plans.data?.sheets.find((sheet) => sheet.id === id) ?? []);
   if (sheets.length === 0) return null;
 
   return (
-    <Section title="Derniers plans ouverts">
+    <Section title="Autres plans récents">
       {/* Bleeds to the screen's edges, so the strip scrolls from side to side. */}
       <ul className="-mx-4 flex snap-x scroll-px-4 [scrollbar-width:none] gap-2.5 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:scroll-px-0 lg:px-0">
         {sheets.map((sheet) => (
@@ -556,82 +540,136 @@ function RecentPlans({ projectId }: { projectId: string }) {
   );
 }
 
-function ModuleTile({
+/**
+ * The plans, first on the home: what people open the app for. When this
+ * person has opened a sheet here, the card takes them straight back to it.
+ */
+function PlansCard({
+  project,
+  resumed,
+  waiting,
+}: {
+  project: ProjectDetail;
+  resumed: Sheet | undefined;
+  /** Sheets were opened here, and the list that says which is on its way. */
+  waiting: boolean;
+}) {
+  const client = useQueryClient();
+  const list = planPaths.list(project.id);
+  if (waiting) return <Skeleton className="h-31 rounded-2xl" />;
+  if (!resumed) {
+    return (
+      <Link
+        href={list}
+        className="group border-ead-dark bg-ead-dark hover:bg-ead-darker flex min-h-24 items-center gap-4 rounded-2xl border p-4 text-white shadow-sm transition hover:shadow-md"
+      >
+        <span className="flex size-13 shrink-0 items-center justify-center rounded-xl bg-white/15">
+          <Layers className="size-7" aria-hidden />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="font-display block truncate text-xl leading-tight font-bold">Plans</span>
+          <span className="mt-0.5 block truncate text-[15px] text-white/85">
+            {count(project.sheetCount, "feuille")}
+          </span>
+        </span>
+        <ChevronRight
+          className="size-5 shrink-0 text-white/85 transition-transform group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      </Link>
+    );
+  }
+  return (
+    <div className="bg-ead-dark overflow-hidden rounded-2xl text-white shadow-sm">
+      <Link
+        href={planPaths.sheet(project.id, resumed.id)}
+        onPointerDown={() => warmSheet(client, project.id, resumed.id)}
+        className="group hover:bg-ead-darker active:bg-ead-darker flex min-h-21 items-center gap-3.5 py-3 pr-4 pl-3 transition-colors"
+      >
+        <PlanThumb
+          url={resumed.current?.thumbUrl}
+          tiles={resumed.current?.tiles}
+          className="h-15 w-20 rounded-lg border-white/30"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="font-display block text-xl leading-tight font-bold">
+            Reprendre {resumed.number}
+          </span>
+          <span className="mt-0.5 block truncate text-[15px] text-white/85">{resumed.title}</span>
+        </span>
+        <ChevronRight
+          className="size-5 shrink-0 text-white/85 transition-transform group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      </Link>
+      <Link
+        href={list}
+        className="group hover:bg-ead-darker active:bg-ead-darker flex h-12 items-center gap-3 border-t border-white/15 px-4 text-[15px] font-semibold transition-colors"
+      >
+        <Layers className="size-5 text-white/85" aria-hidden />
+        <span className="flex-1">Toutes les feuilles ({project.sheetCount})</span>
+        <ChevronRight
+          className="size-5 shrink-0 text-white/85 transition-transform group-hover:translate-x-0.5"
+          aria-hidden
+        />
+      </Link>
+    </div>
+  );
+}
+
+/**
+ * The project's other contents, with what they hold: one short row, since
+ * the tabs already lead there.
+ */
+function ModuleLinks({ project }: { project: ProjectDetail }) {
+  const base = `/projets/${project.id}`;
+  return (
+    <ul
+      className={cn(
+        "border-line bg-surface divide-line mt-8 grid divide-x overflow-hidden rounded-2xl border shadow-xs",
+        project.canManage ? "grid-cols-3" : "grid-cols-2",
+      )}
+    >
+      <ModuleLink
+        href={`${base}/documents`}
+        icon={FileText}
+        label={count(project.documentCount, "document")}
+      />
+      <ModuleLink
+        href={`${base}/photos`}
+        icon={Camera}
+        label={count(project.photoCount, "photo")}
+      />
+      {project.canManage ? (
+        <ModuleLink
+          href={`${base}/rapports`}
+          icon={ClipboardList}
+          label={count(project.reportCount, "rapport")}
+        />
+      ) : null}
+    </ul>
+  );
+}
+
+function ModuleLink({
   href,
   icon: Icon,
   label,
-  detail,
-  short,
-  main,
 }: {
   href: string;
   icon: LucideIcon;
   label: string;
-  detail: string;
-  /** On a narrow phone, where three tiles share a row: the number alone. */
-  short?: string;
-  /** The plans: what people open the app for. On a phone, a full-width row. */
-  main?: boolean;
 }) {
   return (
-    <Link
-      href={href}
-      className={cn(
-        "group flex rounded-2xl border shadow-sm transition hover:shadow-md",
-        main
-          ? "border-ead-dark bg-ead-dark hover:bg-ead-darker col-span-full min-h-24 items-center gap-4 p-4 text-white lg:col-span-1 lg:min-h-36 lg:flex-col lg:items-stretch lg:justify-between"
-          : "border-line bg-surface hover:border-ead/60 active:bg-canvas min-h-28 flex-col justify-between p-3 sm:p-4 lg:min-h-36",
-      )}
-    >
-      <span
-        className={cn(
-          "flex shrink-0 items-center justify-center rounded-xl",
-          main
-            ? "size-13 bg-white/15 text-white lg:size-11"
-            : "bg-ead-tint text-ead-dark size-10 sm:size-11",
-        )}
+    <li className="min-w-0">
+      <Link
+        href={href}
+        className="hover:bg-canvas active:bg-canvas flex h-14 flex-col items-center justify-center gap-0.5 px-1 text-[13px] font-semibold transition-colors sm:flex-row sm:gap-2 sm:text-[15px]"
       >
-        <Icon className={main ? "size-7 lg:size-6" : "size-5.5 sm:size-6"} aria-hidden />
-      </span>
-      <span
-        className={cn("flex min-w-0 items-end justify-between gap-2", main ? "flex-1" : "mt-3")}
-      >
-        <span className="min-w-0">
-          <span
-            className={cn(
-              "font-display block truncate leading-tight font-bold",
-              main
-                ? "text-xl lg:text-lg"
-                : "text-sm tracking-tight min-[380px]:text-[15px] sm:text-lg",
-            )}
-          >
-            {label}
-          </span>
-          <span
-            className={cn(
-              "mt-0.5 block truncate",
-              main ? "text-[15px] text-white/85 lg:text-sm" : "text-dim text-[13px] sm:text-sm",
-            )}
-          >
-            {short ? (
-              <>
-                <span className="sm:hidden">{short}</span>
-                <span className="max-sm:hidden">{detail}</span>
-              </>
-            ) : (
-              detail
-            )}
-          </span>
-        </span>
-        <ChevronRight
-          className={cn(
-            "size-5 shrink-0 transition-transform group-hover:translate-x-0.5",
-            main ? "self-center text-white/85 lg:self-end" : "text-dim hidden sm:block",
-          )}
-          aria-hidden
-        />
-      </span>
-    </Link>
+        <Icon className="text-ead-dark size-5 shrink-0" aria-hidden />
+        <span className="max-w-full truncate">{label}</span>
+      </Link>
+    </li>
   );
 }
 

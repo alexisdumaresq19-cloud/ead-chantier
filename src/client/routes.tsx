@@ -3,7 +3,7 @@ import { Redirect, Route, Router, Switch, useLocation, useParams, useRoute } fro
 
 import { ApiFailure } from "./lib/api";
 import { useAppLocation, useAppSearch } from "./lib/location";
-import { noteSheetOpened } from "./lib/recents";
+import { noteProjectOpened, noteSheetOpened } from "./lib/recents";
 import { MeContext, ProjectContext, useCurrentUser, useMe, useProject } from "./lib/session";
 import { Page } from "./shell/page";
 import { PublicLayout } from "./shell/public-layout";
@@ -158,6 +158,12 @@ function ProjectArea() {
   useEffect(() => {
     if (sheetId) noteSheetOpened(me.id, projectId, sheetId);
   }, [me.id, projectId, sheetId]);
+
+  // The list of projects starts with the one opened last.
+  const shownProject = project.data?.id;
+  useEffect(() => {
+    if (shownProject) noteProjectOpened(me.id, shownProject);
+  }, [me.id, shownProject]);
 
   let content: React.ReactNode;
   if (project.data !== undefined) {
