@@ -138,7 +138,7 @@ export function SheetMenu({
   }
   return (
     <Sheet open onClose={onClose} title={sheet.number} description={sheet.title || undefined}>
-      <ul className="-mx-2">
+      <ul className={choices}>
         <Action icon={Pencil} label="Renommer" onClick={() => setStep("rename")} />
         <Action
           icon={FolderInput}
@@ -160,10 +160,19 @@ export function SheetMenu({
           onClick={archiveSheet}
         />
       </ul>
-      <FormError>{archive.isError ? errorMessage(archive.error) : null}</FormError>
+      {archive.isError ? (
+        <div className="mt-3">
+          <FormError>{errorMessage(archive.error)}</FormError>
+        </div>
+      ) : null}
     </Sheet>
   );
 }
+
+/** Grouped rows in one frame, as in the documents' management window. */
+const choices = "divide-line border-line divide-y overflow-hidden rounded-2xl border";
+const choice =
+  "flex min-h-14 w-full cursor-pointer items-center gap-3 px-4 py-2 text-left font-semibold transition-colors hover:bg-canvas active:bg-canvas disabled:pointer-events-none disabled:opacity-60";
 
 function Action({
   icon: Icon,
@@ -186,13 +195,10 @@ function Action({
         type="button"
         onClick={onClick}
         disabled={busy}
-        className={cn(
-          "hover:bg-canvas active:bg-canvas flex min-h-14 w-full cursor-pointer items-center gap-3.5 rounded-xl px-3 text-left font-semibold transition-colors disabled:opacity-60",
-          danger && "text-bad",
-        )}
+        className={cn(choice, danger && "text-bad")}
       >
-        <Icon className={cn("size-5.5 shrink-0", !danger && "text-ead-dark")} aria-hidden />
-        <span className="min-w-0 flex-1 py-2">
+        <Icon className={cn("size-5 shrink-0", !danger && "text-ead-dark")} aria-hidden />
+        <span className="min-w-0 flex-1">
           <span className="block">{label}</span>
           {detail ? (
             <span className="text-dim block truncate text-sm font-normal">{detail}</span>
@@ -223,11 +229,17 @@ function Rename({
 }) {
   const [number, setNumber] = useState(sheet.number);
   const [title, setTitle] = useState(sheet.title);
+  const [missing, setMissing] = useState(false);
+  const numberId = useId();
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const wanted = { number: number.trim(), title: title.trim() };
-    if (!wanted.number) return;
+    if (!wanted.number) {
+      setMissing(true);
+      document.getElementById(numberId)?.focus();
+      return;
+    }
     if (wanted.number === sheet.number && wanted.title === sheet.title) return onClose();
     update.mutate(
       { sheetId: sheet.id, ...wanted },
@@ -241,16 +253,26 @@ function Rename({
   };
 
   return (
-    <form id={formId} onSubmit={submit} className="space-y-4">
-      <Field label="Numéro" hint={"Comme dans le cartouche du plan\u00a0: C-201, S-102…"}>
+    // Checked here rather than by the browser, whose bubble may speak English.
+    <form id={formId} onSubmit={submit} noValidate className="space-y-4">
+      <Field
+        label="Numéro"
+        hint={"Comme dans le cartouche du plan\u00a0: C-201, S-102…"}
+        error={missing ? "Inscrivez le numéro de la feuille." : null}
+      >
         <Input
+          id={numberId}
           value={number}
-          onChange={(event) => setNumber(event.target.value)}
+          onChange={(event) => {
+            setNumber(event.target.value);
+            if (event.target.value.trim()) setMissing(false);
+          }}
           maxLength={40}
           autoComplete="off"
           autoCapitalize="characters"
           spellCheck={false}
           required
+          aria-invalid={missing || undefined}
           className="font-display font-bold"
         />
       </Field>
@@ -281,7 +303,9 @@ function Move({
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
+  const [missing, setMissing] = useState(false);
   const nameId = useId();
+  const problemId = useId();
   const create = useCreateFolder(projectId);
   const busy = update.isPending || create.isPending;
   const target = update.isPending ? (update.variables.folderId ?? null) : undefined;
@@ -305,12 +329,14 @@ function Move({
 
   const createAndMove = (event: FormEvent) => {
     event.preventDefault();
-    if (name.trim()) create.mutate(name.trim(), { onSuccess: moveTo });
+    if (name.trim()) return create.mutate(name.trim(), { onSuccess: moveTo });
+    setMissing(true);
+    document.getElementById(nameId)?.focus();
   };
 
   return (
     <>
-      <ul className="-mx-2">
+      <ul className={choices}>
         {[...folders, null].map((folder) => {
           const here = (folder?.id ?? null) === sheet.folderId;
           return (
@@ -320,10 +346,10 @@ function Move({
                 onClick={() => moveTo(folder)}
                 disabled={busy}
                 aria-current={here || undefined}
-                className="hover:bg-canvas active:bg-canvas flex min-h-13 w-full cursor-pointer items-center gap-3.5 rounded-xl px-3 text-left font-semibold transition-colors disabled:opacity-60"
+                className={cn(choice, here && "text-ead-dark")}
               >
                 <Folder
-                  className={cn("size-5.5 shrink-0", folder ? "text-ead-dark" : "text-dim")}
+                  className={cn("size-5 shrink-0", folder ? "text-ead-dark" : "text-dim")}
                   aria-hidden
                 />
                 <span className={cn("min-w-0 flex-1 truncate", !folder && "text-dim")}>
@@ -339,7 +365,7 @@ function Move({
           );
         })}
       </ul>
-      <form onSubmit={createAndMove} className="border-line mt-3 border-t pt-4">
+      <form onSubmit={createAndMove} noValidate className="mt-5">
         <label htmlFor={nameId} className="mb-1.5 block text-sm font-semibold">
           Nouveau dossier
         </label>
@@ -347,22 +373,32 @@ function Move({
           <Input
             id={nameId}
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (event.target.value.trim()) setMissing(false);
+            }}
             placeholder={"Ex.\u00a0: Structure"}
             maxLength={60}
             autoComplete="off"
             disabled={busy}
+            aria-invalid={missing || undefined}
+            aria-describedby={missing ? problemId : undefined}
           />
           <Button
             type="submit"
             variant="secondary"
             className="h-12"
             loading={create.isPending}
-            disabled={busy || !name.trim()}
+            disabled={busy}
           >
             <FolderPlus aria-hidden /> Créer
           </Button>
         </div>
+        {missing ? (
+          <p id={problemId} className="text-bad mt-1.5 text-sm font-medium">
+            Inscrivez le nom du dossier.
+          </p>
+        ) : null}
       </form>
       <div className="mt-3">
         <FormError>

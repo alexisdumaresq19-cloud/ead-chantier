@@ -75,7 +75,7 @@ export function SheetPicker({
 
       {searching ? (
         found.length > 0 ? (
-          <ul className="space-y-2">{found.map(row)}</ul>
+          <ul className={list}>{found.map(row)}</ul>
         ) : (
           <p className="text-dim py-6 text-center text-[15px]">
             Aucune feuille ne correspond à «&nbsp;{query.trim()}&nbsp;».
@@ -90,7 +90,7 @@ export function SheetPicker({
                   {group.folder?.name ?? "Autres feuilles"}
                 </h3>
               ) : null}
-              <ul className="space-y-2">{group.sheets.map(row)}</ul>
+              <ul className={list}>{group.sheets.map(row)}</ul>
             </section>
           ))}
         </div>
@@ -98,6 +98,10 @@ export function SheetPicker({
     </Sheet>
   );
 }
+
+/** One card with a row per sheet, as in the plan list. */
+const list =
+  "divide-line border-line bg-surface divide-y overflow-hidden rounded-2xl border shadow-xs";
 
 function SheetRow({
   sheet,
@@ -118,29 +122,25 @@ function SheetRow({
       // The sheet on screen is where the list opens.
       ref={current ? (element) => element?.scrollIntoView({ block: "center" }) : undefined}
       className={cn(
-        "flex min-h-16 w-full cursor-pointer items-center gap-3 rounded-2xl border p-2 text-left transition-colors",
-        current
-          ? "border-ead bg-ead-tint"
-          : "border-line bg-surface hover:bg-canvas active:bg-canvas",
+        "flex min-h-[4.5rem] w-full cursor-pointer items-center gap-3 py-2.5 pr-3 pl-3 text-left -outline-offset-2 transition-colors",
+        current ? "bg-ead-tint" : "hover:bg-canvas active:bg-canvas",
       )}
     >
-      <PlanThumb
-        url={sheet.current?.thumbUrl}
-        tiles={sheet.current?.tiles}
-        className="h-13 w-18 rounded-lg"
-      />
+      <PlanThumb url={sheet.current?.thumbUrl} tiles={sheet.current?.tiles} className="h-13 w-18" />
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-2">
           <span className="font-display truncate text-[17px] leading-tight font-bold">
             <Highlight text={sheet.number} query={query} />
           </span>
-          <RevisionBadge label={sheet.current?.label ?? null} />
+          <RevisionBadge sheet={sheet} />
         </span>
-        <span className="text-dim mt-0.5 line-clamp-2 text-sm leading-snug">
+        <span className="text-dim mt-0.5 line-clamp-3 text-sm leading-snug">
           <Highlight text={sheet.title} query={query} />
         </span>
       </span>
-      {current ? <Check className="text-ead-dark mr-1 size-5 shrink-0" aria-hidden /> : null}
+      {current ? (
+        <Check className="text-ead-dark size-5 shrink-0" strokeWidth={2.6} aria-hidden />
+      ) : null}
     </button>
   );
 }

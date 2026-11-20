@@ -8,7 +8,16 @@ import {
   Plus,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { PlanFolder, Plans } from "@/shared/plans";
 
@@ -207,18 +216,20 @@ function PlanList({
   const clear = useCallback(() => setSearch(""), [setSearch]);
   // Folders made before the first plans: nothing to search or to lay out yet.
   const searchable = plans.sheets.length > 0;
+  const viewToggle = searchable ? <ViewToggle view={view} onChange={setView} /> : null;
 
   return (
     <>
       {searchable ? (
-        <div className="bg-canvas/95 sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 flex gap-2 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10">
+        // The search has the whole width: its words are never cut on a
+        // narrow phone. The choice of view sits with the count, below.
+        <div className="bg-canvas/95 sticky top-[calc(3.5rem+env(safe-area-inset-top))] z-20 -mx-4 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6 lg:top-0 lg:-mx-10 lg:px-10">
           <SearchInput
             value={search}
             onChange={setSearch}
             placeholder="Rechercher un plan"
-            className="min-w-0 flex-1 lg:max-w-md"
+            className="lg:max-w-md"
           />
-          <ViewToggle view={view} onChange={setView} />
         </div>
       ) : null}
 
@@ -228,6 +239,7 @@ function PlanList({
           index={index}
           query={query}
           view={view}
+          viewToggle={viewToggle}
           canManage={canManage}
           onMenu={onMenu}
           onClear={clear}
@@ -237,6 +249,7 @@ function PlanList({
           projectId={projectId}
           plans={plans}
           view={view}
+          viewToggle={viewToggle}
           canManage={canManage}
           onMenu={onMenu}
           onFolder={onFolder}
@@ -262,7 +275,7 @@ function ViewToggle({ view, onChange }: { view: PlanView; onChange: (view: PlanV
           aria-pressed={view === option.view}
           onClick={() => onChange(option.view)}
           className={cn(
-            "flex h-[2.625rem] w-11 cursor-pointer items-center justify-center rounded-[0.625rem] transition-colors",
+            "flex h-11 w-11 cursor-pointer items-center justify-center rounded-[0.625rem] transition-colors",
             view === option.view ? "bg-ead-dark text-white" : "text-dim hover:text-text",
           )}
         >
@@ -277,12 +290,15 @@ const Folders = memo(function Folders({
   projectId,
   plans,
   view,
+  viewToggle,
   canManage,
   onMenu,
   onFolder,
 }: ListProps & {
   plans: Plans;
   view: PlanView;
+  /** The choice between list and thumbnails, at the end of the count's line. */
+  viewToggle: ReactNode;
   onFolder: (folder: PlanFolder | null) => void;
 }) {
   const [closed, toggle] = useClosedFolders(projectId);
@@ -291,21 +307,32 @@ const Folders = memo(function Folders({
 
   return (
     <>
-      <div
-        className={cn(
-          "mt-1 flex items-center justify-between gap-3",
-          canManage ? "min-h-11" : "py-1.5",
-        )}
-      >
-        <p className="text-dim text-sm font-medium">
-          {count(plans.sheets.length, "feuille")}
-          {foldered ? ` · ${count(plans.folders.length, "dossier")}` : null}
+      <div className="mt-1 flex min-h-11 items-center gap-2">
+        <p className="text-dim min-w-0 flex-1 text-sm leading-snug font-medium">
+          <span className="whitespace-nowrap">{count(plans.sheets.length, "feuille")}</span>
+          {foldered ? (
+            <span
+              className={cn(
+                "whitespace-nowrap before:content-['_·_']",
+                // Next to "Nouveau dossier" on a phone, the two counts stack.
+                canManage && "max-sm:block max-sm:before:content-none",
+              )}
+            >
+              {count(plans.folders.length, "dossier")}
+            </span>
+          ) : null}
         </p>
         {canManage ? (
-          <Button variant="ghost" className="-mr-2 px-2.5" onClick={() => onFolder(null)}>
+          // On the narrowest phones the counts need the icon's room.
+          <Button
+            variant="ghost"
+            className="px-2.5 max-[379px]:[&_svg]:hidden"
+            onClick={() => onFolder(null)}
+          >
             <FolderPlus aria-hidden /> Nouveau dossier
           </Button>
         ) : null}
+        {viewToggle}
       </div>
       <div className={foldered ? "mt-1 space-y-2" : "mt-1"}>
         {groups.map((group) => (

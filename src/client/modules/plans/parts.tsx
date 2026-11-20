@@ -1,11 +1,11 @@
 import { FileImage } from "lucide-react";
 import { memo, useId, type ReactNode } from "react";
 
-import type { Tiles } from "@/shared/plans";
+import type { Sheet as PlanSheet, Tiles } from "@/shared/plans";
 
 import { cn } from "../../lib/cn";
 import { Badge } from "../../ui";
-import { highlightParts, revisionName } from "./logic";
+import { highlightParts, isNewRevision, revisionName } from "./logic";
 
 // Small pieces the plan screens share.
 
@@ -49,13 +49,25 @@ export function PlanThumb({
   );
 }
 
-/** The revision the site sees, as a small label; nothing if it has no name. */
-export function RevisionBadge({ label, className }: { label: string | null; className?: string }) {
-  const name = revisionName(label);
+/**
+ * The revision the site sees, as a small label; nothing if it has no name.
+ * Grey as a rule: blue, and said to be new, only for the week after it
+ * replaced another, so that a new revision stands out in the list.
+ */
+export function RevisionBadge({
+  sheet,
+  className,
+}: {
+  sheet: Pick<PlanSheet, "current" | "revisionCount">;
+  className?: string;
+}) {
+  const name = revisionName(sheet.current?.label);
   if (!name) return null;
+  const fresh = isNewRevision(sheet);
   return (
-    <Badge tone="blue" className={cn("max-w-32 shrink-0", className)}>
+    <Badge tone={fresh ? "blue" : "neutral"} className={cn("max-w-40 shrink-0", className)}>
       <span className="truncate">{name}</span>
+      {fresh ? <span className="shrink-0">· nouvelle</span> : null}
     </Badge>
   );
 }
