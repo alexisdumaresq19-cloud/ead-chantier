@@ -206,7 +206,7 @@ await foreman.call("POST", `/api/projects/${main.id}/reports`, {
   crew: crew.slice(0, 2),
   equipment: "Pelle 320, pompe 3 po",
   workDone:
-    "Remblayage et compaction de la tranchée posée la veille. Essai de pression en préparation.",
+    "Remblayage et compaction de la conduite posée la veille. Essai de pression en préparation.",
   notes: "Arrêt à 14 h 30 à cause de la pluie. Visite de l'ingénieur de la Ville en matinée.",
 });
 
