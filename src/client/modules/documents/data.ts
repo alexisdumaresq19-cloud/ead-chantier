@@ -17,16 +17,10 @@ import { createUploadQueue, summarize, type UploadsState } from "./upload-queue"
 export const documentsKey = (projectId: string) =>
   [...keys.project(projectId), "documents"] as const;
 
-// The list stays on the device while its screen is away, so it still shows on
-// a return without a network. A browser timer counts 24 days at most: asked
-// for more (as the app-wide setting does), it rings at once and the list is lost.
-const KEPT_FOR = 24 * 24 * 3600 * 1000;
-
 export const useDocuments = (projectId: string) =>
   useQuery({
     queryKey: documentsKey(projectId),
     queryFn: () => api<ProjectDocument[]>(`/api/projects/${projectId}/documents`),
-    gcTime: KEPT_FOR,
   });
 
 /** After any change: the list, and the count on the project's home. */

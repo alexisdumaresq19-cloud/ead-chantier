@@ -7,11 +7,22 @@ import {
   type FileProblem,
   type ProjectDocument,
 } from "@/shared/documents";
+import type { ProjectDetail } from "@/shared/api";
+import type { Role } from "@/shared/roles";
 
 import { formatShortDay } from "../../lib/format";
 
-// What the documents screens work out by themselves: the search, the order
-// of the list, the files chosen for sending.
+// What the documents screens work out by themselves: who sees the managing
+// controls, the search, the order of the list, the files chosen for sending.
+
+/**
+ * Whether to offer adding, renaming, moving and archiving. An archived
+ * project is read-only for all but the office. The server decides again.
+ */
+export const canChangeDocuments = (
+  project: Pick<ProjectDetail, "canManage" | "status">,
+  role: Role,
+) => project.canManage && (project.status !== "archive" || role === "admin");
 
 /** Lowercase, without accents: "Échéancier" is found by typing "echeancier". */
 const plain = (text: string) => text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

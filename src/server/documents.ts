@@ -13,12 +13,12 @@ import {
   type ProjectDocument,
 } from "@/shared/documents";
 
-import { projectFor, projectToManage } from "./access";
+import { projectFor, projectToChange } from "./access";
 import type { SessionUser } from "./auth";
 import { db, schema } from "./db/client";
 import { badRequest, HttpError, notFound } from "./http";
 import { newId } from "./ids";
-import type { Upload } from "./uploads";
+import { discardUpload, type Upload } from "./uploads";
 
 // A project's documents. The file itself is the upload, in the private
 // bucket; a document gives it a title and a category, and can be archived.
@@ -37,6 +37,7 @@ export const documentCategory = z.enum(DOCUMENT_CATEGORIES, "catégorie inconnue
 /**
  * Ids are made by the app, of lowercase letters and digits. Anything else
  * names no record, and some of it (a NUL byte) the database refuses outright.
+ * route() keeps such ids out of an address; an id in a body is checked with this.
  */
 export const isRecordId = (value: string) => /^[a-z0-9]{1,40}$/.test(value);
 
@@ -70,7 +71,6 @@ export async function listDocuments(projectId: string): Promise<ProjectDocument[
 const gone = () => notFound("Ce document n'est plus disponible.");
 
 async function findDocument(id: string): Promise<Row> {
-  if (!isRecordId(id)) throw gone();
   const [row] = await rows()
     .where(and(eq(schema.documents.id, id), isNull(schema.documents.archivedAt)))
     .limit(1);
@@ -100,9 +100,12 @@ async function withAccess(
 /** A document this person may read: they are on its project, or at the office. */
 export const documentFor = (user: SessionUser, id: string) => withAccess(user, id, projectFor);
 
-/** A document this person may rename, move or archive. */
-export const documentToManage = (user: SessionUser, id: string) =>
-  withAccess(user, id, projectToManage);
+/**
+ * A document this person may rename, move or archive: they manage its
+ * project, and the project is open (or they are the office).
+ */
+export const documentToChange = (user: SessionUser, id: string) =>
+  withAccess(user, id, projectToChange);
 
 /** Makes a confirmed upload a document of the project. */
 export async function createDocument(
@@ -113,8 +116,12 @@ export async function createDocument(
 ): Promise<ProjectDocument> {
   // Storage takes any file announced as a plain download; documents are held
   // to their own list of types, by extension.
+  // Such a file can never become a document: it is not kept either.
   const problem = fileProblem({ name: upload.filename, size: upload.size });
-  if (problem) throw badRequest(`${FILE_PROBLEM_LABELS[problem]}. ${ACCEPTED_FILES_LABEL}`);
+  if (problem) {
+    await discardUpload(upload.id);
+    throw badRequest(`${FILE_PROBLEM_LABELS[problem]}. ${ACCEPTED_FILES_LABEL}`);
+  }
 
   // Asked twice for the same file (the answer was lost on a bad signal, or a
   // retry crossed the first try): the document made the first time is the

@@ -28,7 +28,7 @@ import {
 import { cn } from "../../lib/cn";
 import { count, formatSize } from "../../lib/format";
 import { useOnline } from "../../lib/online";
-import { useCurrentProject } from "../../lib/session";
+import { useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
 import {
   Button,
@@ -44,7 +44,7 @@ import {
 } from "../../ui";
 import { uploads, useDocuments, useUploads } from "./data";
 import { FileIcon } from "./file-icon";
-import { addDrafts, sameTitle, type Draft } from "./logic";
+import { addDrafts, canChangeDocuments, sameTitle, type Draft } from "./logic";
 import { summarize, type UploadItem, type UploadsState } from "./upload-queue";
 
 // What was chosen and typed, by project. It outlives the screen: a stray tap
@@ -57,6 +57,7 @@ const chosen = new Map<string, { drafts: Draft[]; category: DocumentCategory | "
  */
 export function AddDocumentsScreen() {
   const project = useCurrentProject();
+  const canChange = canChangeDocuments(project, useCurrentUser().role);
   const sending = useUploads(project.id);
   const [drafts, setDrafts] = useState<Draft[]>(() => chosen.get(project.id)?.drafts ?? []);
   const [category, setCategory] = useState<DocumentCategory | "">(
@@ -78,7 +79,7 @@ export function AddDocumentsScreen() {
   });
 
   const listHref = `/projets/${project.id}/documents`;
-  if (!project.canManage) return <Redirect to={listHref} replace />;
+  if (!canChange) return <Redirect to={listHref} replace />;
 
   return (
     <Page title="Ajouter des documents" back={{ href: listHref, label: "Documents" }} narrow>
