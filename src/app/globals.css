@@ -89,6 +89,19 @@
   }
 }
 
+/* The height the phone's tab bar takes at the bottom of the screen (its
+ * 4rem, its top border and the home indicator), for the bars that sit on
+ * it. The frame marks the root while it shows the tabs (shell.tsx); a
+ * computer has a sidebar instead. */
+:root {
+  --ead-tabs: 0px;
+}
+@media (width < 64rem) {
+  :root[data-tabs="shown"] {
+    --ead-tabs: calc(4rem + 1px + env(safe-area-inset-bottom));
+  }
+}
+
 /* Plan thumbnails: lines darkened, paper left white (the filter is in root.tsx). */
 @utility ink {
   filter: url("#ead-ink");

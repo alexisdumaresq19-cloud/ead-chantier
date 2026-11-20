@@ -24,3 +24,33 @@ export function noteSheetOpened(userId: string, projectId: string, sheetId: stri
     // Local storage can be closed to the page (private mode): no shortcuts then.
   }
 }
+
+// When each project was last opened on this device, so that the list of
+// projects starts with the site the person is on these days.
+
+const projectsKey = (userId: string) => `ead:recents:projects:${userId}`;
+
+/** For each project opened on this device, when it was last opened (ms). */
+export function projectsOpenedAt(userId: string): Record<string, number> {
+  try {
+    const kept: unknown = JSON.parse(window.localStorage.getItem(projectsKey(userId)) ?? "{}");
+    if (!kept || typeof kept !== "object" || Array.isArray(kept)) return {};
+    return Object.fromEntries(
+      Object.entries(kept).filter(
+        (entry): entry is [string, number] => typeof entry[1] === "number",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+/** Remembers that a project was just shown. */
+export function noteProjectOpened(userId: string, projectId: string) {
+  try {
+    const opened = { ...projectsOpenedAt(userId), [projectId]: Date.now() };
+    window.localStorage.setItem(projectsKey(userId), JSON.stringify(opened));
+  } catch {
+    // Local storage can be closed to the page (private mode): the usual order then.
+  }
+}
