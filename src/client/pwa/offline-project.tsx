@@ -8,7 +8,7 @@ import {
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type { ProjectDetail } from "@/shared/api";
 import type { Plans } from "@/shared/plans";
@@ -21,7 +21,14 @@ import { keys } from "../lib/session";
 import { Section } from "../shell/page";
 import { Button, Card, confirmAction, ProgressBar, Skeleton, toast, type Tone } from "../ui";
 import { canStore } from "./caches";
-import { estimateBytes, filesToKeep, keptStatus, keptTotals, sheetsToFetch } from "./keep";
+import {
+  estimateBytes,
+  filesToKeep,
+  isSpaceShort,
+  keptStatus,
+  keptTotals,
+  sheetsToFetch,
+} from "./keep";
 import {
   cancelKeeping,
   keepProject,
@@ -30,6 +37,7 @@ import {
   useKeptProject,
   type Download as Progress,
 } from "./kept";
+import { freeSpace } from "./storage";
 
 const NEEDS_NETWORK = "Les documents ont encore besoin du réseau.";
 
@@ -61,6 +69,9 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
     queryFn: () => api<Plans>(`/api/projects/${project.id}/plans`),
   });
   const [removing, setRemoving] = useState(false);
+  // Read once: what the browser says is left, to warn before a download starts.
+  const [free, setFree] = useState<number | null>(null);
+  useEffect(() => void freeSpace().then(setFree), []);
 
   // No cache storage in this browser: nothing can be kept, nothing to offer.
   if (!canStore()) return null;
@@ -76,14 +87,19 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
   const toFetch = wanted ? sheetsToFetch(kept, wanted) : undefined;
   const status = keptStatus(kept, download !== null, toFetch?.length);
   const onDevice = keptTotals(Object.values(kept?.sheets ?? {}));
-  const about = toFetch
-    ? formatSize(
-        estimateBytes(
-          toFetch.reduce((files, sheet) => files + sheet.urls.length, 0),
-          knownSizes(),
-        ),
+  const needed = toFetch
+    ? estimateBytes(
+        toFetch.reduce((files, sheet) => files + sheet.urls.length, 0),
+        knownSizes(),
       )
     : null;
+  const about = needed === null ? null : formatSize(needed);
+  // Said on the card before the person starts, not only once they press.
+  const warning =
+    problem ??
+    (needed !== null && free !== null && isSpaceShort(needed, free)
+      ? `Il reste environ ${formatSize(free)} sur cet appareil\u00a0: la place risque de manquer.`
+      : null);
   const keptOn = kept?.keptAt ? `Gardé le ${formatDay(kept.keptAt)}` : undefined;
   const offlineNote = online
     ? null
@@ -168,7 +184,7 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
             {removal("Retirer")}
           </>
         }
-        problem={problem}
+        problem={warning}
         note={offlineNote}
       />
     );
@@ -179,14 +195,18 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
         tone="warn"
         title="Téléchargement interrompu"
         text={`${count(onDevice.sheets, "feuille")}${wanted ? ` sur ${wanted.length}` : ""} ${onDevice.sheets > 1 ? "sont" : "est"} sur cet appareil.`}
-        detail="Le reste se télécharge quand vous reprenez."
+        detail={
+          about
+            ? `Il reste environ ${about} à télécharger.`
+            : "Le reste se télécharge quand vous reprenez."
+        }
         actions={
           <>
             {start("Reprendre", Download)}
             {removal("Retirer")}
           </>
         }
-        problem={problem}
+        problem={warning}
         note={offlineNote}
       />
     );
@@ -208,7 +228,7 @@ export function OfflineProject({ project }: { project: ProjectDetail }) {
         text="Les plans s'ouvriront au chantier, même sans réseau."
         detail={`${count(wanted?.length ?? project.sheetCount, "feuille")}${about ? `, environ ${about}` : ""}`}
         actions={start("Garder sur cet appareil", Download)}
-        problem={problem}
+        problem={warning}
         note={offlineNote ?? NEEDS_NETWORK}
       />
     );

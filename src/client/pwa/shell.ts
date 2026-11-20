@@ -38,6 +38,25 @@ export function markShell(html: string, version: string): string | null {
   return html.replace("</head>", `<meta name="${MARK}" content="${version}"/></head>`);
 }
 
+/** Headers about one transfer or about caching it: wrong for the stored copy. */
+const NOT_KEPT =
+  /^(content-length|content-encoding|transfer-encoding|connection|keep-alive|date|age|etag|last-modified|expires|cache-control|vary|set-cookie|x-nextjs-.*)$/;
+
+/**
+ * The headers the stored shell is served with: the server's own, so that the
+ * page opened offline keeps the protections it has online (who may frame it,
+ * no type sniffing, no referrer sent to other sites) and the fonts announced
+ * in "link".
+ */
+export function shellHeaders(server: Headers): Headers {
+  const headers = new Headers();
+  server.forEach((value, name) => {
+    if (!NOT_KEPT.test(name)) headers.set(name, value);
+  });
+  headers.set("content-type", "text/html; charset=utf-8");
+  return headers;
+}
+
 /**
  * Files of the previous shell that nothing asks for any more. Only files the
  * old page loaded at every launch are listed, never a screen's own code: an
@@ -113,11 +132,7 @@ export async function storeShell(version: string): Promise<boolean> {
 
     const cache = await caches.open(SHELL_CACHE);
     const previous = await cache.match(SHELL_URL);
-    const headers = new Headers({ "content-type": "text/html; charset=utf-8" });
-    // The server announces fonts to load early in this header.
-    const link = response.headers.get("link");
-    if (link) headers.set("link", link);
-    await cache.put(SHELL_URL, new Response(marked, { headers }));
+    await cache.put(SHELL_URL, new Response(marked, { headers: shellHeaders(response.headers) }));
 
     if (previous) {
       const code = await caches.open(STATIC_CACHE);
