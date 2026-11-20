@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { appleReviewText, codeFromText, phoneKey, readMessage, typedCode } from "./access";
+import { codeFromText, phoneKey, readMessage, typedCode } from "./access";
 
 describe("the code in what was typed or pasted", () => {
   it("keeps the digits of a code typed, in two groups of four", () => {
@@ -41,14 +41,5 @@ describe("the code in what was typed or pasted", () => {
     expect(phoneKey("(418) 555-0142")).toBe("4185550142");
     expect(phoneKey("555-0142")).toBeNull();
     expect(phoneKey(null)).toBeNull();
-  });
-
-  it("gives Apple the number as user name and the code as password", () => {
-    const text = appleReviewText({ phone: "418 555-0100", code: "85741227" });
-    expect(text.split("\n").slice(0, 2)).toEqual([
-      "Nom d'utilisateur / User name\u00a0: 418 555-0100",
-      "Mot de passe / Password\u00a0: 85741227",
-    ]);
-    expect(text).toContain('"Avec un code du bureau"');
   });
 });

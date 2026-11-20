@@ -88,6 +88,17 @@ for them, but the privacy policy names them.
   gateway never fails over to another company serving the same model (Google Vertex AI,
   Amazon Bedrock).
 
+## People outside the company who see data
+
+- **A demonstration visitor.** The office can give a demonstration access (a fictional cell
+  number and a code, Équipe → Accès de démonstration) to someone outside the company: Apple's
+  reviewer, or a client. That person sees the projects the office chose as a foreman does:
+  plans, documents, photos, daily reports, and the names, titles and hours of those projects'
+  people, never their cell numbers (`src/server/access-code/demo.ts`, `rules.ts`). Apple's form
+  does not ask for this; the privacy policy says it ("Un visiteur de démonstration"), and
+  `store/README.md` has the office show a sample project only. On that shared account the
+  agreement to the assistant is each device's own (`sessions.assistant_consent_at`).
+
 ## Related answers elsewhere in App Store Connect
 
 - **Privacy Policy URL**: `/confidentialite` on the production address.

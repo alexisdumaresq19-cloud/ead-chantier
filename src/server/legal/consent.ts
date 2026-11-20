@@ -1,8 +1,7 @@
-import { and, eq, sql as raw } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { ASSISTANT_CONSENT_REQUIRED } from "@/shared/dictation";
 
-import type { Executor } from "../auth";
 import { db, schema } from "../db/client";
 import { HttpError } from "../http";
 
@@ -13,8 +12,9 @@ import { HttpError } from "../http";
 //
 // The demonstration account is one account for every visitor the office
 // hands its code to: one visitor's "yes" is not the next one's. Its
-// agreement is kept per device instead, by its session (an app_settings row
-// "demo_consent:<session id>"), and ends with that session.
+// agreement is kept per device instead, on its session's row
+// (sessions.assistant_consent_at), and ends with that session; currentUser
+// (src/server/auth.ts) gives each request its own device's answer.
 
 /**
  * When what the assistant sends, or to whom, last changed (the policy's part
@@ -29,23 +29,6 @@ export function consentInForce(at: Date | null): Date | null {
   return at && at >= ASSISTANT_TERMS_SINCE ? at : null;
 }
 
-const settings = schema.appSettings;
-const DEMO_CONSENT = "demo_consent:";
-const demoConsentKey = (sessionId: string) => `${DEMO_CONSENT}${sessionId}`;
-
-/** The agreement given on this session of the demonstration account, or null. */
-export async function demoSessionConsent(
-  sessionId: string,
-  executor: Executor = db,
-): Promise<Date | null> {
-  const [row] = await executor
-    .select({ value: settings.value })
-    .from(settings)
-    .where(eq(settings.key, demoConsentKey(sessionId)))
-    .limit(1);
-  return row?.value ? new Date(row.value) : null;
-}
-
 /**
  * Records the agreement (now), or takes it back. Returns when it now dates
  * from. For the demonstration account, on this session only.
@@ -56,34 +39,16 @@ export async function setAssistantConsent(
   now = new Date(),
 ): Promise<Date | null> {
   const at = agreed ? now : null;
-  if (!user.demo) {
+  if (user.demo)
+    await db
+      .update(schema.sessions)
+      .set({ assistantConsentAt: at })
+      .where(eq(schema.sessions.id, user.sessionId));
+  else
     await db
       .update(schema.users)
       .set({ assistantConsentAt: at })
       .where(eq(schema.users.id, user.id));
-    return at;
-  }
-  await db.transaction(async (tx) => {
-    // The agreements of sessions that have ended go first: nothing reads them.
-    await tx
-      .delete(settings)
-      .where(
-        and(
-          raw`starts_with(${settings.key}, ${DEMO_CONSENT})`,
-          raw`substr(${settings.key}, ${DEMO_CONSENT.length + 1}) not in (select id from sessions)`,
-        ),
-      );
-    const key = demoConsentKey(user.sessionId);
-    if (!at) await tx.delete(settings).where(eq(settings.key, key));
-    else
-      await tx
-        .insert(settings)
-        .values({ key, value: at.toISOString(), updatedBy: user.id, updatedAt: now })
-        .onConflictDoUpdate({
-          target: settings.key,
-          set: { value: at.toISOString(), updatedAt: now },
-        });
-  });
   return at;
 }
 

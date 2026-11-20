@@ -254,8 +254,8 @@ export function InviteScreen() {
               <span className="font-semibold">
                 Vous avez l&apos;application EAD sur cet iPhone?
               </span>{" "}
-              N&apos;entrez pas ici&nbsp;: ouvrez l&apos;application et tapez le code reçu par
-              texto. Si vous entrez ici, le code ne marchera plus dans l&apos;application.
+              N&apos;entrez pas ici&nbsp;: ouvrez l&apos;application et tapez le code reçu avec ce
+              lien. Si vous entrez ici, le code ne marchera plus dans l&apos;application.
             </p>
           </div>
         ) : null}

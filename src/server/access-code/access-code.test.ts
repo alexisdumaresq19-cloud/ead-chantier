@@ -572,8 +572,9 @@ describe.skipIf(!ready)("with a database", () => {
       const thirdUser = (await currentUser(from("x", third.token)))!;
       expect(thirdUser.assistantConsentAt).toBeNull();
       await setAssistantConsent(thirdUser, true);
-      const kept = await sql`select key from app_settings where key like 'demo_consent:%'`;
-      expect(kept.map((entry) => entry.key)).toEqual([`demo_consent:${thirdUser.sessionId}`]);
+      // It is kept on the session's own row, and on that one only.
+      const kept = await sql`select id from sessions where assistant_consent_at is not null`;
+      expect(kept.map((entry) => entry.id)).toEqual([thirdUser.sessionId]);
     });
 
     it("makes one account for visitors who come at the same moment", async () => {

@@ -20,7 +20,7 @@ The account shows only the sample project the office made for Apple (`store/READ
 
 ## Notes
 
-Paste the text below, from its first line to its last, into the "Notes" field, and nothing else: no line of the demonstration card, which would take the field past Apple's limit. 3,935 bytes of the 4,000 bytes allowed; `src/app/.well-known/apple-app-site-association/guide.test.ts` counts them, and fails when this number or the limit is wrong.
+Paste the text below, from its first line to its last, into the "Notes" field, and nothing else: no line of the demonstration card, which would take the field past Apple's limit. 3,940 bytes of the 4,000 bytes allowed; `src/app/.well-known/apple-app-site-association/guide.test.ts` counts them, and fails when this number or the limit is wrong.
 
 EAD is the private field app of Les Entreprises Allen Dumaresq, a civil-engineering contractor in Quebec, Canada. Its office, foremen and site workers use it to open construction plans on site, read project documents, take site photos and write daily reports. The interface is in Canadian French only.
 
@@ -42,19 +42,19 @@ Inside a project, the tabs at the bottom are Accueil (home), Plans, Documents, P
 - Documents: the Documents tab lists them by category. Tap one to open it.
 
 CAMERA
-Tap "Prendre une photo" on a project's home or in the Photos tab. iOS asks for camera access the first time. The photo is added to the project; a window offers to add a description. Without a camera, "De la galerie" picks one from the library.
+Tap "Prendre une photo" on a project's home or in the Photos tab. iOS asks for camera access the first time. The photo is added to the project, with an optional description. Without a camera, "De la galerie" picks one from the library.
 
 MICROPHONE (dictation of the daily report)
-On the project's home, tap "Dicter le rapport du jour". Once today's report is saved, use "Dicter" in the Rapports tab. The first time, the app says what goes to an AI service (the voice, the report's text, its photos, the names of the site's people) and to which companies, and asks for agreement ("J'accepte"). Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". Recording then starts at once (iOS asks for microphone access the first time). Read aloud, for example: "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc." Then tap the round red button to stop. The report fills itself. "Écrire" sends typed text instead of the voice. Close the window ("Terminé" or ✕) and tap "Enregistrer" to save.
+On the project's home, tap "Dicter le rapport du jour". Once today's report is saved, use "Dicter" in the Rapports tab. The first time, the app says what goes to an AI service (the voice, the report's text, its photos, the names of the site's people) and to which companies, and asks for agreement ("J'accepte"). Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". Recording then starts at once (iOS asks for microphone access the first time). Read aloud, for example: "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc." Then tap the round red button to stop. The report fills itself. "Écrire" sends typed text instead of the voice. Close the window ("Terminé" or ✕), then tap "Enregistrer".
 
 ACCOUNT DELETION
-Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account, its phone number, devices and AI agreement are erased at once. What it added stays in the project under its name only, as the privacy policy says. Signing in again with the same number and code opens the demonstration account again.
+Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account, its phone number, devices and AI agreement are erased at once. What it added stays in the project under its name only, as the privacy policy says. Deleting signs out every device using this account. The same number and code open it again, five times a day at most.
 
 PRIVACY AND SUPPORT
 The privacy policy and the support page are linked at the bottom of the first screen and of "Mon compte".
 
 DISTRIBUTION
-The app is for the company's team only. It will be distributed as an unlisted app; a request for unlisted distribution is filed separately.
+The app is for the company's team only and will be an unlisted app; the request for unlisted distribution is filed separately.
 
 NATIVE CAPABILITIES
 Around the company's web app, the native shell uses the device for what a site needs:

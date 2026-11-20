@@ -68,11 +68,12 @@ test("the office makes the access on a project and reads its number and code", a
   access = read.body.access;
   expect(access.phone).toBe("418 555-0100");
   await expect(card).toContainText(`${access.code.slice(0, 4)}\u00a0${access.code.slice(4)}`);
-  // Where each goes for Apple, ready to paste.
+  // Where each goes for Apple, each with its own button to copy it.
   await expect(card).toContainText(
-    "le cellulaire va comme nom d'utilisateur, le code comme mot de passe",
+    "le cellulaire va comme nom d'utilisateur et le code comme mot de passe",
   );
-  await expect(card.getByRole("button", { name: "Copier pour Apple" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Copier le cellulaire" })).toBeVisible();
+  await expect(card.getByRole("button", { name: "Copier le code" })).toBeVisible();
   // The team's list names it for what it is.
   await expect(
     page.getByRole("link", { name: /Compte de démonstration/ }).getByText("Démonstration", {

@@ -51,9 +51,9 @@ export default async function SupportPage() {
             demandez-en un nouveau.
           </Point>
           <Point title="Avec un code du bureau">
-            Dans l&apos;application, touchez «&nbsp;J&apos;ai déjà un compte&nbsp;», puis
-            «&nbsp;Avec un code du bureau&nbsp;». Inscrivez votre cellulaire et le code que le
-            bureau vous a envoyé.
+            Dans l&apos;application, touchez «&nbsp;Avec un code du bureau&nbsp;». Si l&apos;écran
+            montre plutôt «&nbsp;Créer mon compte&nbsp;», touchez d&apos;abord «&nbsp;J&apos;ai déjà
+            un compte&nbsp;». Inscrivez votre cellulaire et le code que le bureau vous a envoyé.
           </Point>
           <Point title="Avec le code QR d'un chantier">
             Au chantier, le contremaître ou le bureau vous montre le code QR. Scannez-le avec

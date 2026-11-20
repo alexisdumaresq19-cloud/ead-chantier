@@ -66,10 +66,16 @@ The interface is in Québec French only.
   own outcomes and its own locks (per network, then per number, always in
   that order): `ACCESS_TRIES_PER_HOUR` per network, and
   `ACCESS_WRONG_PER_NUMBER` per number a day since that number's newest
-  code, of which one network fills a third at most. So no single network
-  locks a person out, and a new link from the office reopens a number. The
-  text the office sends (`inviteMessage`) gives the code first and the link
-  last: a link opened in an iPhone's browser uses up the code the app needs.
+  code, of which one subscriber's block of addresses (an IPv4 /24, an IPv6
+  /48: `blockOf`) fills a third at most. So one connection cannot lock a
+  person out, even by changing address, and a new link from the office
+  reopens a number. The text the office sends (`inviteMessage`) gives the
+  code first and the link last: a link opened in an iPhone's browser uses up
+  the code the app needs. The code works only with the cell number on file:
+  for a person without one, the text gives the link alone. The app is
+  unlisted, so no search finds it: once `IOS_APP_STORE_URL` is set on the
+  host (`src/server/app-store.ts`, read when asked), that text starts with
+  the link that installs it, and `/soutien` gives it too.
 - **The demonstration access** (`access-code/demo.ts`, `/api/company/demo`,
   Équipe → Accès de démonstration) is what the office hands to Apple's
   reviewer. The `app_settings` row `demo_access` keeps `{phone, code,
@@ -80,12 +86,21 @@ projectIds}` readable, since the office reads it again; the number is
   photos, documents and reports, changes only what it added itself, and
   never the plans or the team (`refuseDemoUnlessAuthor`, `refuseDemoOnPlans`
   in `access-code/rules.ts`). A new route that changes a project's content
-  calls one of them, a new route about the team checks `user.demo`, and the
-  screens hide what the server would refuse. Its visitor may delete the
-  account, as Apple asks; the next sign-in puts it back, a few times a day
-  at most: the same account when it had added something (its row was kept
-  for the name), so what the demonstration added stays its own to change.
-  Its number is counted per network only, because its code is handed out.
+  calls one of them (a test in `rules.test.ts` reads the plan routes for it),
+  a new route about the team checks `user.demo`, and the screens hide what
+  the server would refuse: `src/shared/demo.ts` mirrors the server's rules
+  for them (`mayChangeAddedBy`, `mayEditPlans`, held together by
+  `demo.test.ts`), and a record says whether the viewer added it
+  (`addedByMe` on a document) instead of naming who did. Its visitor may
+  delete the account, as Apple asks; the next sign-in puts it back,
+  `DEMO_REMAKES_PER_DAY` times a day at most: the same account when it had
+  added something (its row was kept for the name), so what the
+  demonstration added stays its own to change. Past that bound nobody gets
+  in until the next day, the card says so (`pausedUntil`), and a new code
+  from the office lifts the pause at once. Its number is counted per network
+  only, because its code is handed out. Its visitors are many: the agreement
+  to the assistant is each device's own (`sessions.assistant_consent_at`,
+  given to the request by `currentUser`), never the account's.
 - **Deleting one's account** (`DELETE /api/me`, `src/server/people/delete.ts`):
   someone whose id is the author of reports, photos, documents, plans or
   projects keeps a `users` row with the name only and `deleted_at` set;
@@ -142,7 +157,8 @@ projectIds}` readable, since the office reads it again; the number is
   answers with fixed rules and calls nothing. A screen offers the assistant
   only when `GET /api/assistant` says so.
 - **The assistant's agreement and who receives what**: nothing reaches an AI
-  service before the person agrees (`users.assistant_consent_at`). The
+  service before the person agrees (`users.assistant_consent_at`; for the
+  demonstration account, the device's own, on its session). The
   dictation window asks once and names what is sent
   (`modules/reports/dictation/consent-step.tsx`); Mon compte lets the person
   take it back. The server refuses without it (`assertAssistantConsent` in
@@ -208,6 +224,11 @@ projectIds}` readable, since the office reads it again; the number is
   review notes and the request for unlisted distribution (both in English,
   for Apple), and the screenshots. A screen or a feature that changes takes
   the description, the review notes and `docs/ios/app-privacy.md` with it.
+  The notes go whole into a field of 4,000 bytes: the test beside the
+  `apple-app-site-association` route (`guide.test.ts`) counts them, checks
+  the number the file states, and requires every label they quote to be on
+  a screen, so a renamed button fails the test until the notes follow. The
+  same test holds `docs/ios/MAC.md` to the app.
 - **Shapes shared by both sides** are in `src/shared` (one file per module).
 
 ## The browser side (`src/client`)
@@ -326,4 +347,7 @@ build over a fresh database, in this order: the seed, `scripts/store-sample.mts`
 place of the seed's drawn ones), then `scripts/store-screenshots.mts` (it
 draws the iPhone's status bar and insets itself, and fails if a screen shows
 through under the bottom bar). Their headers say how to run them; look at
-the twelve images before committing them.
+the twelve images before committing them. The sample plans are drawn by
+`scripts/make-sample-plans.ts`, which puts each label on a free spot and
+prints "Sans place libre : …" for one it could not place: a sheet is right
+when it prints nothing.

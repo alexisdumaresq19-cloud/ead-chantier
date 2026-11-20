@@ -116,22 +116,5 @@ export type DemoAccess = {
 
 export type DemoAccessState = { access: DemoAccess | null };
 
-/**
- * What the office pastes in App Store Connect, where Apple asks how its
- * reviewer signs in: a user name (the cell number), a password (the code)
- * and notes. Apple's reviewers read English: the notes say the way in both
- * ways, with the buttons named as the screens name them.
- */
-export function appleReviewText(access: { phone: string; code: string }): string {
-  return [
-    `Nom d'utilisateur / User name\u00a0: ${access.phone}`,
-    `Mot de passe / Password\u00a0: ${access.code}`,
-    "",
-    `${ACCESS_CODE_HOW} Entrez le cellulaire et le code. Pour supprimer le compte\u00a0: Mon compte, Supprimer mon compte. Le supprimer déconnecte tous les appareils qui s'en servent. Le même numéro et le même code rouvrent ensuite le compte de démonstration, ${DEMO_REMAKES_PER_DAY}\u00a0fois par jour au plus.`,
-    "",
-    `In the app, tap "J'ai déjà un compte" if that button is shown, then "Avec un code du bureau", and enter the user name (a cell number) and the password (a code). To delete the account: Mon compte, Supprimer mon compte. Deleting it signs out every device using the demonstration account. Signing in again with the same number and code opens the demonstration account again, up to ${DEMO_REMAKES_PER_DAY} times a day.`,
-  ].join("\n");
-}
-
 /** PATCH /api/company/demo. */
 export type DemoAccessChange = { projectIds?: string[]; newCode?: true };

@@ -12,7 +12,6 @@ import { useState } from "react";
 
 import {
   ACCESS_CODE_HOW,
-  appleReviewText,
   DEMO_REMAKES_PER_DAY,
   DEMO_SESSION_DAYS,
   formatAccessCode,
@@ -193,16 +192,12 @@ export function DemoAccessCard({ className }: { className?: string }) {
             {ACCESS_CODE_HOW} Chaque connexion dure {DEMO_SESSION_DAYS}&nbsp;jour. Ce numéro
             n&apos;appartient à personne&nbsp;: il est réservé aux exemples.
           </p>
-          <div className="border-line mt-3 rounded-2xl border p-3.5">
-            <p className="text-sm text-pretty">
-              <span className="font-semibold">Pour Apple</span>, dans App Store Connect, aux
-              informations de connexion pour la vérification&nbsp;: le cellulaire va comme nom
-              d&apos;utilisateur, le code comme mot de passe, et le chemin dans les notes.
-            </p>
-            <CopyButton text={appleReviewText(access)} done="Copié pour Apple" className="mt-2.5">
-              Copier pour Apple
-            </CopyButton>
-          </div>
+          {/* Apple's notes are whole in store/review-notes.en.md: nothing here is made for that field. */}
+          <p className="text-dim mt-2 text-sm text-pretty">
+            <span className="text-text font-semibold">Pour Apple</span>, dans App Store Connect, aux
+            informations de connexion pour la vérification&nbsp;: le cellulaire va comme nom
+            d&apos;utilisateur et le code comme mot de passe.
+          </p>
           <div className="mt-4">
             <p className="text-sm font-semibold">Projets montrés</p>
             <ul className="mt-1 space-y-0.5 text-[15px]">
@@ -310,36 +305,6 @@ function Value({
   );
 }
 
-/** Copies a text made for pasting elsewhere, and says so. */
-function CopyButton({
-  text,
-  done,
-  className,
-  children,
-}: {
-  text: string;
-  done: string;
-  className?: string;
-  children: string;
-}) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      toast.success(done);
-    } catch {
-      toast("Copiez-le à la main\u00a0: la copie n'est pas permise ici.");
-    }
-  };
-  return (
-    <Button variant="secondary" onClick={copy} className={className}>
-      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
-      {copied ? "Copié" : children}
-    </Button>
-  );
-}
-
 /** The projects the visitor sees, to tick: for a new access, or to change them. */
 function ProjectsSheet({
   open,
@@ -372,7 +337,7 @@ function ProjectsSheet({
       onClose={onClose}
       title={creating ? "Créer l'accès de démonstration" : "Projets montrés"}
       description={
-        "Le visiteur verra les plans, les documents, les photos et les rapports de ces projets, avec les noms et les heures de l'équipe, et pourra y ajouter les siens. Choisissez des projets d'exemple."
+        "Le visiteur verra les plans, les documents, les photos et les rapports de ces projets, avec les noms et les heures de l'équipe, et pourra y ajouter les siens. Choisissez un projet d'exemple, où personne de l'équipe ne travaille."
       }
       footer={
         <>

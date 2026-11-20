@@ -79,6 +79,13 @@ export const sessions = pgTable(
     createdAt: createdAt(),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    /**
+     * The demonstration account only: when this device agreed to the report's
+     * assistant. That account is one for every visitor the office gives its
+     * code to, so its agreement is each device's own and ends with the
+     * session (src/server/legal/consent.ts). Everyone else's is on users.
+     */
+    assistantConsentAt: timestamp("assistant_consent_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("sessions_token_hash").on(t.tokenHash), index("sessions_user").on(t.userId)],
 );

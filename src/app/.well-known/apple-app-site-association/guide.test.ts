@@ -70,6 +70,26 @@ describe("the guide for the Mac", () => {
     }
   });
 
+  it("reads the diagnostic screen by the labels it shows", () => {
+    // Step 4.5 decides appBoundDomains from a screenshot of /diagnostic: the
+    // rows and values it quotes are the screen's own.
+    const facts = read("src/client/modules/diagnostic/facts.ts");
+    const reading = step("4.5");
+    const quoted = [
+      "Dans l'application iPhone",
+      "Mode hors ligne",
+      "Actif sur cette page",
+      "Installé, en attente du prochain lancement",
+      "Non disponible ici",
+      "Modules de l'application",
+      "ne répond pas",
+    ];
+    for (const label of quoted) {
+      expect(facts, label).toContain(`"${label}"`);
+      expect(reading, label).toContain(`«&nbsp;${label}&nbsp;»`);
+    }
+  });
+
   it("keeps screenshots where git ignores them and macOS asks nothing", () => {
     expect(guide).not.toContain("~/Desktop");
     expect(read(".gitignore")).toContain("/ios/App/build/");

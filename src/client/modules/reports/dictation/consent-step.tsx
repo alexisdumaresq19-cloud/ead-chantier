@@ -45,7 +45,8 @@ export function ConsentStep() {
         </p>
         <p>
           L&apos;application leur envoie ces données seulement pour remplir le rapport. Elle ne
-          garde pas l&apos;enregistrement de votre voix.
+          garde pas l&apos;enregistrement de votre voix. Ces services traitent ce qu&apos;ils
+          reçoivent selon leurs propres conditions.
         </p>
       </div>
       <p>Vous pouvez toujours écrire le rapport à la main, sans l&apos;assistant.</p>
