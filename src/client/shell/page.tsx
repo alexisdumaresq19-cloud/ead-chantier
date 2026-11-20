@@ -36,7 +36,7 @@ export function Page({
       {back ? (
         <Link
           href={back.href}
-          className="no-print text-ead-dark hover:bg-ead-tint mb-1 -ml-1.5 inline-flex h-9 items-center gap-0.5 rounded-lg pr-2 text-sm font-semibold"
+          className="no-print text-ead-dark hover:bg-ead-tint mb-1 -ml-1.5 inline-flex h-11 items-center gap-0.5 rounded-lg pr-2 text-sm font-semibold"
         >
           <ChevronLeft className="size-5" aria-hidden />
           {back.label}

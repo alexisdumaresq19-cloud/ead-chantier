@@ -38,6 +38,17 @@ The interface is in Québec French only.
   the request. Roles are in `src/shared/roles.ts`: `admin` (shown as
   "Bureau"), `contremaitre`, `travailleur`. Daily reports are for foremen and
   the office only.
+- **Archived projects** are read-only for everyone but the office, and nobody
+  new joins them. A route that changes a project's content uses
+  `projectToChange` (instead of `projectToManage`) or, where any member may
+  add (photos), `projectToAddTo`; a route that first finds a record and then
+  its project calls `assertOpen(user, project)`. Reading stays on
+  `projectFor` / `projectToManage`.
+- **Uploads** are bounded per person (unfinished and per day; a refusal is a
+  429 with code `too_many_uploads`: wait, do not retry in a loop). An upload
+  link writes once and must carry exactly the announced type. A module that
+  no longer needs an upload's file drops it with `discardUpload()`
+  (`src/server/uploads.ts`), never by deleting from storage itself.
 - **Database**: Postgres with Drizzle (`src/server/db/schema.ts`, migrations
   in `drizzle/`, generated with `npm run db:generate`). Ids are made by the
   app (`newId()`).
@@ -109,4 +120,9 @@ npm run typecheck && npm run lint && npm test
 `npm run seed` leaves Playwright sessions in `.data/dev/` (`admin.json`,
 `foreman.json`, `worker.json`) and the ids in `.data/dev/seed.json`. Check
 screens in a real browser at phone size (390 px wide) and on a desktop, as
-each role. Playwright and Chromium are installed (`require("playwright")`).
+each role.
+
+`npm run e2e` builds the app, starts it on its own database, seeds it and runs
+the Playwright tests of `e2e/` at phone and desktop sizes (`E2E_PORT` and
+`E2E_DB` let two runs coexist). Every module has a spec there; a change to a
+screen or a route comes with a test that would fail without it.

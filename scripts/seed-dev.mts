@@ -113,9 +113,72 @@ await admin.call("POST", "/api/users", {
   projectIds: [main.id],
 });
 
+// Marc came in by QR code: the office confirms him, as it would, so that his
+// session lasts (an unconfirmed person is signed out after a week).
+const people = await admin.call("GET", "/api/users");
+const marc = people.find((person: any) => person.name === "Marc Lévesque");
+await admin.call("PATCH", `/api/users/${marc.id}`, { unreviewed: false });
+
 admin.save("admin");
 foreman.save("foreman");
 worker.save("worker");
+
+// Two daily reports by the foreman, for the last two days.
+const siteDay = (daysAgo: number) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    Date.now() - daysAgo * 86_400_000,
+  );
+const crew = [
+  { name: "Julie Cyr", hours: 10, userId: null },
+  { name: "Marc Lévesque", hours: 10, userId: null },
+  { name: "Simon Arsenault", hours: 9.5, userId: null },
+];
+await foreman.call("POST", `/api/projects/${main.id}/reports`, {
+  day: siteDay(2),
+  weather: { condition: "nuageux", temperatureC: 6, note: "" },
+  crew,
+  equipment: "Pelle 320, rouleau compacteur, camion 10 roues",
+  workDone:
+    "Excavation de la tranchée entre les regards R-3 et R-4. Pose de 36 m de conduite d'aqueduc 200 mm.",
+  notes: "",
+});
+await foreman.call("POST", `/api/projects/${main.id}/reports`, {
+  day: siteDay(1),
+  weather: { condition: "pluie", temperatureC: 3, note: "Pluie forte en après-midi" },
+  crew: crew.slice(0, 2),
+  equipment: "Pelle 320, pompe 3 po",
+  workDone:
+    "Remblayage et compaction de la tranchée posée la veille. Essai de pression en préparation.",
+  notes: "Arrêt à 14 h 30 à cause de la pluie. Visite de l'ingénieur de la Ville en matinée.",
+});
+
+// One document, sent the way a foreman would.
+const { PDFDocument, StandardFonts } = await import("pdf-lib");
+const sample = await PDFDocument.create();
+const sheet = sample.addPage([612, 792]);
+const font = await sample.embedFont(StandardFonts.HelveticaBold);
+sheet.drawText("EXEMPLE - DOCUMENT FICTIF", { x: 72, y: 700, size: 20, font });
+sheet.drawText("Programme de prevention du chantier", { x: 72, y: 660, size: 14, font });
+const documentBytes = Buffer.from(await sample.save());
+const documentTicket = await foreman.call("POST", "/api/uploads", {
+  projectId: main.id,
+  kind: "document",
+  filename: "Programme de prévention.pdf",
+  contentType: "application/pdf",
+  size: documentBytes.length,
+});
+const sent = await fetch(new URL(documentTicket.target.url, BASE), {
+  method: "PUT",
+  headers: documentTicket.target.headers,
+  body: documentBytes,
+});
+if (!sent.ok) throw new Error(`Envoi du document refusé : ${sent.status}`);
+await foreman.call("POST", `/api/uploads/${documentTicket.uploadId}/complete`);
+await foreman.call("POST", `/api/projects/${main.id}/documents`, {
+  uploadId: documentTicket.uploadId,
+  title: "Programme de prévention (exemple)",
+  category: "sst",
+});
 
 // The example plans, imported the way the office would.
 if (!existsSync(PDF))
@@ -169,5 +232,5 @@ writeFileSync(
   ),
 );
 console.log(
-  `Prêt : 3 projets, ${published.sheetIds.length} feuilles de plans, 3 sessions dans ${OUT}/`,
+  `Prêt : 3 projets, ${published.sheetIds.length} feuilles de plans, 2 rapports, 1 document, 3 sessions dans ${OUT}/`,
 );

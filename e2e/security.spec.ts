@@ -47,6 +47,16 @@ test("the app still loads whole, and only its own pages can frame it", async ({
   await expect(page.getByRole("heading", { name: "Bienvenue" })).toBeVisible();
   const loaded = await page.evaluate(async () => {
     await document.fonts.ready;
+    // Images still on their way are waited for: only a failed one counts.
+    await Promise.all(
+      [...document.images].map(
+        (image) =>
+          image.complete ||
+          new Promise((resolve) => {
+            image.onload = image.onerror = resolve;
+          }),
+      ),
+    );
     return {
       fonts: [...document.fonts].filter((font) => font.status === "loaded").length,
       images: [...document.images].every((image) => image.complete && image.naturalWidth > 0),

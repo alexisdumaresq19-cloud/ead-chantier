@@ -1,4 +1,4 @@
-import { defaultShouldDehydrateQuery, QueryClient } from "@tanstack/react-query";
+import { QueryClient, type Query } from "@tanstack/react-query";
 import type { PersistedClient, Persister } from "@tanstack/react-query-persist-client";
 import { del, get, set } from "idb-keyval";
 
@@ -14,7 +14,10 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 20_000,
-      gcTime: MONTH,
+      // Never dropped from memory: this is what gets stored for offline use.
+      // (A month here would not work: it is more than a browser timer can
+      // count, so the clean-up would run at once.)
+      gcTime: Infinity,
       // Show what is stored first; never block a screen on the network.
       networkMode: "offlineFirst",
       retry: (count, error) =>
@@ -46,8 +49,9 @@ export const persister: Persister = {
  * (searches, short-lived links).
  */
 export const dehydrateOptions = {
-  shouldDehydrateQuery: (query: Parameters<typeof defaultShouldDehydrateQuery>[0]) =>
-    defaultShouldDehydrateQuery(query) && query.meta?.persist !== false,
+  // Data whose last refresh failed (a weak signal) is stored all the same.
+  shouldDehydrateQuery: (query: Query) =>
+    query.state.data !== undefined && query.meta?.persist !== false,
 };
 
 /** Changing this discards what devices have stored (after a breaking change). */

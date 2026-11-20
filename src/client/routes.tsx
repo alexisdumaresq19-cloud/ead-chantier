@@ -242,8 +242,10 @@ export function NotFound() {
 function useScrollToTopOnNavigation() {
   const [path] = useLocation();
   useEffect(() => {
+    // Going back within the same screen (a closed photo, a closed person)
+    // changes no path: it must not count against the next real navigation.
     const onPop = () => {
-      goingBack = true;
+      goingBack = window.location.pathname !== shownPath;
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
@@ -251,6 +253,8 @@ function useScrollToTopOnNavigation() {
   useEffect(() => {
     if (!goingBack) window.scrollTo(0, 0);
     goingBack = false;
+    shownPath = path;
   }, [path]);
 }
 let goingBack = false;
+let shownPath = "";

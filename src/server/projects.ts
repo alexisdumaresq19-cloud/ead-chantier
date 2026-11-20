@@ -16,10 +16,12 @@ export async function summarize(rows: ProjectRow[]): Promise<ProjectSummary[]> {
     .from(schema.sheets)
     .where(and(inArray(schema.sheets.projectId, ids), isNull(schema.sheets.archivedAt)))
     .groupBy(schema.sheets.projectId);
+  // Deactivated people are no longer part of a team.
   const memberCounts = await db
     .select({ projectId: schema.projectMembers.projectId, n: raw<number>`count(*)::int` })
     .from(schema.projectMembers)
-    .where(inArray(schema.projectMembers.projectId, ids))
+    .innerJoin(schema.users, eq(schema.users.id, schema.projectMembers.userId))
+    .where(and(inArray(schema.projectMembers.projectId, ids), eq(schema.users.active, true)))
     .groupBy(schema.projectMembers.projectId);
   const sheets = new Map(sheetCounts.map((r) => [r.projectId, r.n]));
   const members = new Map(memberCounts.map((r) => [r.projectId, r.n]));

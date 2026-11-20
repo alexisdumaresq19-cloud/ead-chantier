@@ -70,6 +70,8 @@ export function ErrorState({
   );
 }
 
+const offline = new ApiFailure(0, "offline", "Pas de réseau.");
+
 /**
  * The three states of fetched data. What the device already holds is shown
  * even if refreshing it failed: on a site without signal, yesterday's list
@@ -87,6 +89,8 @@ export function QueryState<T>({
 }) {
   if (query.data !== undefined) return <>{children(query.data)}</>;
   if (query.isError) return <ErrorState error={query.error} onRetry={() => query.refetch()} />;
+  // Without a network a first fetch waits instead of failing: say so.
+  if (query.isPaused) return <ErrorState error={offline} onRetry={() => query.refetch()} />;
   return (
     <>
       {loading ?? (

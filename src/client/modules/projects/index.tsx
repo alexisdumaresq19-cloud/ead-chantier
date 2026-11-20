@@ -247,12 +247,14 @@ export function ProjectHomeScreen() {
             icon={FileText}
             label="Documents"
             detail={count(project.documentCount, "document")}
+            short={project.documentCount.toLocaleString("fr-CA")}
           />
           <ModuleTile
             href={`${base}/photos`}
             icon={Camera}
             label="Photos"
             detail={count(project.photoCount, "photo")}
+            short={project.photoCount.toLocaleString("fr-CA")}
           />
           {project.canManage ? (
             <ModuleTile
@@ -260,6 +262,7 @@ export function ProjectHomeScreen() {
               icon={ClipboardList}
               label="Rapports"
               detail={count(project.reportCount, "rapport")}
+              short={project.reportCount.toLocaleString("fr-CA")}
             />
           ) : null}
         </div>
@@ -297,12 +300,15 @@ function ModuleTile({
   icon: Icon,
   label,
   detail,
+  short,
   main,
 }: {
   href: string;
   icon: LucideIcon;
   label: string;
   detail: string;
+  /** On a narrow phone, where three tiles share a row: the number alone. */
+  short?: string;
   /** The plans: what people open the app for. On a phone, a full-width row. */
   main?: boolean;
 }) {
@@ -344,7 +350,14 @@ function ModuleTile({
               main ? "text-[15px] text-white/85 lg:text-sm" : "text-dim text-[13px] sm:text-sm",
             )}
           >
-            {detail}
+            {short ? (
+              <>
+                <span className="sm:hidden">{short}</span>
+                <span className="max-sm:hidden">{detail}</span>
+              </>
+            ) : (
+              detail
+            )}
           </span>
         </span>
         <ChevronRight

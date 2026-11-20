@@ -1,5 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { ZodError, type ZodType } from "zod";
+import { z, ZodError, type ZodType } from "zod";
+
+// Validation messages reach people: they are in French like the rest.
+z.config(z.locales.fr());
 
 /** An error the client is meant to see, with its HTTP status. */
 export class HttpError extends Error {
@@ -29,7 +32,9 @@ export function route<P = Record<string, never>>(
   return async (request: NextRequest, context: { params: Promise<P> }) => {
     try {
       assertSameOrigin(request);
-      const result = await fn(request, await context.params);
+      const params = await context.params;
+      assertPlainParams(params);
+      const result = await fn(request, params);
       if (result instanceof Response) return result;
       return NextResponse.json(result ?? { ok: true });
     } catch (error) {
@@ -59,6 +64,15 @@ export function route<P = Record<string, never>>(
       );
     }
   };
+}
+
+/**
+ * Ids, tokens and days in an address are plain ASCII words. Anything else (a
+ * NUL byte, a 2 kB string) cannot name a record: it is a 404, not a query.
+ */
+function assertPlainParams(params: unknown) {
+  for (const value of Object.values(params ?? {}))
+    if (typeof value === "string" && !/^[\w.~-]{1,200}$/.test(value)) throw notFound();
 }
 
 /**

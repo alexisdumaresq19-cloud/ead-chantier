@@ -12,15 +12,7 @@ import { count, formatTime, formatWeekday } from "../../lib/format";
 import { navigate } from "../../lib/location";
 import { keys, useCurrentProject } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
-import {
-  Button,
-  ButtonLink,
-  confirmAction,
-  IconButton,
-  Sheet,
-  Skeleton,
-  toast,
-} from "../../ui";
+import { Button, ButtonLink, confirmAction, IconButton, Sheet, Skeleton, toast } from "../../ui";
 import { reportKeys, reportsPath, useDayPhotos, useReport, useStillShown } from "./data";
 import { Fetched } from "./fetched";
 import { capitalize, formatFullDay, formatHours, formatWhen } from "./lib";

@@ -54,7 +54,26 @@ export async function uploadFile(options: {
     request.send(file);
   });
 
-  await api(`/api/uploads/${ticket.uploadId}/complete`, { method: "POST", signal });
+  await confirm(ticket.uploadId, signal);
   onProgress?.(1);
   return ticket.uploadId;
+}
+
+/**
+ * Tells the server the file is there. The file is in storage by now: if this
+ * small request is lost on a weak signal, it is tried again a few times
+ * rather than making the person send the whole file once more.
+ */
+async function confirm(uploadId: string, signal?: AbortSignal) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await api(`/api/uploads/${uploadId}/complete`, { method: "POST", signal });
+      return;
+    } catch (error) {
+      const lost = error instanceof ApiFailure && (error.offline || error.status >= 500);
+      if (!lost || attempt >= 3) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1500 * (attempt + 1)));
+      signal?.throwIfAborted();
+    }
+  }
 }

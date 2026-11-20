@@ -58,12 +58,15 @@ export async function GET(request: NextRequest, { params }: Context) {
       bucket === "public" ? "public, max-age=31536000, immutable" : "private, max-age=300",
     "x-content-type-options": "nosniff",
   });
+  // Hosted storage lets any page load public files; the app relies on it to
+  // keep plan tiles and photos for offline use.
+  if (bucket === "public") headers.set("access-control-allow-origin", "*");
   const name = query.get("n");
   if (bucket === "private") {
     const disposition = query.get("i") ? "inline" : "attachment";
     headers.set(
       "content-disposition",
-      name ? `${disposition}; filename*=UTF-8''${encodeURIComponent(name)}` : disposition,
+      name ? `${disposition}; filename*=UTF-8''${encodeFilename(name)}` : disposition,
     );
   }
   return new NextResponse(Readable.toWeb(createReadStream(path)) as ReadableStream, { headers });
@@ -107,6 +110,13 @@ export async function PUT(request: NextRequest, { params }: Context) {
   }
   return NextResponse.json({ ok: true });
 }
+
+/** RFC 5987: encodeURIComponent leaves ' ( ) * ! bare, and browsers then drop the name. */
+const encodeFilename = (name: string) =>
+  encodeURIComponent(name).replace(
+    /['()*!]/g,
+    (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 
 const tooLarge = () => new NextResponse(null, { status: 413 });
 

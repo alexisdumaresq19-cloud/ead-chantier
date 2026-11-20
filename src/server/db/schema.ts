@@ -131,7 +131,12 @@ export const uploads = pgTable(
     createdBy: text("created_by"),
     createdAt: createdAt(),
   },
-  (t) => [index("uploads_project").on(t.projectId)],
+  (t) => [
+    index("uploads_project").on(t.projectId),
+    // A person's allowance of unfinished uploads, and the sweep of old ones.
+    index("uploads_author_status").on(t.createdBy, t.status),
+    index("uploads_status_created").on(t.status, t.createdAt),
+  ],
 );
 
 // --- Plans ------------------------------------------------------------------
@@ -188,6 +193,8 @@ export const planImports = pgTable(
       .notNull()
       .default("reading"),
     error: text("error"),
+    /** When a worker last began reading the PDF: only one reads at a time. */
+    readingStartedAt: timestamp("reading_started_at", { withTimezone: true }),
     /** Applied to every sheet of the import at publication. */
     folderId: text("folder_id").references(() => planFolders.id, { onDelete: "set null" }),
     revisionLabel: text("revision_label"),
@@ -223,6 +230,8 @@ export const sheetRevisions = pgTable(
       .notNull()
       .default("queued"),
     error: text("error"),
+    /** How many times a worker took this page: one that keeps failing is given up. */
+    attempts: integer("attempts").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }),
     readyAt: timestamp("ready_at", { withTimezone: true }),
 
@@ -328,5 +337,6 @@ export const dailyReports = pgTable(
     createdAt: createdAt(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("daily_reports_project_day").on(t.projectId, t.day)],
+  // One report per project and per day.
+  (t) => [uniqueIndex("daily_reports_project_day").on(t.projectId, t.day)],
 );

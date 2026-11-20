@@ -22,13 +22,22 @@ type SheetProps = {
 
 export function Sheet({ open, onClose, title, description, children, footer, wide }: SheetProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const openedAt = useRef(0);
   const titleId = useId();
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    else if (!open && dialog.open) dialog.close();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      openedAt.current = performance.now();
+      // showModal() gives the focus to the first button, the close cross: a
+      // field marked for it takes it instead.
+      dialog.querySelector<HTMLElement>("[data-autofocus], [autofocus]")?.focus();
+    } else if (!open && dialog.open) {
+      dialog.close();
+      swallowStrayTap();
+    }
   }, [open]);
 
   return (
@@ -36,6 +45,14 @@ export function Sheet({ open, onClose, title, description, children, footer, wid
       ref={ref}
       aria-labelledby={titleId}
       onClose={onClose}
+      // A window that opens under the finger must not take the second tap of
+      // a double tap as an answer nobody read.
+      onClickCapture={(event) => {
+        if (isSecondTap(event.nativeEvent) || performance.now() - openedAt.current < 350) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }}
       // A click that lands on the dialog itself is a click on the backdrop.
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
@@ -51,7 +68,10 @@ export function Sheet({ open, onClose, title, description, children, footer, wid
         <div className="flex max-h-[92dvh] flex-col sm:max-h-[86dvh]">
           <header className="flex items-start gap-3 px-5 pt-5 pb-3">
             <div className="min-w-0 flex-1">
-              <h2 id={titleId} className="font-display text-xl leading-tight font-bold">
+              <h2
+                id={titleId}
+                className="font-display text-xl leading-tight font-bold [overflow-wrap:anywhere]"
+              >
                 {title}
               </h2>
               {description ? <div className="text-dim mt-1 text-sm">{description}</div> : null}
@@ -76,4 +96,24 @@ export function Sheet({ open, onClose, title, description, children, footer, wid
       ) : null}
     </dialog>
   );
+}
+
+/** The second click of a double click or double tap. */
+const isSecondTap = (event: MouseEvent) => event.detail > 1;
+
+/**
+ * When a window closes on a tap, the second tap of a double tap would land on
+ * whatever is underneath (a row, a tab). For a moment, such a tap is ignored.
+ */
+function swallowStrayTap() {
+  const closedAt = performance.now();
+  const swallow = (event: MouseEvent) => {
+    const fromFinger = (event as PointerEvent).pointerType === "touch";
+    if (isSecondTap(event) || (fromFinger && performance.now() - closedAt < 300)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  };
+  window.addEventListener("click", swallow, true);
+  setTimeout(() => window.removeEventListener("click", swallow, true), 400);
 }

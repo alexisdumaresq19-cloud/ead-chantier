@@ -58,6 +58,7 @@ export function AppRoot() {
         <ConfirmHost />
         <PwaHost />
         <Toaster
+          className="no-print"
           position="top-center"
           richColors
           toastOptions={{ style: { fontFamily: "var(--font-sans)" } }}
