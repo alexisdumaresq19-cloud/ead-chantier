@@ -169,13 +169,16 @@ export async function imagesForModel(
   };
 }
 
+/**
+ * Quotes around a whole description are the model's way of handing it over:
+ * they go. Quotes inside one (the words on a sign) are part of it and stay.
+ */
+const WRAPPED = [/^«\s*([^«»]*?)\s*»$/, /^"([^"]*)"$/, /^“([^“”]*)”$/, /^'([^']*)'$/];
+
 /** A description on one line, within the size a photo takes. */
 export function tidyCaption(text: string): string {
-  const flat = text
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/^[«"“'\s]+|[»"”\s]+$/g, "")
-    .trim();
+  let flat = text.replace(/\s+/g, " ").trim();
+  for (const wrapped of WRAPPED) flat = (wrapped.exec(flat)?.[1] ?? flat).trim();
   if (flat.length <= PHOTO_CAPTION_MAX) return flat;
   const cut = flat.slice(0, PHOTO_CAPTION_MAX + 1);
   const end = cut.lastIndexOf(" ");

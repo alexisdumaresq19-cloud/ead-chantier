@@ -161,6 +161,17 @@ describe("images for the model", () => {
 describe("tidyCaption", () => {
   it("puts a description on one line, without quotes", () => {
     expect(tidyCaption("  « Conduite 200 mm\n en place »  ")).toBe("Conduite 200 mm en place");
+    expect(tidyCaption('"Regard R-4"')).toBe("Regard R-4");
+  });
+  it("keeps the quotes inside a description", () => {
+    const sign = "Mains sur le clavier d'un piano portant l'inscription « Lauberger & Gloss »";
+    expect(tidyCaption(sign)).toBe(sign);
+    expect(tidyCaption('Panneau "Rue barrée" à l\'entrée du chantier')).toBe(
+      'Panneau "Rue barrée" à l\'entrée du chantier',
+    );
+    expect(tidyCaption("« Rue barrée » sur le panneau, « Détour » dessous")).toBe(
+      "« Rue barrée » sur le panneau, « Détour » dessous",
+    );
   });
   it("cuts a long one between two words", () => {
     const long = "regard ".repeat(100);

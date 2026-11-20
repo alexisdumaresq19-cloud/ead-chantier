@@ -7,8 +7,12 @@ import { getVercelOidcToken } from "@vercel/oidc";
 
 const GATEWAY = "https://ai-gateway.vercel.sh";
 
-/** The Claude model used to write reports from what was said. */
-export const CLAUDE_MODEL = "anthropic/claude-opus-5.5";
+/**
+ * The Claude model used to write reports from what was said and seen.
+ * AI_MODEL names another one of the gateway's catalog (its faster variant,
+ * for instance) without a change to the code.
+ */
+export const CLAUDE_MODEL = process.env.AI_MODEL?.trim() || "anthropic/claude-opus-5.5";
 /** The speech-to-text model. */
 export const TRANSCRIPTION_MODEL = "openai/gpt-transcribe";
 
