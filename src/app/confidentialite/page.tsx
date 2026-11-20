@@ -146,8 +146,7 @@ export default async function PrivacyPage() {
           <Point title="Les gens de vos chantiers">
             Ils voient votre nom, votre rôle, votre titre et votre cellulaire, ainsi que les plans,
             documents et photos du chantier. Les rapports journaliers sont réservés aux
-            contremaîtres du chantier et au bureau, et au visiteur de démonstration décrit
-            ci-dessous.
+            contremaîtres du chantier, au bureau et au visiteur de démonstration décrit plus bas.
           </Point>
           <Point title="Un visiteur de démonstration">
             Le bureau peut donner un accès de démonstration à une personne hors de
