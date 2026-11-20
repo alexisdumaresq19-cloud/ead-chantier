@@ -558,14 +558,15 @@ describe.skipIf(!ready)("importing a PDF of plans", () => {
     await expect(imports.createImport(user, upload, {})).rejects.toThrow(/pas terminé/);
     expect(await pagesOf(recent.id)).toHaveLength(0);
 
-    // An upload whose link has expired goes entirely.
+    // An upload announced more than a day ago no longer counts for anything
+    // and goes entirely (a younger one keeps its row for the day's count).
     // It takes nothing with it: its import and the pages were removed first.
     const old = await importOf(await pdfOf(1));
     await imports.runImportWorker(old.id);
     const [oldPage] = await pagesOf(old.id);
     await db
       .update(schema.uploads)
-      .set({ createdAt: new Date(Date.now() - 4 * 3_600_000) })
+      .set({ createdAt: new Date(Date.now() - 30 * 3_600_000) })
       .where(eq(schema.uploads.id, old.uploadId));
     await imports.cancelImport(old.id);
     expect(await uploadOf(old.uploadId)).toBeUndefined();

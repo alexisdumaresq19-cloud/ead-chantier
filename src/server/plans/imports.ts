@@ -461,16 +461,25 @@ export async function runImportWorker(importId: string): Promise<void> {
       await processPage(current, revision, pdf);
       if ([...waitingImports].some((other) => other !== importId)) {
         // Another import waits for a PDFium: this one goes, with its memory,
-        // and this worker gets in line again.
-        await pdf.close();
+        // and this worker gets in line again. The turn is handed back
+        // whatever closing does: after a page that broke PDFium, closing
+        // throws, and a turn kept would be lost for the life of the process.
+        const closing = pdf;
         pdf = undefined;
-        releaseTurn();
+        try {
+          await closing.close();
+        } finally {
+          releaseTurn();
+        }
       }
     }
     await finishIfDone(importId);
   } finally {
-    await pdf?.close();
-    releaseTurn();
+    try {
+      await pdf?.close();
+    } finally {
+      releaseTurn();
+    }
   }
 
   function releaseTurn() {
@@ -786,6 +795,19 @@ export async function cancelImport(importId: string) {
         and(eq(schema.sheetRevisions.importId, importId), isNull(schema.sheetRevisions.sheetId)),
       )
       .returning({ tileKey: schema.sheetRevisions.tileKey });
+    // The PDF's upload is locked and marked unfinished in this same
+    // transaction: a create request for it arriving at this moment (a
+    // repeated tap, a retry) waits on the lock, then finds an upload it may
+    // not use, instead of bringing the cancelled import back.
+    await tx
+      .select({ id: schema.uploads.id })
+      .from(schema.uploads)
+      .where(eq(schema.uploads.id, current.uploadId))
+      .for("update");
+    await tx
+      .update(schema.uploads)
+      .set({ status: "pending" })
+      .where(eq(schema.uploads.id, current.uploadId));
     await tx.delete(schema.planImports).where(eq(schema.planImports.id, importId));
     return { pages, uploadId: current.uploadId };
   });
