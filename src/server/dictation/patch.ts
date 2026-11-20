@@ -186,19 +186,29 @@ const TEXT_MAX: Record<TextField, number> = {
   notes: LIMITS.text,
 };
 
-/** The figures of a text: "40", "7,5", "200". */
-const figures = (text: string) => new Set(text.match(/\d+(?:[.,]\d+)?/g) ?? []);
+/** The figures of a text, written one way: "40", "7.5" for "7,5", "25000" for "25 000". */
+const figures = (text: string) =>
+  new Set(
+    (text.replace(/(\d)[\s\u00a0\u202f](?=\d{3}\b)/g, "$1").match(/\d+(?:[.,]\d+)?/g) ?? []).map(
+      (figure) => figure.replace(",", "."),
+    ),
+  );
 
 /**
- * Whether a rewritten text can stand for the one it replaces: every figure of
- * the original is still there, and it is not much shorter (a clean text loses
- * hesitations and repetitions, never half of what was said).
+ * Whether a rewritten text can stand for the one it replaces: the very same
+ * figures (none lost, none added), not much shorter (a clean text loses
+ * hesitations and repetitions, never half of what was said) and not much
+ * longer (putting in clean French adds no sentence).
  */
 export function keepsTheFacts(before: string, after: string): boolean {
-  const kept = figures(after);
+  const was = figures(before);
+  const now = figures(after);
+  const length = { before: before.trim().length, after: after.trim().length };
   return (
-    [...figures(before)].every((figure) => kept.has(figure)) &&
-    after.trim().length >= before.trim().length * 0.4
+    was.size === now.size &&
+    [...was].every((figure) => now.has(figure)) &&
+    length.after >= length.before * 0.4 &&
+    length.after <= length.before * 1.3 + 40
   );
 }
 

@@ -117,6 +117,16 @@ export function formAfterDictation(form: ReportForm, content: ReportContent): Re
   };
 }
 
+/**
+ * A form from an earlier moment (the one a request left with, the one a turn
+ * puts back) laid over the form as it is now. The photos stay those the
+ * report has now: one taken in the meantime goes with the report all the same.
+ */
+export const keepingPhotos = (earlier: ReportForm, now: ReportForm): ReportForm => ({
+  ...earlier,
+  photoIds: now.photoIds,
+});
+
 const NBSP = "\u00a0";
 /** People named one by one in an answer; the others are counted. */
 const PEOPLE_SHOWN = 4;
@@ -194,9 +204,15 @@ export const photosToDescribe = (photos: ReportPhoto[]) =>
 export const hasTextToTidy = (form: ReportForm) =>
   [form.equipment, form.workDone, form.notes].some((text) => text.trim());
 
-/** What "Mettre au propre" changed: "Travaux réalisés : mis au propre". */
-export const tidyChips = (changed: DictationField[]) =>
-  changed.map((field) => `${DICTATION_FIELD_LABELS[field]}${NBSP}: mis au propre`);
+type TextField = "equipment" | "workDone" | "notes";
+const isTextField = (field: DictationField): field is TextField =>
+  field === "equipment" || field === "workDone" || field === "notes";
+
+/** What "Mettre au propre" wrote, part by part, for the person to read before saving. */
+export const tidyTexts = (content: ReportContent, changed: DictationField[]) =>
+  changed
+    .filter(isTextField)
+    .map((field) => ({ field, label: DICTATION_FIELD_LABELS[field], text: content[field] }));
 
 /** "la photo 3", "les photos 3 et 5", "les photos 1, 2 et 4". */
 export function photoNumbers(numbers: number[]): string {

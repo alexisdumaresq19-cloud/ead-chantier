@@ -15,12 +15,14 @@ import {
   planPhotos,
   taskOf,
   tidyCaption,
+  type PhotoOnScreen,
 } from "./photos";
 
 const ID = (n: number) => `abcdefghjkmnpq${"abcdefghjkmnpqrstuvwxyz"[n]}z`;
 const at = (minute: number) => new Date(Date.UTC(2026, 10, 19, 14, minute));
 
-const onScreen = (n: number, change: Partial<DictationPhoto> = {}): DictationPhoto => ({
+const onScreen = (n: number, change: Partial<DictationPhoto> = {}): PhotoOnScreen => ({
+  number: n,
   id: ID(n),
   caption: null,
   takenAt: at(n).toISOString(),
@@ -51,6 +53,26 @@ describe("photosOnScreen", () => {
     expect(photosOnScreen("pas du json", [ID(1)])).toEqual([]);
     expect(photosOnScreen(JSON.stringify([{ id: "../../etc" }]), [ID(1)])).toEqual([]);
     expect(photosOnScreen(null, [ID(1)])).toEqual([]);
+    expect(photosOnScreen(JSON.stringify({ id: ID(1) }), [ID(1)])).toEqual([]);
+  });
+  it("keeps the screen's numbers when an entry is left out", () => {
+    const sent = JSON.stringify([
+      onScreen(1),
+      { ...onScreen(2), takenAt: "hier" },
+      onScreen(3, { caption: "x".repeat(PHOTO_CAPTION_MAX + 50) }),
+      onScreen(4),
+    ]);
+    const photos = photosOnScreen(sent, [ID(1), ID(2), ID(3), ID(4)]);
+    expect(photos.map((photo) => [photo.id, photo.number])).toEqual([
+      [ID(1), 1],
+      [ID(3), 3],
+      [ID(4), 4],
+    ]);
+    // A description too long is only cut.
+    expect(photos[1].caption).toHaveLength(PHOTO_CAPTION_MAX);
+    expect(planPhotos(photos, [row(4)], null).listed.map((photo) => photo.number)).toEqual([
+      1, 3, 4,
+    ]);
   });
 });
 
@@ -166,20 +188,20 @@ describe("captionsFromPatch", () => {
         { number: 1, description: "Tranchée" },
       ]),
       plan,
-      null,
-      new Set([2, 3]),
+      { task: null, heard: "", looked: new Set([2, 3]) },
     );
     expect(captions).toEqual([{ photoId: ID(2), number: 2, caption: "Regard R-4 en place" }]);
   });
 
-  it("lets a dictation describe a photo again when asked", () => {
-    const captions = captionsFromPatch(
-      patch([{ number: 1, description: "Tranchée côté nord" }]),
-      plan,
-      null,
-      new Set(),
-    );
-    expect(captions).toEqual([{ photoId: ID(1), number: 1, caption: "Tranchée côté nord" }]);
+  it("lets a dictation describe a photo again only when it speaks of a photo", () => {
+    const answer = patch([{ number: 1, description: "Tranchée côté nord" }]);
+    const again = (heard: string) =>
+      captionsFromPatch(answer, plan, { task: null, heard, looked: new Set() });
+    expect(again("La photo 1, c'est plutôt la tranchée côté nord.")).toEqual([
+      { photoId: ID(1), number: 1, caption: "Tranchée côté nord" },
+    ]);
+    // A description written by someone stays when nobody asked to change it.
+    expect(again("On a creusé la tranchée côté nord.")).toEqual([]);
   });
 
   it("describes only the photos looked at for the task, and none to tidy", () => {
@@ -187,9 +209,10 @@ describe("captionsFromPatch", () => {
       { number: 1, description: "Autre chose" },
       { number: 3, description: "Remblai terminé" },
     ]);
-    expect(captionsFromPatch(answer, plan, "describe", new Set([3]))).toEqual([
+    const looked = new Set([3]);
+    expect(captionsFromPatch(answer, plan, { task: "describe", heard: "", looked })).toEqual([
       { photoId: ID(3), number: 3, caption: "Remblai terminé" },
     ]);
-    expect(captionsFromPatch(answer, plan, "tidy", new Set([3]))).toEqual([]);
+    expect(captionsFromPatch(answer, plan, { task: "tidy", heard: "", looked })).toEqual([]);
   });
 });

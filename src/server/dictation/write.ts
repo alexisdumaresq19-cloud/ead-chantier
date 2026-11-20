@@ -174,10 +174,24 @@ export function assistantContent(input: DictationInput): Anthropic.ContentBlockP
   return blocks;
 }
 
+/**
+ * How long the AI calls of one request may take in all: the route is stopped
+ * at 90 s (`maxDuration`), and what comes before and after them needs a few.
+ */
+export const AI_BUDGET_MS = 80_000;
+/** The longest a single call may take. */
+const CALL_MAX_MS = 45_000;
+/** Below this, there is no time left to ask again without the photos. */
+const RETRY_MIN_MS = 15_000;
+
+/** Time for the next call: what is left before `deadline`, 45 s at most. */
+const timeLeft = (deadline: number) => Math.max(0, Math.min(CALL_MAX_MS, deadline - Date.now()));
+
 /** The words spoken in a recording. */
 export async function transcribeDictation(
   audio: Uint8Array,
   members: KnownPerson[],
+  deadline = Date.now() + AI_BUDGET_MS,
 ): Promise<string> {
   if (aiIsFake())
     return "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc.";
@@ -186,7 +200,8 @@ export async function transcribeDictation(
       model: TRANSCRIPTION_MODEL,
       audio,
       maxRetries: 1,
-      abortSignal: AbortSignal.timeout(45_000),
+      // Retries included: the timer runs for the whole call.
+      abortSignal: AbortSignal.timeout(timeLeft(deadline)),
       providerOptions: {
         openai: {
           language: "fr",
@@ -223,9 +238,16 @@ export function assistantRequest(input: DictationInput) {
 }
 
 /** The answer, or null when the model gave none that fits the expected shape. */
-async function ask(client: ModelClient, input: DictationInput): Promise<DictationPatch | null> {
+async function ask(
+  client: ModelClient,
+  input: DictationInput,
+  deadline: number,
+): Promise<DictationPatch | null> {
   try {
-    const response = await client.messages.parse(assistantRequest(input));
+    // The signal bounds the call, the SDK's own retry included.
+    const response = await client.messages.parse(assistantRequest(input), {
+      signal: AbortSignal.timeout(timeLeft(deadline)),
+    });
     if (response.stop_reason === "refusal" || !response.parsed_output) {
       console.error("dictation: no usable answer", response.stop_reason);
       return null;
@@ -254,28 +276,39 @@ function serviceFailure(error: unknown): unknown {
 
 /**
  * What to change in the report and what the photos show. When the service
- * turns the request down because of its images, it is asked once more
- * without them: the report is still filled, and `sawImages` says the photos
- * were not looked at.
+ * turns the request down because of its images, a dictation is asked once
+ * more without them: the report is still filled, and `sawImages` says the
+ * photos were not looked at. Describing the photos without them could give
+ * nothing: that is not asked again. Every call ends by `deadline`.
  */
 export async function readDictation(
   input: DictationInput,
-  connect: () => Promise<ModelClient | null> = claude,
+  {
+    connect = claude,
+    deadline = Date.now() + AI_BUDGET_MS,
+  }: { connect?: () => Promise<ModelClient | null>; deadline?: number } = {},
 ): Promise<{ patch: DictationPatch; sawImages: boolean }> {
+  const withImages = input.images.length > 0;
+  // Nothing to look at, nothing to ask.
+  if (input.task === "describe" && !withImages) return { patch: noChange(), sawImages: false };
   if (aiIsFake()) return { patch: fakePatch(input), sawImages: true };
   const client = await connect();
   if (!client) throw unavailable();
-  const withImages = input.images.length > 0;
   try {
-    const patch = await ask(client, input);
+    const patch = await ask(client, input, deadline);
     if (patch) return { patch, sawImages: withImages };
     if (!withImages) return { patch: asWorkDone(input.heard), sawImages: false };
   } catch (error) {
     if (!withImages || !troubleWithImages(error)) throw serviceFailure(error);
-    console.error("dictation: asking again without the photos");
+    console.error("dictation: the photos were turned down", (error as Error).message);
   }
+  // Without the images a description could only be made up: that is not asked.
+  if (input.task === "describe") return { patch: noChange(), sawImages: false };
+  // Too late to ask again: what was said still goes in the report.
+  if (deadline - Date.now() < RETRY_MIN_MS)
+    return { patch: asWorkDone(input.heard), sawImages: false };
   try {
-    const patch = await ask(client, { ...input, images: [] });
+    const patch = await ask(client, { ...input, images: [] }, deadline);
     return { patch: patch ?? asWorkDone(input.heard), sawImages: false };
   } catch (error) {
     throw serviceFailure(error);
@@ -290,19 +323,20 @@ function statusOf(error: unknown): number | undefined {
   return cause === undefined ? undefined : statusOf(cause);
 }
 
+/** A patch that changes nothing. */
+const noChange = (): DictationPatch => ({
+  weather: { condition: null, temperatureC: null, note: null },
+  crew: [],
+  equipment: null,
+  workDone: null,
+  notes: null,
+  replace: { equipment: false, workDone: false, notes: false },
+  questions: [],
+  photos: [],
+});
+
 /** When the text cannot be sorted into the report's parts, none of it is lost: it goes to the work done. */
-function asWorkDone(heard: string): DictationPatch {
-  return {
-    weather: { condition: null, temperatureC: null, note: null },
-    crew: [],
-    equipment: null,
-    workDone: heard || null,
-    notes: null,
-    replace: { equipment: false, workDone: false, notes: false },
-    questions: [],
-    photos: [],
-  };
-}
+const asWorkDone = (heard: string): DictationPatch => ({ ...noChange(), workDone: heard || null });
 
 /** The description the tests' stand-in gives every photo it looks at. */
 export const FAKE_CAPTION = "Vue du chantier (description d'exemple)";

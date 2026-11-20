@@ -274,6 +274,60 @@ test("a photo taken from the window goes with the report, and the assistant desc
   await context.close();
 });
 
+test("a photo taken while the assistant works, or before an undo, stays with the report", async ({
+  browser,
+}) => {
+  const context = await contextAs(browser, "foreman");
+  const page = await context.newPage();
+  // The answer takes its time, as the real service does.
+  await page.route("**/reports/dictation", async (route) => {
+    await new Promise((done) => setTimeout(done, 3000));
+    await route.continue();
+  });
+  await page.goto(newReport(freeDay(48)));
+  const dialog = await openWindow(page);
+
+  await dialog.getByRole("button", { name: "Écrire" }).click();
+  await dialog.getByLabel("Votre texte").fill("Soleil. On a posé la conduite.");
+  await dialog.getByRole("button", { name: "Envoyer" }).click();
+  await expect(dialog.getByText("Je rédige le rapport…")).toBeVisible();
+
+  // While it works, the foreman shoots.
+  const jpeg = await sharp({
+    create: { width: 1200, height: 900, channels: 3, background: "#6d7a55" },
+  })
+    .jpeg()
+    .toBuffer();
+  await dialog
+    .getByLabel("Prendre une photo")
+    .setInputFiles({ name: "IMG_2.jpg", mimeType: "image/jpeg", buffer: jpeg });
+  const added = page.getByRole("dialog", { name: "Photo ajoutée" });
+  await expect(added).toBeVisible();
+  await page.waitForTimeout(450);
+  await added.getByRole("button", { name: "Terminé" }).click();
+  const strip = dialog.getByRole("list", { name: "Photos du rapport" });
+  await expect(strip.getByRole("figure")).toHaveCount(1);
+
+  // The answer comes: the photo is still there, and so after the dictation is put back.
+  await expect(dialog.getByText("C'est noté")).toBeVisible({ timeout: 20_000 });
+  await expect(strip.getByRole("figure")).toHaveCount(1);
+  await dialog.getByRole("button", { name: "Annuler cette dictée" }).click();
+  await expect(dialog.getByText("C'est noté")).toHaveCount(0);
+  await expect(strip.getByRole("figure")).toHaveCount(1);
+  await expect(dialog.getByText("Prenez vos photos ici")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Fermer" }).click();
+  await expect(dialog).toBeHidden();
+
+  // Saved, the report names the photo.
+  await page.getByLabel("Travaux réalisés").fill("Pose de conduite.");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page).toHaveURL(new RegExp(`/rapports/(?!nouveau)[a-z0-9]+$`));
+  const reportId = page.url().split("/").at(-1) ?? "";
+  const saved = (await call(context.request, "GET", `/api/reports/${reportId}`)).body;
+  expect(saved.photoIds).toHaveLength(1);
+  await context.close();
+});
+
 test("the assistant puts the texts in clean French, and that can be put back", async ({
   browser,
 }) => {
@@ -286,7 +340,11 @@ test("the assistant puts the texts in clean French, and that can be put back", a
 
   await dialog.getByRole("button", { name: "Mettre au propre" }).click();
   await expect(dialog.getByText("C'est fait")).toBeVisible({ timeout: 20_000 });
-  await expect(dialog.getByText("Travaux réalisés : mis au propre")).toBeVisible();
+  // The new text is shown in full, to be read over before saving.
+  const tidied = dialog.getByRole("list", { name: "Textes mis au propre" });
+  await expect(tidied).toContainText("Travaux réalisés");
+  await expect(tidied).toContainText("On a posé la conduite.");
+  await expect(tidied).toContainText("Remblai de la tranchée.");
   await expect(work).toHaveValue("On a posé la conduite.\nRemblai de la tranchée.");
   // A second clean copy would change nothing: it is not offered right after.
   await expect(dialog.getByRole("button", { name: "Mettre au propre" })).toHaveCount(0);

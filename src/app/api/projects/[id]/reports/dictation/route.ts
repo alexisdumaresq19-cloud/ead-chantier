@@ -12,13 +12,14 @@ import {
   planPhotos,
   taskOf,
 } from "@/server/dictation/photos";
-import { readDictation, transcribeDictation } from "@/server/dictation/write";
+import { AI_BUDGET_MS, readDictation, transcribeDictation } from "@/server/dictation/write";
 import { badRequest, HttpError, route } from "@/server/http";
 import { photoRowsByIds } from "@/server/photos/queries";
 import { storage } from "@/server/storage";
 import { DICTATION_MAX_BYTES, DICTATION_MAX_TEXT, type DictationResult } from "@/shared/dictation";
 
 // Two calls to the AI service, one after the other: allow for a slow one.
+// The calls themselves end within AI_BUDGET_MS of the request's start.
 export const maxDuration = 90;
 
 const AUDIO = /^audio\/(webm|mp4|ogg|wav|x-wav|mpeg|mp3|aac|x-m4a|m4a)\b/;
@@ -30,6 +31,7 @@ const AUDIO = /^audio\/(webm|mp4|ogg|wav|x-wav|mpeg|mp3|aac|x-m4a|m4a)\b/;
  * here: the screen gives the photos their descriptions.
  */
 export const POST = route<{ id: string }>(async (request, { id }) => {
+  const deadline = Date.now() + AI_BUDGET_MS;
   const user = await requireUser(request);
   await projectToChange(user, id);
 
@@ -103,7 +105,11 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   // From here on the request costs money: it counts against the person's allowance.
   await countDictation(user.id);
   if (recorded) {
-    heard = await transcribeDictation(new Uint8Array(await recorded.arrayBuffer()), known);
+    heard = await transcribeDictation(
+      new Uint8Array(await recorded.arrayBuffer()),
+      known,
+      deadline,
+    );
     if (heard.length < 3) throw nothingHeard();
     heard = heard.slice(0, DICTATION_MAX_TEXT);
   }
@@ -111,16 +117,20 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   const { images, failed } = await imagesForModel(plan.toLook, (key) =>
     storage().get("public", key),
   );
-  const { patch, sawImages } = await readDictation({
-    heard,
-    current: report,
-    members: known,
-    speaker: user.name,
-    asked,
-    task,
-    photos: plan.listed,
-    images,
-  });
+  // A "describe" left with no image to look at asks nothing: it costs nothing more.
+  const { patch, sawImages } = await readDictation(
+    {
+      heard,
+      current: report,
+      members: known,
+      speaker: user.name,
+      asked,
+      task,
+      photos: plan.listed,
+      images,
+    },
+    { deadline },
+  );
   // Each task changes only what it is for.
   const applied =
     task === "tidy"
@@ -129,7 +139,7 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
         ? { content: report, changed: [], questions: [] }
         : applyDictation(report, patch, known);
   const looked = new Set(sawImages ? images.map((image) => image.number) : []);
-  const captions = captionsFromPatch(patch, plan, task, looked);
+  const captions = captionsFromPatch(patch, plan, { task, heard, looked });
   const unseen = [
     ...plan.notArrived,
     ...failed,

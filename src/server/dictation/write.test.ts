@@ -67,17 +67,19 @@ type Params = ReturnType<typeof assistantRequest>;
 /** The SDK's client, replaced: each call answers with the next of `answers`. */
 function double(...answers: (DictationPatch | null | Error)[]) {
   const calls: Params[] = [];
+  const signals: (AbortSignal | undefined)[] = [];
   const client = {
     messages: {
-      parse: vi.fn(async (params: Params) => {
+      parse: vi.fn(async (params: Params, options?: { signal?: AbortSignal }) => {
         calls.push(params);
+        signals.push(options?.signal);
         const next = answers.shift();
         if (next instanceof Error) throw next;
         return { stop_reason: next ? "end_turn" : "refusal", parsed_output: next ?? null };
       }),
     },
   } as unknown as ModelClient;
-  return { client, calls, connect: async () => client };
+  return { client, calls, signals, connect: async () => client };
 }
 
 const apiError = (status: number) =>
@@ -151,17 +153,18 @@ describe("assistantContent", () => {
 });
 
 describe("readDictation", () => {
-  it("asks once, with the images", async () => {
-    const { calls, connect } = double(answer);
-    const result = await readDictation(input(), connect);
+  it("asks once, with the images, bounded in time", async () => {
+    const { calls, signals, connect } = double(answer);
+    const result = await readDictation(input(), { connect });
     expect(result).toEqual({ patch: answer, sawImages: true });
     expect(calls).toHaveLength(1);
+    expect(signals[0]).toBeInstanceOf(AbortSignal);
     expect(calls[0].messages[0].content.filter((block) => block.type === "image")).toHaveLength(2);
   });
 
   it("asks again without the images when the service refuses them", async () => {
     const { calls, connect } = double(apiError(413), answer);
-    const result = await readDictation(input(), connect);
+    const result = await readDictation(input(), { connect });
     expect(result.sawImages).toBe(false);
     expect(calls).toHaveLength(2);
     expect(calls[1].messages[0].content.some((block) => block.type === "image")).toBe(false);
@@ -173,14 +176,37 @@ describe("readDictation", () => {
 
   it("asks again without the images when the answer with them is refused", async () => {
     const { calls, connect } = double(null, answer);
-    const result = await readDictation(input(), connect);
+    const result = await readDictation(input(), { connect });
     expect(result).toEqual({ patch: answer, sawImages: false });
     expect(calls).toHaveLength(2);
   });
 
+  it("does not ask again when too little time is left", async () => {
+    const { calls, connect } = double(apiError(413), answer);
+    const result = await readDictation(input(), { connect, deadline: Date.now() + 5_000 });
+    // What was said still goes in the report.
+    expect(result.sawImages).toBe(false);
+    expect(result.patch.workDone).toBe("Soleil. La photo 1, c'est le regard R-3.");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("describes nothing without the images, and asks nothing for it", async () => {
+    const task = { heard: "", task: "describe" as const };
+    const refused = double(apiError(400), answer);
+    const result = await readDictation(input(task), { connect: refused.connect });
+    expect(result.sawImages).toBe(false);
+    expect(result.patch.photos).toEqual([]);
+    expect(refused.calls).toHaveLength(1);
+
+    const none = double(answer);
+    const empty = await readDictation(input({ ...task, images: [] }), { connect: none.connect });
+    expect(empty.patch.photos).toEqual([]);
+    expect(none.calls).toHaveLength(0);
+  });
+
   it("does not ask twice when there were no images", async () => {
     const { calls, connect } = double(apiError(400));
-    await expect(readDictation(input({ images: [] }), connect)).rejects.toMatchObject({
+    await expect(readDictation(input({ images: [] }), { connect })).rejects.toMatchObject({
       status: 503,
       code: "assistant_unavailable",
     });
@@ -189,14 +215,22 @@ describe("readDictation", () => {
 
   it("says the assistant is unavailable when the service is down, as before", async () => {
     const { calls, connect } = double(apiError(529));
-    await expect(readDictation(input(), connect)).rejects.toMatchObject({ status: 503 });
+    await expect(readDictation(input(), { connect })).rejects.toMatchObject({ status: 503 });
     expect(calls).toHaveLength(1);
-    await expect(readDictation(input(), async () => null)).rejects.toMatchObject({ status: 503 });
+    await expect(readDictation(input(), { connect: async () => null })).rejects.toMatchObject({
+      status: 503,
+    });
+  });
+
+  it("says the assistant is unavailable when the time runs out", async () => {
+    const { calls, connect } = double(new Anthropic.APIUserAbortError());
+    await expect(readDictation(input(), { connect })).rejects.toMatchObject({ status: 503 });
+    expect(calls).toHaveLength(1);
   });
 
   it("keeps what was said when no answer can be used", async () => {
     const { connect } = double(null);
-    const { patch } = await readDictation(input({ images: [] }), connect);
+    const { patch } = await readDictation(input({ images: [] }), { connect });
     expect(patch.workDone).toBe("Soleil. La photo 1, c'est le regard R-3.");
     expect(patch.photos).toEqual([]);
   });

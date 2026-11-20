@@ -19,32 +19,45 @@ import type { DictationPatch } from "./patch";
 
 const photoOnScreen = z.object({
   id: z.string().regex(PHOTO_ID_PATTERN),
-  caption: z.string().max(PHOTO_CAPTION_MAX).nullable(),
+  caption: z.string().nullable().catch(null),
   takenAt: z.iso.datetime({ offset: true }),
-  onServer: z.boolean(),
+  onServer: z.boolean().catch(false),
 });
+
+/** A photo as the screen sent it, with the number the screen gave it. */
+export type PhotoOnScreen = DictationPhoto & { number: number };
+
+/** Far more than 40 photos with their descriptions take: anything larger is not read. */
+const PHOTOS_FIELD_MAX = 100_000;
 
 /**
  * The photos as the screen sends them, in its order, kept only when the
- * report names them. Anything unreadable counts as no photos: the dictation
- * still works without them.
+ * report names them. Each keeps the number the screen gave it, so that an
+ * entry left out never shifts the others ("la photo 3" stays photo 3). An
+ * entry that cannot be read is left out; a field that cannot be read at all
+ * counts as no photos: the dictation still works without them.
  */
-export function photosOnScreen(value: unknown, photoIds: string[]): DictationPhoto[] {
+export function photosOnScreen(value: unknown, photoIds: string[]): PhotoOnScreen[] {
+  if (typeof value !== "string" || value.length > PHOTOS_FIELD_MAX) return [];
   let list: unknown;
   try {
-    list = JSON.parse(typeof value === "string" ? value : "[]");
+    list = JSON.parse(value);
   } catch {
     return [];
   }
-  const parsed = z.array(photoOnScreen).max(REPORT_LIMITS.photos).safeParse(list);
-  if (!parsed.success) return [];
+  if (!Array.isArray(list) || list.length > REPORT_LIMITS.photos) return [];
   const named = new Set(photoIds);
-  const seen = new Set<string>();
-  return parsed.data.filter((photo) => {
-    if (!named.has(photo.id) || seen.has(photo.id)) return false;
-    seen.add(photo.id);
-    return true;
+  const kept: PhotoOnScreen[] = [];
+  list.forEach((entry: unknown, index) => {
+    const parsed = photoOnScreen.safeParse(entry);
+    if (!parsed.success) return;
+    const photo = parsed.data;
+    if (!named.has(photo.id) || kept.some((one) => one.id === photo.id)) return;
+    // A description longer than a photo takes (an older device) is only cut.
+    const caption = photo.caption?.trim().slice(0, PHOTO_CAPTION_MAX) || null;
+    kept.push({ ...photo, caption, number: index + 1 });
   });
+  return kept;
 }
 
 /** The task asked for, or null for a dictation. */
@@ -81,15 +94,15 @@ export type PhotoPlan = {
  * the latest first (those the foreman is talking about), a few at a time.
  */
 export function planPhotos(
-  onScreen: DictationPhoto[],
+  onScreen: PhotoOnScreen[],
   rows: PhotoRow[],
   task: AssistantTask | null,
 ): PhotoPlan {
   const held = new Map(rows.map((row) => [row.id, row]));
-  const listed: ListedPhoto[] = onScreen.map((photo, index) => {
+  const listed: ListedPhoto[] = onScreen.map((photo) => {
     const row = held.get(photo.id) ?? null;
     return {
-      number: index + 1,
+      number: photo.number,
       id: photo.id,
       takenAt: row ? row.takenAt : new Date(photo.takenAt),
       caption: (row ? row.caption : photo.caption)?.trim() || null,
@@ -171,19 +184,31 @@ export function tidyCaption(text: string): string {
     .replace(/[\s,;:]+$/, "");
 }
 
+/** What a request was, for the descriptions its answer may give. */
+export type CaptionRequest = {
+  task: AssistantTask | null;
+  /** What was said; empty for a task. */
+  heard: string;
+  /** The numbers of the photos the model saw. */
+  looked: Set<number>;
+};
+
+/** A dictation that speaks of a photo: only one can change a description already written. */
+const SPEAKS_OF_A_PHOTO = /\bphotos?\b/i;
+
 /**
  * The model's descriptions, back on the photos they are for. Only what the
  * request allows is kept: no description from "tidy"; from "describe", only
  * for the photos it looked at; from a dictation, for any photo of the list
- * (the foreman may describe one in words). A number outside the list, a
- * second description for the same photo, an empty one or one that changes
- * nothing are dropped.
+ * (the foreman may describe one in words), and for one that already has a
+ * description only when the foreman spoke of a photo ("la photo 2, c'est
+ * plutôt…"). A number outside the list, a second description for the same
+ * photo, an empty one or one that changes nothing are dropped.
  */
 export function captionsFromPatch(
   patch: DictationPatch,
   plan: PhotoPlan,
-  task: AssistantTask | null,
-  looked: Set<number>,
+  { task, heard, looked }: CaptionRequest,
 ): PhotoCaption[] {
   if (task === "tidy") return [];
   const captions: PhotoCaption[] = [];
@@ -191,6 +216,7 @@ export function captionsFromPatch(
     const photo = plan.listed.find((one) => one.number === number);
     if (!photo || captions.some((done) => done.photoId === photo.id)) continue;
     if (task === "describe" && !looked.has(number)) continue;
+    if (photo.caption && !SPEAKS_OF_A_PHOTO.test(heard)) continue;
     const caption = tidyCaption(description);
     if (!caption || caption === photo.caption) continue;
     captions.push({ photoId: photo.id, number, caption });

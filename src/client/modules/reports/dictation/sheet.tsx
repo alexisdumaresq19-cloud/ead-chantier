@@ -36,7 +36,7 @@ import { cn } from "../../../lib/cn";
 import { useOnline } from "../../../lib/online";
 import { Button, Sheet, Textarea, toast } from "../../../ui";
 import { describePhotos } from "../../photos/describe";
-import type { ReportForm } from "../form";
+import { addPhotoIds, type ReportForm } from "../form";
 import { useReportPhotos, type ReportPhoto } from "../photos";
 import { Notice } from "../status";
 import {
@@ -44,10 +44,11 @@ import {
   dictationChips,
   formAfterDictation,
   hasTextToTidy,
+  keepingPhotos,
   photoNumbers,
   photosForAssistant,
   photosToDescribe,
-  tidyChips,
+  tidyTexts,
 } from "./convert";
 import { PhotoStrip, PhotoThumb } from "./photo-strip";
 import { canRecord, useRecorder, type RecorderProblem, type Recording } from "./recorder";
@@ -81,6 +82,8 @@ type Turn = {
   changed: DictationField[];
   /** What was understood, value by value ("Soleil, −2 °C"). */
   chips: string[];
+  /** What "Mettre au propre" wrote, in full, to be read over. */
+  texts: { field: DictationField; label: string; text: string }[];
   /** The descriptions given to photos. */
   described: PhotoCaption[];
   questions: string[];
@@ -162,11 +165,16 @@ export function DictationSheet({
   const [failed, setFailed] = useState<{ job: Job; message: string; offline: boolean } | null>(
     null,
   );
-  const { photos } = useReportPhotos(projectId, form.photoIds);
+  const { photos, loading: photosLoading } = useReportPhotos(projectId, form.photoIds);
   const latest = useRef({ form, photos });
   useEffect(() => {
     latest.current = { form, photos };
   });
+  // Known at once, before the form comes back: an answer arriving in between keeps the photo.
+  const photosAdded = (ids: string[]) => {
+    latest.current = { ...latest.current, form: addPhotoIds(latest.current.form, ids).form };
+    onPhotosAdded(ids);
+  };
   const nextId = useRef(1);
   const end = useRef<HTMLDivElement>(null);
 
@@ -200,7 +208,11 @@ export function DictationSheet({
     onSuccess: ({ result, form: before, photos: shown }, job) => {
       const captions = new Map(shown.map((photo) => [photo.id, photo.caption]));
       const number = new Map(shown.map((photo, index) => [photo.id, index + 1]));
-      onApply(formAfterDictation(before, result.content), result.changed);
+      // A photo taken while the answer was on its way stays with the report.
+      onApply(
+        keepingPhotos(formAfterDictation(before, result.content), latest.current.form),
+        result.changed,
+      );
       void caption(result.captions);
       setTurns((list) => [
         ...list.map((turn) => ({ ...turn, before: null })),
@@ -211,8 +223,9 @@ export function DictationSheet({
           changed: result.changed,
           chips:
             job.task === "tidy"
-              ? tidyChips(result.changed)
+              ? []
               : dictationChips(contentForDictation(before), result.content, result.changed),
+          texts: job.task === "tidy" ? tidyTexts(result.content, result.changed) : [],
           described: result.captions,
           questions: result.questions,
           // Those still on the phone show as such in the strip: only the others are said.
@@ -282,7 +295,8 @@ export function DictationSheet({
 
   const undo = (turn: Turn) => {
     if (!turn.before) return;
-    onApply(turn.before.form, []);
+    // Only what the turn changed goes back: photos taken since stay with the report.
+    onApply(keepingPhotos(turn.before.form, latest.current.form), []);
     void caption([...turn.before.captions].map(([photoId, text]) => ({ photoId, caption: text })));
     setTurns((list) => list.filter((other) => other.id !== turn.id));
   };
@@ -332,7 +346,7 @@ export function DictationSheet({
             projectId={projectId}
             photos={photos}
             disabled={recording || phase === "asking"}
-            onAdded={onPhotosAdded}
+            onAdded={photosAdded}
           />
           {writing ? (
             <div className="space-y-2">
@@ -505,7 +519,8 @@ export function DictationSheet({
           </>
         ) : null}
 
-        {!busy && !recording && online && (toDescribe > 0 || canTidy) ? (
+        {/* Not while the photos are still being found: their numbers could still change. */}
+        {!busy && !recording && online && !photosLoading && (toDescribe > 0 || canTidy) ? (
           <div className="grid gap-2 pt-1 sm:grid-cols-2">
             {toDescribe > 0 ? (
               <Button
@@ -621,7 +636,7 @@ function TurnView({
 }) {
   const [whole, setWhole] = useState(false);
   const long = turn.heard.length > 220;
-  const noted = turn.chips.length > 0 || turn.described.length > 0;
+  const noted = turn.chips.length > 0 || turn.texts.length > 0 || turn.described.length > 0;
   return (
     <div className="animate-rise space-y-2">
       {turn.task ? (
@@ -657,6 +672,13 @@ function TurnView({
                     <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
                     <span className="min-w-0 wrap-anywhere">{chip}</span>
                   </li>
+                ))}
+              </ul>
+            ) : null}
+            {turn.texts.length > 0 ? (
+              <ul aria-label="Textes mis au propre" className="mt-2 space-y-2.5">
+                {turn.texts.map(({ field, label, text }) => (
+                  <TidyText key={field} label={label} text={text} />
                 ))}
               </ul>
             ) : null}
@@ -731,6 +753,37 @@ function TurnView({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** A text as "Mettre au propre" wrote it: read over here, before the report is saved. */
+function TidyText({ label, text }: { label: string; text: string }) {
+  const [whole, setWhole] = useState(false);
+  const long = text.length > 280 || text.split("\n").length > 5;
+  return (
+    <li className="border-good border-l-[3px] pl-3">
+      <p className="text-good flex items-center gap-1 text-sm font-semibold">
+        <Check className="size-4 shrink-0" aria-hidden />
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 text-[15px] leading-snug wrap-anywhere whitespace-pre-line",
+          long && !whole && "line-clamp-5",
+        )}
+      >
+        {text}
+      </p>
+      {long ? (
+        <button
+          type="button"
+          onClick={() => setWhole((shown) => !shown)}
+          className="text-ead-dark inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold"
+        >
+          {whole ? "Réduire" : "Tout lire"}
+        </button>
+      ) : null}
+    </li>
   );
 }
 

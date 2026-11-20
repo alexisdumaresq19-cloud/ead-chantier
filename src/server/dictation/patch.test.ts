@@ -190,5 +190,28 @@ describe("applyTidy", () => {
   it("keepsTheFacts compares the figures and the length", () => {
     expect(keepsTheFacts("7,5 h et 200 mm", "200 mm, 7,5 h")).toBe(true);
     expect(keepsTheFacts("7,5 h et 200 mm", "200 mm")).toBe(false);
+    // The same figure written another way is the same figure.
+    expect(keepsTheFacts("extra de 25 000 $, 7.5 h", "Extra de 25000 $, 7,5 h.")).toBe(true);
+  });
+
+  it("keeps a text whose rewriting adds a figure or a sentence", () => {
+    expect(
+      keepsTheFacts(
+        "On a posé 40 m de conduite.",
+        "On a posé 40 m de conduite. L'ingénieur a approuvé un extra de 25 000 $.",
+      ),
+    ).toBe(false);
+    expect(
+      keepsTheFacts(
+        "on a posé la conduite",
+        "On a posé la conduite. Le surveillant a confirmé que tout est conforme aux plans et devis.",
+      ),
+    ).toBe(false);
+    const { content, changed } = applyTidy(current, {
+      ...nothing,
+      workDone: "On a posé 40 m d'aqueduc entre R-3 et R-4. Essai de compaction réussi à 98 %.",
+    });
+    expect(content.workDone).toBe(current.workDone);
+    expect(changed).toEqual([]);
   });
 });

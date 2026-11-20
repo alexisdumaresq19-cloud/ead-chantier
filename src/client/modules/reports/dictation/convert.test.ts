@@ -12,7 +12,8 @@ import {
   photoNumbers,
   photosForAssistant,
   photosToDescribe,
-  tidyChips,
+  keepingPhotos,
+  tidyTexts,
 } from "./convert";
 
 const form = (change: Partial<ReportForm> = {}): ReportForm => ({
@@ -253,8 +254,17 @@ describe("photos for the assistant", () => {
     expect(hasTextToTidy(form({ notes: " Visite. " }))).toBe(true);
   });
 
-  it("writes what was tidied and the numbers as the window shows them", () => {
-    expect(tidyChips(["workDone"])).toEqual(["Travaux réalisés\u00a0: mis au propre"]);
+  it("keeps the photos the report has now when an earlier form comes back", () => {
+    const earlier = form({ workDone: "Avant.", photoIds: ["a"] });
+    const now = form({ workDone: "Après.", photoIds: ["a", "b"] });
+    expect(keepingPhotos(earlier, now)).toEqual({ ...earlier, photoIds: ["a", "b"] });
+  });
+
+  it("gives what was tidied in full and the numbers as the window shows them", () => {
+    const after: ReportContent = { ...contentForDictation(form()), workDone: "Pose.", notes: "" };
+    expect(tidyTexts(after, ["workDone", "weather"])).toEqual([
+      { field: "workDone", label: "Travaux réalisés", text: "Pose." },
+    ]);
     expect(photoNumbers([3])).toBe("la photo 3");
     expect(photoNumbers([5, 3])).toBe("les photos 3 et 5");
     expect(photoNumbers([4, 1, 2])).toBe("les photos 1, 2 et 4");
