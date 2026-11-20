@@ -195,6 +195,9 @@ export async function createDemoAccess(officeId: string, projectIds: string[], n
     if (!shown.length) throw noProject();
     const value = { phone: await fictionalNumber(tx), code: newAccessCode(), projectIds: shown };
     await write(tx, value, officeId, now);
+    // A new access is a new code: what an earlier one's visitors deleted
+    // today must not pause this one after its first deletion.
+    await forgetDemoRemakes(tx);
     await makeDemoAccount(tx, { ...value, changedAt: now, changedBy: officeId });
   });
 }
