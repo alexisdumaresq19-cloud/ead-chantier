@@ -131,6 +131,63 @@ export function revisionName(label: string | null | undefined): string | null {
   return /^[\dA-Za-z]{1,3}$/.test(text) ? `Rév. ${text}` : text;
 }
 
+/** How long a new revision is pointed out in the lists. */
+const NEW_FOR = 7 * 24 * 3600 * 1000;
+
+/**
+ * Whether the revision the site sees replaced another in the last week: the
+ * one case where a revision deserves colour in a list, so that it is
+ * noticed. A sheet's first revision is not news.
+ */
+export function isNewRevision(
+  sheet: Pick<Sheet, "current" | "revisionCount">,
+  now = Date.now(),
+): boolean {
+  if (!sheet.current || sheet.revisionCount < 2) return false;
+  const age = now - new Date(sheet.current.addedAt).getTime();
+  return age >= 0 && age < NEW_FOR;
+}
+
+// --- Words found on the plans -----------------------------------------------
+
+/**
+ * An excerpt as a search result shows it. The server cuts a few words before
+ * what was found, often mid-sentence ("…du Proctor modifié. 6. Les
+ * regards…"): when a sentence starts between the cut and the words found,
+ * the excerpt starts there, without the "…". A list number ("6.") belongs to
+ * the sentence it opens. At the other end, a stub of the next sentence
+ * ("mm. 7…") is left out.
+ */
+export function tidyExcerpt(text: string, query: string): string {
+  const excerpt = text.replace(/([.!?;])\s+\S{1,3}…$/, "$1");
+  if (!excerpt.startsWith("…")) return excerpt;
+  const parts = highlightParts(excerpt, query);
+  const firstHit = parts.findIndex((part) => part.hit);
+  if (firstHit < 0) return excerpt;
+  const hitAt = parts.slice(0, firstHit).reduce((length, part) => length + part.text.length, 0);
+  let start = -1;
+  for (const boundary of excerpt.slice(0, hitAt).matchAll(/[.!?;]\s+/g)) {
+    if (/(^|\s)\d{1,3}$/.test(excerpt.slice(0, boundary.index))) continue;
+    const at = boundary.index + boundary[0].length;
+    if (/[\p{Lu}\d]/u.test(excerpt[at] ?? "")) start = at;
+  }
+  return start > 0 ? excerpt.slice(start) : excerpt;
+}
+
+/** Hits whose excerpt reads the same (notes repeated on every sheet), together, in order. */
+export function groupByExcerpt<T extends { excerpt: string }>(
+  hits: T[],
+): { excerpt: string; hits: T[] }[] {
+  const groups = new Map<string, { excerpt: string; hits: T[] }>();
+  for (const hit of hits) {
+    const key = hit.excerpt.replace(/\s+/g, " ").trim();
+    const group = groups.get(key);
+    if (group) group.hits.push(hit);
+    else groups.set(key, { excerpt: hit.excerpt, hits: [hit] });
+  }
+  return [...groups.values()];
+}
+
 // --- Checking an import -----------------------------------------------------
 
 /** What the office is about to publish for one page, as typed on the screen. */

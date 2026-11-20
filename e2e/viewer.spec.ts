@@ -650,8 +650,10 @@ test("the counter opens the whole set: any sheet is one search and one tap away"
   await counter(page).click();
   const picker = page.getByRole("dialog");
   await expect(picker.getByRole("heading", { name: "Choisir une feuille" })).toBeVisible();
-  // The sheet on screen is marked in the list.
+  // The sheet on screen is marked in the list: one card, a row per sheet.
   await expect(picker.locator('[aria-current="true"]')).toContainText("C-101");
+  await expect(picker.getByRole("list")).toHaveCount(1);
+  await expect(picker.getByRole("listitem")).toHaveCount(plans.sheets.length);
 
   await picker.getByPlaceholder("Numéro ou titre").fill("c3");
   const found = picker.getByRole("button", { name: /C-301/ });
@@ -667,5 +669,68 @@ test("the counter opens the whole set: any sheet is one search and one tap away"
   // Sheets take each other's place: back leaves the viewer in one step.
   await page.getByRole("button", { name: "Retour aux plans" }).click();
   await expect(page).toHaveURL(LIST_PATH);
+  await context.close();
+});
+
+test("a revision added this week stands out in the list, and only then", async ({ browser }) => {
+  const context = await signedIn(browser, "worker");
+  const page = await context.newPage();
+  await page.goto(LIST_PATH);
+  // C-101 got its revision A in this run: new, in blue.
+  const row = page.getByRole("listitem").filter({ has: page.getByRole("link", { name: /C-101/ }) });
+  await expect(row.getByText("Rév. A")).toBeVisible();
+  await expect(row.getByText("· nouvelle")).toBeVisible();
+  const colour = await row.getByText("· nouvelle").evaluate((node) => getComputedStyle(node).color);
+  expect(colour).toBe("rgb(34, 105, 149)");
+  await context.close();
+});
+
+test("on the narrowest phone the bars hold: whole title, large sheet turning, revision button", async ({
+  browser,
+}) => {
+  test.skip(!device().isMobile, "The phone's bars");
+  const context = await contextAs(browser, "worker", {
+    ...device(),
+    viewport: { width: 360, height: 740 },
+    serviceWorkers: "block",
+  });
+  const page = await context.newPage();
+  const plans = await livePlans(context);
+  const sheet = plans.sheets.find((one) => one.number === "C-102")!;
+  await page.goto(`${SHEET_PATH}/${sheet.id}`);
+  await sharp(page);
+
+  // The title, chainage included, on two lines under the number.
+  const title = topBar(page).getByText(sheet.title, { exact: true });
+  await expect(title).toBeVisible();
+  expect(await title.evaluate((node) => node.scrollHeight <= node.clientHeight + 1)).toBe(true);
+
+  // Turning sheets is done all day: larger targets. "Réduire" gives way.
+  for (const name of ["Feuille précédente", "Feuille suivante"]) {
+    const box = (await page.getByRole("button", { name }).boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(48);
+    expect(box.width).toBeGreaterThanOrEqual(48);
+  }
+  expect((await counter(page).boundingBox())!.height).toBeGreaterThanOrEqual(48);
+  await expect(page.getByRole("button", { name: "Réduire" })).toBeHidden();
+  await expect(page.getByRole("button", { name: "Tourner d'un quart de tour" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+
+  // The revision is a button that opens the revisions.
+  const revision = page.getByRole("button", { name: /voir les révisions$/ });
+  expect((await revision.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  await revision.click();
+  const window = page.getByRole("dialog", { name: "Révisions de C-102" });
+  await expect(window).toBeVisible();
+  await expect(window.locator('[aria-current="true"]')).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(window).toBeHidden();
+
+  // Sideways, the top bar is one slim line: number · title.
+  await page.setViewportSize({ width: 740, height: 360 });
+  await expect.poll(async () => (await topBar(page).boundingBox())!.height).toBeLessThanOrEqual(48);
+  const number = (await topBar(page).getByRole("heading", { level: 1 }).boundingBox())!;
+  const line = (await title.boundingBox())!;
+  expect(Math.abs(number.y + number.height / 2 - (line.y + line.height / 2))).toBeLessThan(6);
   await context.close();
 });

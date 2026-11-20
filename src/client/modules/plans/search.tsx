@@ -1,6 +1,15 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ChevronRight, WifiOff } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, WifiOff } from "lucide-react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { PlanSearchHit } from "@/shared/plans";
 
@@ -9,7 +18,7 @@ import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { Button, Spinner } from "../../ui";
 import { planKeys } from "./data";
-import { filterSheets, type IndexedSheet } from "./logic";
+import { filterSheets, groupByExcerpt, tidyExcerpt, type IndexedSheet } from "./logic";
 import { Highlight, PlanThumb } from "./parts";
 import type { PlanView } from "./prefs";
 import { SheetLink, SheetList, type ListProps } from "./sheets";
@@ -77,6 +86,30 @@ function useDebounced<T>(value: T, delay: number): T {
   return debounced;
 }
 
+/** Which groups of identical excerpts are unfolded, kept like the search text. */
+const OPEN_STATE = "eadPlanSearchOpen";
+
+function useUnfolded(): [Record<string, boolean>, (key: string, open: boolean) => void] {
+  const [unfolded, setUnfolded] = useState<Record<string, boolean>>(() => {
+    const state = window.history.state as Record<string, unknown> | null;
+    const stored = state?.[OPEN_STATE];
+    return stored && typeof stored === "object" ? (stored as Record<string, boolean>) : {};
+  });
+  const set = useCallback((key: string, open: boolean) => {
+    setUnfolded((was) => {
+      const next = { ...was, [key]: open };
+      try {
+        // At once: the next tap may well open one of its sheets.
+        window.history.replaceState({ ...window.history.state, [OPEN_STATE]: next }, "");
+      } catch {
+        // The browser refused: the group just folds again on coming back.
+      }
+      return next;
+    });
+  }, []);
+  return [unfolded, set];
+}
+
 /**
  * Numbers and titles are searched on the device, at once and without a
  * network. The words drawn on the plans are searched by the server, a moment
@@ -87,6 +120,7 @@ export const SearchResults = memo(function SearchResults({
   index,
   query,
   view,
+  viewToggle,
   canManage,
   onMenu,
   onClear,
@@ -94,6 +128,8 @@ export const SearchResults = memo(function SearchResults({
   index: IndexedSheet[];
   query: string;
   view: PlanView;
+  /** The choice between list and thumbnails, at the end of the count's line. */
+  viewToggle: ReactNode;
   onClear: () => void;
 }) {
   const matches = useMemo(() => filterSheets(index, query), [index, query]);
@@ -114,22 +150,33 @@ export const SearchResults = memo(function SearchResults({
     meta: { persist: false },
   });
 
+  // General notes are drawn on every sheet: the same words found on seven
+  // sheets make one result, not seven identical rows.
   const inDrawings = useMemo(() => {
     const listed = new Set(matches.map((sheet) => sheet.id));
-    return (drawn.data ?? []).filter((hit) => hit.excerpt && !listed.has(hit.sheetId));
-  }, [drawn.data, matches]);
+    const hits = (drawn.data ?? []).flatMap((hit) =>
+      hit.excerpt && !listed.has(hit.sheetId)
+        ? [{ ...hit, excerpt: tidyExcerpt(hit.excerpt, words) }]
+        : [],
+    );
+    return groupByExcerpt(hits);
+  }, [drawn.data, matches, words]);
+  const [unfolded, setUnfolded] = useUnfolded();
   const searching = query.length >= 2 && (words !== query || drawn.isFetching);
   const unanswered = drawn.isError || drawn.fetchStatus === "paused";
   const offline =
     drawn.fetchStatus === "paused" || (drawn.error instanceof ApiFailure && drawn.error.offline);
 
   return (
-    <div className="mt-3 space-y-6" aria-live="polite">
+    <div className="mt-1 space-y-6" aria-live="polite">
       {matches.length > 0 ? (
         <section aria-label="Feuilles trouvées">
-          <p className="text-dim mb-2 text-sm font-medium">
-            {count(matches.length, "feuille trouvée", "feuilles trouvées")}
-          </p>
+          <div className="mb-1 flex min-h-11 items-center gap-2">
+            <p className="text-dim min-w-0 flex-1 text-sm font-medium">
+              {count(matches.length, "feuille trouvée", "feuilles trouvées")}
+            </p>
+            {viewToggle}
+          </div>
           <SheetList
             projectId={projectId}
             sheets={matches}
@@ -144,21 +191,43 @@ export const SearchResults = memo(function SearchResults({
       {inDrawings.length > 0 ? (
         <section
           aria-label="Trouvé sur les plans"
-          className={cn("transition-opacity", words !== query && "opacity-60")}
+          className={cn(
+            "transition-opacity",
+            words !== query && "opacity-60",
+            !matches.length && "pt-3",
+          )}
         >
           <h2 className="font-display text-dim mb-2 text-sm font-bold tracking-wider uppercase">
             Écrit sur les plans
           </h2>
           <ul className="divide-line border-line bg-surface divide-y overflow-hidden rounded-2xl border shadow-xs">
-            {inDrawings.map((hit) => (
-              <DrawnHit key={hit.sheetId} projectId={projectId} hit={hit} words={words} />
-            ))}
+            {inDrawings.map((group) =>
+              group.hits.length === 1 ? (
+                <DrawnHit
+                  key={group.hits[0].sheetId}
+                  projectId={projectId}
+                  hit={group.hits[0]}
+                  words={words}
+                />
+              ) : (
+                <DrawnGroup
+                  key={group.excerpt}
+                  projectId={projectId}
+                  excerpt={group.excerpt}
+                  hits={group.hits}
+                  words={words}
+                  // Alone, it hides nothing: it opens unfolded.
+                  open={unfolded[group.excerpt] ?? inDrawings.length === 1}
+                  onToggle={setUnfolded}
+                />
+              ),
+            )}
           </ul>
         </section>
       ) : null}
 
       {searching ? (
-        <p className="text-dim flex items-center gap-2.5 text-sm">
+        <p className="text-dim flex items-center gap-2.5 pt-3 text-sm">
           <Spinner className="size-4.5" label="Recherche" /> Recherche dans le texte des plans…
         </p>
       ) : (
@@ -203,18 +272,78 @@ const DrawnHit = memo(function DrawnHit({
       >
         <PlanThumb url={hit.thumbUrl} className="h-14 w-19" />
         <span className="min-w-0 flex-1">
-          <span className="flex items-baseline gap-2">
-            <span className="font-display shrink-0 text-[17px] leading-tight font-bold">
-              {hit.number}
-            </span>
-            <span className="text-dim truncate text-sm">{hit.title}</span>
+          <span className="font-display block text-[17px] leading-tight font-bold">
+            {hit.number}
           </span>
-          <span className="mt-0.5 line-clamp-2 text-sm leading-snug">
+          {hit.title ? (
+            <span className="text-dim mt-0.5 line-clamp-1 text-sm leading-snug">{hit.title}</span>
+          ) : null}
+          <span className="mt-1 line-clamp-2 text-sm leading-snug">
             <Highlight text={hit.excerpt ?? ""} query={words} />
           </span>
         </span>
         <ChevronRight className="text-dim/70 size-5 shrink-0" aria-hidden />
       </SheetLink>
+    </li>
+  );
+});
+
+/** The same words on several sheets: said once, with the sheets that carry them. */
+const DrawnGroup = memo(function DrawnGroup({
+  projectId,
+  excerpt,
+  hits,
+  words,
+  open,
+  onToggle,
+}: {
+  projectId: string;
+  excerpt: string;
+  hits: PlanSearchHit[];
+  words: string;
+  open: boolean;
+  onToggle: (excerpt: string, open: boolean) => void;
+}) {
+  const listId = useId();
+  return (
+    <li className="py-2.5 pr-2 pl-3">
+      <div className="flex gap-3">
+        <PlanThumb url={hits[0].thumbUrl} className="h-14 w-19" />
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-3 text-sm leading-snug">
+            <Highlight text={excerpt} query={words} />
+          </p>
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-controls={listId}
+            onClick={() => onToggle(excerpt, !open)}
+            className="text-ead-dark hover:bg-ead-tint active:bg-ead-tint -ml-2 flex h-11 cursor-pointer items-center gap-1 rounded-lg px-2 text-sm font-semibold transition-colors"
+          >
+            Sur {hits.length} feuilles
+            <ChevronDown
+              className={cn("size-4.5 transition-transform", open && "rotate-180")}
+              aria-hidden
+            />
+          </button>
+        </div>
+      </div>
+      {open ? (
+        <ul id={listId} className="mt-1 mb-1 flex flex-wrap gap-2 pr-1">
+          {hits.map((hit) => (
+            <li key={hit.sheetId}>
+              <SheetLink
+                projectId={projectId}
+                sheetId={hit.sheetId}
+                title={hit.title}
+                className="border-line bg-surface hover:bg-canvas active:bg-canvas font-display flex h-11 items-center rounded-xl border px-3.5 text-[15px] font-bold whitespace-nowrap shadow-xs transition-colors"
+              >
+                {hit.number}
+              </SheetLink>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </li>
   );
 });

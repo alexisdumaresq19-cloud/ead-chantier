@@ -33,7 +33,7 @@ export function RevisionsSheet({
       {/* The list is only in the sheet's detail; QueryState says when it waits for a network. */}
       <QueryState query={detail}>
         {(sheet) => (
-          <ul className="space-y-2">
+          <ul className="divide-line border-line bg-surface divide-y overflow-hidden rounded-2xl border shadow-xs">
             {sheet.revisions.map((revision) => {
               const shown = revision.id === view.shown?.id;
               return (
@@ -43,10 +43,8 @@ export function RevisionsSheet({
                     onClick={() => onPick(revision)}
                     aria-current={shown || undefined}
                     className={cn(
-                      "flex min-h-16 w-full cursor-pointer items-center gap-3 rounded-2xl border p-2.5 text-left transition-colors",
-                      shown
-                        ? "border-ead bg-ead-tint"
-                        : "border-line bg-surface hover:bg-canvas active:bg-canvas",
+                      "flex min-h-[4.5rem] w-full cursor-pointer items-center gap-3 py-2.5 pr-3 pl-3 text-left -outline-offset-2 transition-colors",
+                      shown ? "bg-ead-tint" : "hover:bg-canvas active:bg-canvas",
                     )}
                   >
                     <img
@@ -74,7 +72,11 @@ export function RevisionsSheet({
                       </span>
                     </span>
                     {shown ? (
-                      <Check className="text-ead-dark mr-1 size-5 shrink-0" aria-hidden />
+                      <Check
+                        className="text-ead-dark size-5 shrink-0"
+                        strokeWidth={2.6}
+                        aria-hidden
+                      />
                     ) : null}
                   </button>
                 </li>

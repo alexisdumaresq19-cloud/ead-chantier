@@ -11,14 +11,17 @@ import {
 import {
   draftProblems,
   filterSheets,
+  groupByExcerpt,
   groupByFolder,
   highlightParts,
   indexSheets,
+  isNewRevision,
   keptPages,
   mayChangePlans,
   revisionName,
   sheetsByNumber,
   sortPdfFiles,
+  tidyExcerpt,
 } from "./logic";
 
 const sheet = (number: string, title: string, folderId: string | null = null): Sheet => ({
@@ -178,6 +181,61 @@ describe("revision names", () => {
   it("is nothing without a label", () => {
     expect(revisionName(null)).toBeNull();
     expect(revisionName("  ")).toBeNull();
+  });
+});
+
+describe("a new revision", () => {
+  const now = Date.parse("2026-11-20T12:00:00Z");
+  const withRevision = (addedAt: string, revisionCount: number) => ({
+    revisionCount,
+    current: {
+      id: "r",
+      label: "B",
+      issuedOn: null,
+      addedAt,
+      thumbUrl: "",
+      tiles: { url: "", width: 1, height: 1, tileSize: 256, overlap: 0, minLevel: 0, maxLevel: 0 },
+    },
+  });
+
+  it("is pointed out for a week once it replaced another", () => {
+    expect(isNewRevision(withRevision("2026-11-18T09:00:00Z", 2), now)).toBe(true);
+    expect(isNewRevision(withRevision("2026-11-12T09:00:00Z", 2), now)).toBe(false);
+  });
+
+  it("is never the first revision of a sheet", () => {
+    expect(isNewRevision(withRevision("2026-11-20T09:00:00Z", 1), now)).toBe(false);
+    expect(isNewRevision({ revisionCount: 2, current: null }, now)).toBe(false);
+  });
+});
+
+describe("words found on the plans", () => {
+  const notes = "…Proctor modifié. 6. Les regards sont préfabriqués en béton. 7…";
+
+  it("starts an excerpt at the sentence that holds the words, without the ellipsis", () => {
+    expect(tidyExcerpt(notes, "regards")).toBe("6. Les regards sont préfabriqués en béton.");
+  });
+
+  it("keeps the ellipsis when the words come before any sentence", () => {
+    expect(tidyExcerpt(notes, "proctor")).toBe(
+      "…Proctor modifié. 6. Les regards sont préfabriqués en béton.",
+    );
+    expect(tidyExcerpt("…sous les regards de béton armé…", "regards")).toBe(
+      "…sous les regards de béton armé…",
+    );
+    expect(tidyExcerpt("…du drain de 150 mm sous les regards…", "regards")).toBe(
+      "…du drain de 150 mm sous les regards…",
+    );
+    expect(tidyExcerpt("Les regards", "regards")).toBe("Les regards");
+  });
+
+  it("puts together the hits that read the same, in order", () => {
+    const groups = groupByExcerpt([
+      { id: "a", excerpt: "Notes  générales" },
+      { id: "b", excerpt: "Un regard" },
+      { id: "c", excerpt: "Notes générales" },
+    ]);
+    expect(groups.map((group) => group.hits.map((hit) => hit.id))).toEqual([["a", "c"], ["b"]]);
   });
 });
 

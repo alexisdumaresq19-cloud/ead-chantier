@@ -26,7 +26,9 @@ export function FolderDialog({
   onCreated?: (folder: PlanFolder) => void;
 }) {
   const [name, setName] = useState(folder?.name ?? "");
+  const [missing, setMissing] = useState(false);
   const formId = useId();
+  const nameId = useId();
   const create = useCreateFolder(projectId);
   const rename = useRenameFolder(projectId);
   const remove = useDeleteFolder(projectId);
@@ -35,7 +37,11 @@ export function FolderDialog({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const wanted = name.trim();
-    if (!wanted) return;
+    if (!wanted) {
+      setMissing(true);
+      document.getElementById(nameId)?.focus();
+      return;
+    }
     if (!folder) {
       create.mutate(wanted, {
         onSuccess: (created) => {
@@ -112,18 +118,24 @@ export function FolderDialog({
             type="submit"
             form={formId}
             loading={create.isPending || rename.isPending}
-            disabled={remove.isPending || !name.trim()}
+            disabled={remove.isPending}
           >
             {folder ? "Enregistrer" : "Créer le dossier"}
           </Button>
         </>
       }
     >
-      <form id={formId} onSubmit={submit} className="space-y-4">
-        <Field label="Nom du dossier">
+      {/* Checked here rather than by the browser, whose bubble may speak English. */}
+      <form id={formId} onSubmit={submit} noValidate className="space-y-4">
+        <Field label="Nom du dossier" error={missing ? "Inscrivez le nom du dossier." : null}>
           <Input
+            id={nameId}
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onChange={(event) => {
+              setName(event.target.value);
+              if (event.target.value.trim()) setMissing(false);
+            }}
+            aria-invalid={missing || undefined}
             placeholder={"Ex.\u00a0: Civil"}
             maxLength={60}
             autoComplete="off"

@@ -57,11 +57,14 @@ type ItemProps = ListProps & { sheet: PlanSheet; query: string };
 export function SheetLink({
   projectId,
   sheetId,
+  title,
   className,
   children,
 }: {
   projectId: string;
   sheetId: string;
+  /** Shown on hover, when the link itself says only the number. */
+  title?: string;
   className: string;
   children: ReactNode;
 }) {
@@ -70,6 +73,7 @@ export function SheetLink({
     <Link
       href={planPaths.sheet(projectId, sheetId)}
       onPointerDown={() => warmSheet(client, projectId, sheetId)}
+      title={title}
       className={className}
     >
       {children}
@@ -125,10 +129,12 @@ const SheetRow = memo(function SheetRow({ projectId, sheet, query, canManage, on
             <span className="font-display truncate text-[17px] leading-tight font-bold">
               <Highlight text={sheet.number} query={query} />
             </span>
-            <RevisionBadge label={sheet.current?.label ?? null} />
+            <RevisionBadge sheet={sheet} />
           </span>
           {sheet.title ? (
-            <span className="text-dim mt-0.5 line-clamp-2 text-sm leading-snug">
+            // Three lines: the chainage at the end of a civil title is what
+            // tells two sheets apart, and must never be cut.
+            <span className="text-dim mt-0.5 line-clamp-3 text-sm leading-snug">
               <Highlight text={sheet.title} query={query} />
             </span>
           ) : null}
@@ -163,14 +169,15 @@ const SheetCard = memo(function SheetCard({
           />
         </span>
         <span className="block p-3">
-          <span className="flex items-center justify-between gap-2">
-            <span className="font-display truncate text-[17px] leading-tight font-bold">
+          {/* A long revision name goes under the number rather than squeeze it. */}
+          <span className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+            <span className="font-display min-w-0 truncate text-[17px] leading-tight font-bold">
               <Highlight text={sheet.number} query={query} />
             </span>
-            <RevisionBadge label={sheet.current?.label ?? null} className="max-w-20" />
+            <RevisionBadge sheet={sheet} className="max-w-full" />
           </span>
           {sheet.title ? (
-            <span className="text-dim mt-1 line-clamp-2 text-sm leading-snug">
+            <span className="text-dim mt-1 line-clamp-3 text-sm leading-snug">
               <Highlight text={sheet.title} query={query} />
             </span>
           ) : null}

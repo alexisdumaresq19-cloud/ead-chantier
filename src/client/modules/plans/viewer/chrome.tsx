@@ -3,12 +3,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsUpDown,
-  History,
   Maximize,
   Minus,
   Plus,
   RefreshCw,
-  RotateCw,
+  RotateCwSquare,
   TriangleAlert,
   WifiOff,
 } from "lucide-react";
@@ -42,6 +41,10 @@ function BarButton({
   );
 }
 
+/**
+ * On a phone held sideways height is short: the top bar becomes one slim
+ * line, number · title, so the sheet keeps the room it was turned for.
+ */
 export function TopBar({
   ref,
   visible,
@@ -68,43 +71,42 @@ export function TopBar({
         !visible && "-translate-y-full",
       )}
     >
-      <div className="flex h-14 items-center gap-1 pr-[max(0.5rem,env(safe-area-inset-right))] pl-[max(0.25rem,env(safe-area-inset-left))]">
+      <div className="flex min-h-14 items-center gap-1 py-1.5 pr-[max(0.5rem,env(safe-area-inset-right))] pl-[max(0.25rem,env(safe-area-inset-left))] [@media(orientation:landscape)_and_(max-height:500px)]:min-h-11 [@media(orientation:landscape)_and_(max-height:500px)]:py-0">
         <BarButton label="Retour aux plans" onClick={onBack}>
           <ChevronLeft className="size-6!" aria-hidden />
         </BarButton>
-        <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col [@media(orientation:landscape)_and_(max-height:500px)]:flex-row [@media(orientation:landscape)_and_(max-height:500px)]:items-baseline [@media(orientation:landscape)_and_(max-height:500px)]:gap-1.5">
           {view ? (
             <>
-              <h1 className="font-display truncate text-[17px] leading-tight font-bold">
+              <h1 className="font-display shrink-0 text-[17px] leading-tight font-bold">
                 {view.number}
               </h1>
               {view.title ? (
-                <p className="truncate text-[13px] leading-tight text-white/70">{view.title}</p>
+                // The end of a title (the chainage) tells two sheets apart: two
+                // lines in portrait rather than an ellipsis.
+                <p className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-white/75 [@media(orientation:landscape)_and_(max-height:500px)]:mt-0 [@media(orientation:landscape)_and_(max-height:500px)]:line-clamp-1 [@media(orientation:landscape)_and_(max-height:500px)]:text-sm [@media(orientation:landscape)_and_(max-height:500px)]:before:mr-1.5 [@media(orientation:landscape)_and_(max-height:500px)]:before:content-['·']">
+                  {view.title}
+                </p>
               ) : null}
             </>
           ) : null}
         </div>
-        {view && view.revisionCount > 1 ? (
+        {view?.shown ? (
           <button
             type="button"
             onClick={onRevisions}
             aria-haspopup="dialog"
             aria-label={revision ? `${revision}, voir les révisions` : "Voir les révisions"}
             className={cn(
-              "flex h-11 max-w-[42%] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition-colors",
+              "flex h-11 max-w-[40%] shrink-0 cursor-pointer items-center gap-1 rounded-xl pr-2 pl-3 text-sm font-semibold transition-colors",
               view.replaced
                 ? "text-ink bg-amber-400 hover:bg-amber-300 active:bg-amber-300"
-                : "bg-white/10 hover:bg-white/20 active:bg-white/25",
+                : "bg-white/12 ring-1 ring-white/20 ring-inset hover:bg-white/20 active:bg-white/25",
             )}
           >
-            <History className="size-4 shrink-0" aria-hidden />
             <span className="truncate">{revision ?? "Révisions"}</span>
-            <ChevronDown className="size-4 shrink-0 opacity-70" aria-hidden />
+            <ChevronDown className="size-4 shrink-0 opacity-75" aria-hidden />
           </button>
-        ) : revision ? (
-          <span className="max-w-[42%] shrink-0 truncate px-2 text-sm font-semibold text-white/80">
-            {revision}
-          </span>
         ) : null}
       </div>
     </header>
@@ -196,8 +198,14 @@ export function Controls({
         )}
       >
         <nav aria-label="Feuilles" className="flex items-center">
-          <BarButton label="Feuille précédente" disabled={!view.previousId} onClick={onPrevious}>
-            <ChevronLeft className="size-6!" aria-hidden />
+          {/* Turned all day: taller and wider than the other buttons. */}
+          <BarButton
+            label="Feuille précédente"
+            disabled={!view.previousId}
+            onClick={onPrevious}
+            className="h-12 w-13"
+          >
+            <ChevronLeft className="size-7!" aria-hidden />
           </BarButton>
           {at ? (
             <button
@@ -206,7 +214,7 @@ export function Controls({
               aria-label={`Feuille ${at.index} de ${at.total}, choisir une feuille`}
               title="Choisir une feuille"
               className={cn(
-                "font-display flex h-11 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-xl bg-white/10 text-center font-bold whitespace-nowrap tabular-nums transition-colors hover:bg-white/20 active:bg-white/20",
+                "font-display flex h-12 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-xl bg-white/10 text-center font-bold whitespace-nowrap tabular-nums transition-colors hover:bg-white/20 active:bg-white/20",
                 // A set of a hundred sheets and more still fits a 360 px phone.
                 at.total > 99 ? "px-2 text-[13px] sm:text-[15px]" : "px-2.5 text-[15px]",
               )}
@@ -215,8 +223,13 @@ export function Controls({
               <ChevronsUpDown className="size-4 text-white/60" aria-hidden />
             </button>
           ) : null}
-          <BarButton label="Feuille suivante" disabled={!view.nextId} onClick={onNext}>
-            <ChevronRight className="size-6!" aria-hidden />
+          <BarButton
+            label="Feuille suivante"
+            disabled={!view.nextId}
+            onClick={onNext}
+            className="h-12 w-13"
+          >
+            <ChevronRight className="size-7!" aria-hidden />
           </BarButton>
         </nav>
         <span className="hidden h-7 w-px bg-white/15 sm:block" aria-hidden />
@@ -225,7 +238,14 @@ export function Controls({
           aria-label="Affichage"
           className="flex items-center gap-0.5 min-[400px]:gap-1"
         >
-          <BarButton label="Réduire" disabled={!zoom?.out} onClick={onZoomOut}>
+          {/* Short of room on the narrowest phones: pinching and "whole
+              sheet" already zoom out. */}
+          <BarButton
+            label="Réduire"
+            disabled={!zoom?.out}
+            onClick={onZoomOut}
+            className="max-[379px]:hidden"
+          >
             <Minus aria-hidden />
           </BarButton>
           <BarButton label="Agrandir" disabled={!zoom?.in} onClick={onZoomIn}>
@@ -235,7 +255,7 @@ export function Controls({
             <Maximize aria-hidden />
           </BarButton>
           <BarButton label="Tourner d'un quart de tour" disabled={!zoom} onClick={onRotate}>
-            <RotateCw aria-hidden />
+            <RotateCwSquare aria-hidden />
           </BarButton>
         </div>
       </div>
