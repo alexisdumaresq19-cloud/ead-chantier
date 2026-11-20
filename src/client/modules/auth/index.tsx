@@ -243,8 +243,9 @@ export function InviteScreen() {
           Ce lien ouvre l&apos;application sur cet appareil. Vous y resterez connecté, sans mot de
           passe.
         </Heading>
-        {onIphoneBrowser() ? (
+        {onIphoneBrowser() && preview.codeWorks ? (
           // Said before the button, which uses the code up: read first.
+          // Only when a code came with the link (the person has a cell number).
           <div
             className="bg-warn-tint mt-6 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty"
             role="note"

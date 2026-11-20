@@ -111,6 +111,12 @@ export type InvitePreview =
        * before the link can be used (it is refused until then).
        */
       signedInAs: string | null;
+      /**
+       * A code for the iPhone app came with this link and can be typed
+       * there: the person has a cell number on file, which the code goes
+       * with. Opening the link uses that code up.
+       */
+      codeWorks: boolean;
     }
   | {
       kind: "project";

@@ -449,6 +449,9 @@ test("deleted too often, the access pauses, the office sees it, and a new code o
   await page.goto("/equipe");
   const card = page.getByRole("region", { name: "Accès de démonstration" });
   await expect(card.getByText("En pause")).toBeVisible();
+  // Visitors came today, though they left no account to say so.
+  await expect(card).toContainText("Vu aujourd'hui");
+  await expect(card).not.toContainText("Jamais connecté");
   await expect(card.getByRole("status")).toContainText("Personne n'entre avant le ");
   await expect(card.getByRole("status")).toContainText("Changez le code pour le rouvrir");
   // The way out the refusal names.

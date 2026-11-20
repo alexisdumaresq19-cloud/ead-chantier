@@ -18,7 +18,7 @@ import { db, schema } from "../db/client";
 import { badRequest, HttpError } from "../http";
 import { addressOf } from "../signup/door";
 import { isInviteCode, sameCode } from "./code";
-import { demoAccount, readDemoAccess, type DemoSetting } from "./demo";
+import { demoAccount, noteDemoVisit, readDemoAccess, type DemoSetting } from "./demo";
 import {
   accessCounts,
   accessLimits,
@@ -208,6 +208,8 @@ export async function signInWithCode(
         ),
       };
     const userId = found.kind === "demo" ? await demoAccount(tx, demo!, now) : found.userId;
+    // For the office's card: the account itself may be deleted by its visitor.
+    if (found.kind === "demo") await noteDemoVisit(tx, now);
     // Used up in one statement: a link opened at the same moment, or the
     // same code typed twice, signs in one device only.
     if (found.kind === "personal" && !(await consumeInvite(found.invite, tx)))

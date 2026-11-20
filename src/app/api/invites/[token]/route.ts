@@ -78,6 +78,7 @@ export const GET = route<{ token: string }>(async (request, { token }) => {
       kind: "personal",
       name: user.name,
       signedInAs: me && me.id !== user.id ? me.name : null,
+      codeWorks: Boolean(invite.codeHash && user.phone),
     } satisfies InvitePreview;
   }
   const [project] = await db

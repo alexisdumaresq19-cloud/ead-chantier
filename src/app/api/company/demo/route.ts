@@ -4,6 +4,7 @@ import { z } from "zod";
 import {
   changeDemoAccess,
   createDemoAccess,
+  demoLastVisit,
   readDemoAccess,
   removeDemoAccess,
 } from "@/server/access-code/demo";
@@ -19,6 +20,9 @@ import type { DemoAccessState } from "@/shared/access";
 
 const projectIds = z.array(z.string().max(40)).max(500);
 
+const later = (one: Date | null, other: Date | null) =>
+  one && other ? (one > other ? one : other) : (one ?? other);
+
 async function shown(): Promise<DemoAccessState> {
   const setting = await readDemoAccess();
   if (!setting) return { access: null };
@@ -29,7 +33,7 @@ async function shown(): Promise<DemoAccessState> {
         .where(eq(schema.users.id, setting.changedBy))
         .limit(1)
     : [];
-  // The last visit, of the account in place or of one its visitor deleted.
+  // The account in place, if one stands, and what it did last.
   const [seen] = await db
     .select({ at: schema.users.lastSeenAt, active: schema.users.active })
     .from(schema.users)
@@ -43,7 +47,10 @@ async function shown(): Promise<DemoAccessState> {
       projectIds: setting.projectIds,
       changedAt: setting.changedAt.toISOString(),
       changedBy: author?.name ?? null,
-      lastSeenAt: seen?.at?.toISOString() ?? null,
+      // The last sign-in is noted with the access, so it is still known
+      // after the visitor deleted the account; the account in place may
+      // have been used since.
+      lastSeenAt: later(await demoLastVisit(), seen?.at ?? null)?.toISOString() ?? null,
       // Visitors are stuck only while no account stands and none may be made.
       pausedUntil: seen?.active
         ? null

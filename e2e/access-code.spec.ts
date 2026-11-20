@@ -52,13 +52,17 @@ test("the office reads the code beside the link; the person types it and is in, 
   const url = await sheet.getByLabel(`Lien personnel de ${name}`).inputValue();
   expect(sms.indexOf(said)).toBeLessThan(sms.indexOf(url));
   const link = new URL(url).pathname;
+
+  // Someone with no cell number on file gets the link alone, with no code.
+  const alone = await personWithCode(office, { name: `Lise Sanscell ${run()}` });
   await office.close();
 
   // The link opened in an iPhone's browser says the code is for the app.
-  const safari = await deviceAt(browser, address(), {
+  const iphoneSafari = {
     userAgent:
       "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
-  });
+  };
+  const safari = await deviceAt(browser, address(), iphoneSafari);
   const tapped = await safari.newPage();
   await tapped.goto(link);
   await expect(tapped.getByRole("button", { name: "Entrer", exact: true })).toBeVisible();
@@ -72,6 +76,13 @@ test("the office reads the code beside the link; the person types it and is in, 
   ]);
   expect(noteBox!.y + noteBox!.height).toBeLessThanOrEqual(buttonBox!.y);
   await safari.close();
+  // Without a code to type in the app, nothing sends the person there.
+  const plain = await deviceAt(browser, address(), iphoneSafari);
+  const opened = await plain.newPage();
+  await opened.goto(new URL(alone.invite.url).pathname);
+  await expect(opened.getByRole("button", { name: "Entrer", exact: true })).toBeVisible();
+  await expect(opened.getByRole("note")).toHaveCount(0);
+  await plain.close();
 
   const phoneDevice = await device(browser);
   const page = await phoneDevice.newPage();

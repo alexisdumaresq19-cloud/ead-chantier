@@ -44,6 +44,30 @@ export async function readDemoAccess(executor: Executor = db): Promise<DemoSetti
   return { ...stored, changedAt: row.updatedAt, changedBy: row.updatedBy };
 }
 
+// When a visitor last signed in, kept beside the access and not on the
+// account: a visitor may delete the account, and one that added nothing
+// leaves no row, while the office still wants to know that someone came.
+const SEEN_KEY = "demo_access_seen";
+
+/** Notes a visitor's sign-in. Under holdDemo, in the sign-in's own transaction. */
+export async function noteDemoVisit(tx: Executor, now: Date) {
+  const text = now.toISOString();
+  await tx
+    .insert(settings)
+    .values({ key: SEEN_KEY, value: text, updatedAt: now })
+    .onConflictDoUpdate({ target: settings.key, set: { value: text, updatedAt: now } });
+}
+
+/** When a visitor last signed in with the access in place; null if none has. */
+export async function demoLastVisit(executor: Executor = db): Promise<Date | null> {
+  const [row] = await executor
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, SEEN_KEY))
+    .limit(1);
+  return row?.value ? new Date(row.value) : null;
+}
+
 async function write(tx: Executor, value: Stored, userId: string, now: Date) {
   const text = JSON.stringify(value);
   await tx
@@ -196,8 +220,10 @@ export async function createDemoAccess(officeId: string, projectIds: string[], n
     const value = { phone: await fictionalNumber(tx), code: newAccessCode(), projectIds: shown };
     await write(tx, value, officeId, now);
     // A new access is a new code: what an earlier one's visitors deleted
-    // today must not pause this one after its first deletion.
+    // today must not pause this one after its first deletion. Nobody has
+    // come with it yet either.
     await forgetDemoRemakes(tx);
+    await tx.delete(settings).where(eq(settings.key, SEEN_KEY));
     await makeDemoAccount(tx, { ...value, changedAt: now, changedBy: officeId });
   });
 }
@@ -241,7 +267,7 @@ export async function changeDemoAccess(
 export async function removeDemoAccess() {
   await db.transaction(async (tx) => {
     await holdDemo(tx);
-    await tx.delete(settings).where(eq(settings.key, KEY));
+    await tx.delete(settings).where(inArray(settings.key, [KEY, SEEN_KEY]));
   });
   // No visitor gets in any more: the accounts left can go, one by one.
   for (const account of await demoAccounts(db)) await deleteOwnAccount(account.id);

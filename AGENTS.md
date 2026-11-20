@@ -71,8 +71,9 @@ The interface is in Québec French only.
   person out, even by changing address, and a new link from the office
   reopens a number. The text the office sends (`inviteMessage`) gives the
   code first and the link last: a link opened in an iPhone's browser uses up
-  the code the app needs. The code works only with the cell number on file:
-  for a person without one, the text gives the link alone. The app is
+  the code the app needs (the link's own screen says so there, when a code
+  came with it: `codeWorks`). The code works only with the cell number on
+  file: for a person without one, the text gives the link alone. The app is
   unlisted, so no search finds it: once `IOS_APP_STORE_URL` is set on the
   host (`src/server/app-store.ts`, read when asked), that text starts with
   the link that installs it, and `/soutien` gives it too.
@@ -97,7 +98,9 @@ projectIds}` readable, since the office reads it again; the number is
   added something (its row was kept for the name), so what the
   demonstration added stays its own to change. Past that bound nobody gets
   in until the next day, the card says so (`pausedUntil`), and a new code
-  from the office lifts the pause at once. Its number is counted per network
+  from the office lifts the pause at once. The card's last visit is noted
+  beside the access at each sign-in (`demo_access_seen`), since the account
+  it signed in to may be gone. Its number is counted per network
   only, because its code is handed out. Its visitors are many: the agreement
   to the assistant is each device's own (`sessions.assistant_consent_at`,
   given to the request by `currentUser`), never the account's.

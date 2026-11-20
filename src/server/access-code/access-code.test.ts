@@ -45,8 +45,14 @@ process.env.DATABASE_URL = databaseUrl;
 
 const { sql } = await import("../db/client");
 const { signInWithCode } = await import("./sign-in");
-const { createDemoAccess, changeDemoAccess, isDemoPhone, readDemoAccess, removeDemoAccess } =
-  await import("./demo");
+const {
+  createDemoAccess,
+  changeDemoAccess,
+  demoLastVisit,
+  isDemoPhone,
+  readDemoAccess,
+  removeDemoAccess,
+} = await import("./demo");
 const { DEMO_REMAKES_PER_DAY, demoRemakesPausedUntil } = await import("./door");
 const { setAssistantConsent } = await import("../legal/consent");
 const { createPersonalInvite, currentUser, consumeInvite, findInvite } = await import("../auth");
@@ -559,6 +565,30 @@ describe.skipIf(!ready)("with a database", () => {
           ),
         ),
       ).toBe("409 phone_taken");
+    });
+
+    it("remembers that a visitor came, after the visitor deleted the account", async () => {
+      await createDemoAccess("office", ["p1"]);
+      const setting = (await readDemoAccess())!;
+      expect(await demoLastVisit()).toBeNull();
+      const came = at(-HOUR);
+      const visitor = await signInWithCode(
+        from("203.0.117.1"),
+        { phone: setting.phone, code: setting.code },
+        { ...fast, now: came },
+      );
+      expect(await demoLastVisit()).toEqual(came);
+      // The account added nothing: deleting it leaves no row to read a visit from.
+      await deleteOwnAccount(visitor.userId);
+      expect(await demoRows()).toEqual([]);
+      expect(await demoLastVisit()).toEqual(came);
+      // A new code keeps it (the same access); a new access has had no visitor.
+      await changeDemoAccess("office", { newCode: true });
+      expect(await demoLastVisit()).toEqual(came);
+      await removeDemoAccess();
+      expect(await demoLastVisit()).toBeNull();
+      await createDemoAccess("office", ["p1"]);
+      expect(await demoLastVisit()).toBeNull();
     });
 
     it("asks each visitor's device for its own agreement to the assistant", async () => {
