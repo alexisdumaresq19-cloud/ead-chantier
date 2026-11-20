@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { ApiFailure } from "../../lib/api";
-import { createUploadQueue, summarize, type UploadItem } from "./upload-queue";
+import { createUploadQueue, sharedRefusal, summarize, type UploadItem } from "./upload-queue";
 
 /** A queue whose sending and saving are settled by hand, one call at a time. */
 function harness() {
@@ -141,6 +141,42 @@ describe("the queue of documents being sent", () => {
     expect(statuses()).toEqual({ "a.pdf": "failed", "b.pdf": "sending" });
   });
 
+  it("stops at a refusal for too many uploads, shows it as it is, and never retries by itself", async () => {
+    const { queue, sends, file, statuses, idOf, settle } = harness();
+    queue.add("p1", "autre", [file("a.pdf"), file("b.pdf")]);
+    queue.add("p2", "autre", [file("c.pdf")]);
+    const message = "Trop d'envois n'ont pas abouti. Réessayez plus tard.";
+    sends[0].reject(new ApiFailure(429, "too_many_uploads", message));
+    await settle();
+    // The allowance is the person's: nothing else is sent into the same refusal.
+    expect(statuses()).toEqual({ "a.pdf": "failed", "b.pdf": "failed", "c.pdf": "failed" });
+    expect(queue.getState().items.map((item) => item.error)).toEqual([message, message, message]);
+    expect(queue.getState().items.some((item) => item.offline)).toBe(false);
+    expect(sends).toHaveLength(1);
+
+    // The network coming back is no reason to try again.
+    queue.resume();
+    await settle();
+    expect(sends).toHaveLength(1);
+
+    // The person may, one file at a time.
+    queue.retry(idOf("b.pdf"));
+    expect(statuses()).toMatchObject({ "a.pdf": "failed", "b.pdf": "sending" });
+    expect(sends).toHaveLength(2);
+  });
+
+  it("stops the files of an archived project, and those only", async () => {
+    const { queue, sends, saves, file, statuses, settle } = harness();
+    queue.add("p1", "autre", [file("a.pdf"), file("b.pdf")]);
+    queue.add("p2", "autre", [file("c.pdf")]);
+    sends[0].resolve("upload-a");
+    await settle();
+    saves[0].reject(new ApiFailure(403, "forbidden", "Ce projet est archivé."));
+    await settle();
+    expect(statuses()).toEqual({ "a.pdf": "failed", "b.pdf": "failed", "c.pdf": "sending" });
+    expect(queue.getState().items[1].error).toBe("Ce projet est archivé.");
+  });
+
   it("cancels the file on its way and moves on to the next", async () => {
     const { queue, sends, added, file, statuses, idOf, settle } = harness();
     queue.add("p1", "autre", [file("a.pdf"), file("b.pdf")]);
@@ -207,5 +243,31 @@ describe("summarize", () => {
 
   it("is at zero for an empty list", () => {
     expect(summarize([])).toMatchObject({ count: 0, done: 0, failed: 0, active: 0, progress: 0 });
+  });
+});
+
+describe("sharedRefusal", () => {
+  const p1 = { projectId: "p1" };
+  const p2 = { projectId: "p2" };
+
+  it("holds every waiting file at the person's upload allowance", () => {
+    for (const code of ["too_many_uploads", "daily_upload_limit"]) {
+      const holds = sharedRefusal(new ApiFailure(429, code, "Trop."), "p1");
+      expect(holds?.(p1)).toBe(true);
+      expect(holds?.(p2)).toBe(true);
+    }
+  });
+
+  it("holds the files of the same project when it refuses additions", () => {
+    const holds = sharedRefusal(new ApiFailure(403, "forbidden", "Ce projet est archivé."), "p1");
+    expect(holds?.(p1)).toBe(true);
+    expect(holds?.(p2)).toBe(false);
+  });
+
+  it("leaves the others alone for a refusal about one file", () => {
+    expect(sharedRefusal(new ApiFailure(403, "upload_failed", "Refusé."), "p1")).toBeNull();
+    expect(sharedRefusal(new ApiFailure(400, "bad_request", "Refusé."), "p1")).toBeNull();
+    expect(sharedRefusal(new ApiFailure(0, "offline", "Pas de réseau."), "p1")).toBeNull();
+    expect(sharedRefusal(new Error("?"), "p1")).toBeNull();
   });
 });

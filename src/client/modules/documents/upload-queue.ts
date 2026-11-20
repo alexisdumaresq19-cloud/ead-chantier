@@ -129,8 +129,16 @@ export function createUploadQueue(deps: UploadQueueDeps) {
       // A cancelled upload is already off the list.
       if (!controller.signal.aborted) {
         const offline = error instanceof ApiFailure && error.offline;
-        Object.assign(entry, { status: "failed", error: errorMessage(error), offline });
+        const message = errorMessage(error);
+        Object.assign(entry, { status: "failed", error: message, offline });
         if (offline) stalled = true;
+        // The files waiting behind it would only meet the same refusal: they
+        // stop here with the same sentence, for the person to retry later.
+        const holds = sharedRefusal(error, entry.projectId);
+        if (holds)
+          for (const other of entries)
+            if (other.status === "waiting" && holds(other))
+              Object.assign(other, { status: "failed", error: message, offline: false });
       }
     } finally {
       entry.controller = null;
@@ -214,6 +222,23 @@ export function createUploadQueue(deps: UploadQueueDeps) {
 }
 
 export type UploadQueue = ReturnType<typeof createUploadQueue>;
+
+/**
+ * Which waiting files a refusal also concerns, if it is not about this file
+ * alone: the allowance of uploads is per person (429), and an archived
+ * project (403) takes nothing more. A storage refusal (an expired link) and
+ * any other answer concern the one file.
+ */
+export function sharedRefusal(
+  error: unknown,
+  projectId: string,
+): ((item: Pick<UploadItem, "projectId">) => boolean) | null {
+  if (!(error instanceof ApiFailure)) return null;
+  if (error.status === 429) return () => true;
+  if (error.status === 403 && error.code === "forbidden")
+    return (item) => item.projectId === projectId;
+  return null;
+}
 
 /** What a list of uploads amounts to, for a summary line. */
 export function summarize(items: UploadItem[]) {

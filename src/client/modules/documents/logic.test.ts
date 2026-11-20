@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import type { DocumentCategory, ProjectDocument } from "@/shared/documents";
 
-import { addDrafts, formatAdded, groupDocuments, matchesSearch, sameTitle } from "./logic";
+import {
+  addDrafts,
+  canChangeDocuments,
+  formatAdded,
+  groupDocuments,
+  matchesSearch,
+  sameTitle,
+} from "./logic";
 
 let serial = 0;
 const doc = (
@@ -17,6 +24,23 @@ const doc = (
   size: 1000,
   addedAt,
   addedBy: "Julie Cyr",
+});
+
+describe("canChangeDocuments", () => {
+  const open = { canManage: true, status: "actif" } as const;
+  const archived = { canManage: true, status: "archive" } as const;
+
+  it("lets those who manage an open project change its documents", () => {
+    expect(canChangeDocuments(open, "contremaitre")).toBe(true);
+    expect(canChangeDocuments(open, "admin")).toBe(true);
+    expect(canChangeDocuments({ canManage: false, status: "actif" }, "travailleur")).toBe(false);
+  });
+
+  it("keeps an archived project for the office only", () => {
+    expect(canChangeDocuments(archived, "contremaitre")).toBe(false);
+    expect(canChangeDocuments(archived, "admin")).toBe(true);
+    expect(canChangeDocuments({ canManage: false, status: "archive" }, "travailleur")).toBe(false);
+  });
 });
 
 describe("matchesSearch", () => {

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -25,7 +26,7 @@ import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { count, formatSize } from "../../lib/format";
 import { useOnline } from "../../lib/online";
-import { useCurrentProject } from "../../lib/session";
+import { useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
 import {
   Badge,
@@ -33,7 +34,6 @@ import {
   ButtonLink,
   confirmAction,
   EmptyState,
-  ErrorState,
   IconButton,
   ProgressBar,
   QueryState,
@@ -45,13 +45,14 @@ import {
 import { DocumentActions } from "./actions";
 import { documentsKey, refreshProject, uploads, useDocuments, useUploads } from "./data";
 import { FileIcon } from "./file-icon";
-import { formatAdded, groupDocuments } from "./logic";
+import { canChangeDocuments, formatAdded, groupDocuments } from "./logic";
 import { NO_NETWORK, ReadyDocumentSheet, useDocumentOpener } from "./open";
 import { summarize, type UploadsState } from "./upload-queue";
 
 /** A project's documents, by category. Tapping one opens it. */
 export function DocumentsScreen() {
   const project = useCurrentProject();
+  const canChange = canChangeDocuments(project, useCurrentUser().role);
   const documents = useDocuments(project.id);
   const online = useOnline();
   const sending = useUploads(project.id);
@@ -99,7 +100,7 @@ export function DocumentsScreen() {
       title="Documents"
       subtitle={documents.data?.length ? count(documents.data.length, "document") : undefined}
       actions={
-        project.canManage ? (
+        canChange ? (
           <ButtonLink href={addHref}>
             <Plus aria-hidden />
             <span className="sm:hidden">Ajouter</span>
@@ -108,31 +109,30 @@ export function DocumentsScreen() {
         ) : null
       }
     >
-      {project.canManage ? <SendingNotice sending={sending} href={addHref} /> : null}
-      <QueryState
-        query={documents}
-        loading={
-          // Without a network the first fetch waits for it: said plainly,
-          // where a skeleton would promise a list that is not coming.
-          documents.fetchStatus === "paused" ? (
-            <ErrorState error={documents.failureReason} onRetry={() => documents.refetch()} />
-          ) : (
-            <ListSkeleton />
-          )
-        }
-      >
+      {canChange ? <SendingNotice sending={sending} href={addHref} /> : null}
+      {project.status === "archive" ? (
+        <p className="bg-ead-tint text-ead-dark mb-4 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-sm font-medium">
+          <Archive className="mt-px size-4.5 shrink-0" aria-hidden />
+          {canChange
+            ? "Projet archivé : seul le bureau peut encore changer ses documents."
+            : "Projet archivé : ses documents se consultent, mais ne changent plus."}
+        </p>
+      ) : null}
+      <QueryState query={documents} loading={<ListSkeleton />}>
         {(all) =>
           all.length === 0 ? (
             <EmptyState
               icon={FileText}
               title="Aucun document pour l'instant"
               text={
-                project.canManage
+                canChange
                   ? "Ajoutez le contrat, le devis, les permis ou le programme de prévention. Toute l'équipe du projet pourra les consulter."
-                  : "Le bureau ou votre contremaître n'a pas encore ajouté de documents à ce projet."
+                  : project.status === "archive"
+                    ? "Aucun document n'a été ajouté à ce projet avant son archivage."
+                    : "Le bureau ou votre contremaître n'a pas encore ajouté de documents à ce projet."
               }
               action={
-                project.canManage ? (
+                canChange ? (
                   <ButtonLink href={addHref} size="lg">
                     <Plus aria-hidden /> Ajouter des documents
                   </ButtonLink>
@@ -207,7 +207,7 @@ export function DocumentsScreen() {
                               document={document}
                               opening={opener.opening.has(document.id)}
                               onOpen={() => opener.open(document)}
-                              onMenu={project.canManage ? () => setMenuId(document.id) : undefined}
+                              onMenu={canChange ? () => setMenuId(document.id) : undefined}
                             />
                           ))}
                         </ul>
