@@ -175,10 +175,19 @@ export const setDayHours = (form: ReportForm, dayHours: string): ReportForm => (
   crew: form.crew.map((row) => (row.own ? row : { ...row, hours: dayHours })),
 });
 
+const stepped = (hours: number, step: number) => hoursText(Math.min(24, Math.max(0, hours + step)));
+
 /** Half an hour more or less, between 0 and 24. */
 export function stepDayHours(form: ReportForm, step: number): ReportForm {
-  const current = parseHours(form.dayHours) ?? DEFAULT_HOURS;
-  return setDayHours(form, hoursText(Math.min(24, Math.max(0, current + step))));
+  return setDayHours(form, stepped(parseHours(form.dayHours) ?? DEFAULT_HOURS, step));
+}
+
+/** One person's hours, half an hour more or less; from the hours of the day when unreadable. */
+export function stepRowHours(form: ReportForm, key: string, step: number): ReportForm {
+  const row = form.crew.find((line) => line.key === key);
+  if (!row) return form;
+  const current = parseHours(row.hours) ?? parseHours(form.dayHours) ?? DEFAULT_HOURS;
+  return setRowHours(form, key, stepped(current, step));
 }
 
 /**

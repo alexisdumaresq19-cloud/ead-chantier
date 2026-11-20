@@ -33,7 +33,7 @@ export function Notice({
   );
 }
 
-/** Always there, so nothing moves under the thumb when the first letter is typed. */
+/** Where the text is kept, whether it is saved, whether there is a network. */
 export function DraftStatus({
   dirty,
   restored,
@@ -53,16 +53,20 @@ export function DraftStatus({
         Cet appareil ne peut pas garder de brouillon. Enregistrez avant de quitter cette page.
       </Notice>
     );
+  if (!dirty && !online)
+    return (
+      <Notice tone="warn" icon={<WifiOff aria-hidden />}>
+        Hors ligne. Ce que vous écrivez est gardé sur cet appareil; vous l&apos;enregistrerez au
+        retour du réseau.
+      </Notice>
+    );
+  // A reassurance, not news: it stays out of the way of the form.
   if (!dirty)
     return (
-      <Notice
-        tone={online ? "neutral" : "warn"}
-        icon={online ? <PencilLine aria-hidden /> : <WifiOff aria-hidden />}
-      >
-        {online
-          ? "Ce que vous écrivez est gardé sur cet appareil jusqu'à l'enregistrement."
-          : "Hors ligne. Ce que vous écrivez est gardé sur cet appareil; vous l'enregistrerez au retour du réseau."}
-      </Notice>
+      <p className="text-dim flex items-center gap-1.5 text-[13px] leading-snug">
+        <PencilLine className="size-3.5 shrink-0" aria-hidden />
+        Ce que vous écrivez reste sur cet appareil.
+      </p>
     );
   return (
     <Notice tone="warn" icon={online ? <PencilLine aria-hidden /> : <WifiOff aria-hidden />}>

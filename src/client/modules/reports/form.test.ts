@@ -17,6 +17,7 @@ import {
   setRowHours,
   setRowName,
   stepDayHours,
+  stepRowHours,
   takeCrew,
   usualHours,
   type ReportForm,
@@ -82,6 +83,24 @@ describe("the crew of a report being written", () => {
     expect(stepDayHours(setDayHours(form, "24"), 0.5).dayHours).toBe("24");
     expect(stepDayHours(setDayHours(form, "0"), -0.5).dayHours).toBe("0");
     expect(stepDayHours(setDayHours(form, "n'importe quoi"), 0.5).dayHours).toBe("8,5");
+  });
+
+  it("steps one person's hours by halves, as their own hours", () => {
+    let form = addMember(addMember(emptyForm(TODAY), julie), marc);
+    const key = form.crew[1].key;
+    form = stepRowHours(form, key, 0.5);
+    expect(rows(form)).toEqual([
+      ["Julie Cyr", "8", false],
+      ["Marc Lévesque", "8,5", true],
+    ]);
+    // Back on the hours of the day, the line follows them again.
+    form = stepRowHours(form, key, -0.5);
+    expect(rows(form)[1]).toEqual(["Marc Lévesque", "8", false]);
+    expect(stepRowHours(setRowHours(form, key, "24"), key, 0.5).crew[1].hours).toBe("24");
+    expect(stepRowHours(setRowHours(form, key, "0"), key, -0.5).crew[1].hours).toBe("0");
+    // Unreadable hours start again from the hours of the day.
+    expect(stepRowHours(setRowHours(form, key, "abc"), key, 1).crew[1].hours).toBe("9");
+    expect(stepRowHours(form, "nobody", 0.5)).toBe(form);
   });
 
   it("adds a line to write a name in, and removes lines", () => {

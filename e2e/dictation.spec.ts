@@ -40,9 +40,13 @@ test("a foreman talks and the report fills itself", async ({ browser }) => {
   await page.goto(newReport(freeDay(40)));
   await dictateOnce(page);
 
+  // The answer reads back what was understood, value by value.
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Météo")).toBeVisible();
-  await expect(dialog.getByText(/Équipe · 1/)).toBeVisible();
+  await expect(dialog.getByText("Soleil, −2 °C")).toBeVisible();
+  await expect(dialog.getByText(`${seed.people.worker} · 10 h`)).toBeVisible();
+  await expect(dialog.getByText("Travaux réalisés : ajouté")).toBeVisible();
+  // The example has served: it does not come back.
+  await expect(dialog.getByText("Par exemple")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Terminé" }).click();
   await expect(dialog).toBeHidden();
 
@@ -56,6 +60,44 @@ test("a foreman talks and the report fills itself", async ({ browser }) => {
   await expect(page.getByLabel("Travaux réalisés")).toHaveValue(/aqueduc/);
   await expect(page.getByText("Dicté").first()).toBeVisible();
   await expect(page.getByText(/Brouillon gardé/)).toBeVisible();
+  // The big way in has become a row, so the filled parts show.
+  await expect(page.getByRole("button", { name: /Dicter le rapport/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Continuer la dictée" })).toBeVisible();
+  await context.close();
+});
+
+test("while recording the window says it listens, and says so when it hears nothing", async ({
+  browser,
+}) => {
+  const context = await contextAs(browser, "foreman");
+  // A microphone that gives only silence, as a covered or muted one would.
+  await context.addInitScript(() => {
+    navigator.mediaDevices.getUserMedia = async () =>
+      new AudioContext().createMediaStreamDestination().stream;
+  });
+  const page = await context.newPage();
+  await page.goto(newReport(freeDay(44)));
+  await page.getByRole("button", { name: /Dicter le rapport/ }).click();
+  const dialog = page.getByRole("dialog", { name: "J'écoute…" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Annuler" })).toBeVisible();
+  // "Terminé" keeps its place, hidden, until there is an answer.
+  await expect(dialog.getByRole("button", { name: "Terminé" })).toBeHidden();
+  await expect(dialog.getByText("Je n'entends rien. Approchez le téléphone.")).toBeVisible({
+    timeout: 6000,
+  });
+
+  // The answers read aloud are a switch that says whether it is on.
+  const aloud = dialog.getByRole("switch", { name: "Réponses à voix haute" });
+  if (await aloud.count()) {
+    const was = await aloud.getAttribute("aria-checked");
+    await aloud.click();
+    await expect(aloud).toHaveAttribute("aria-checked", was === "true" ? "false" : "true");
+  }
+
+  await dialog.getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByRole("dialog", { name: "Dicter le rapport" })).toBeVisible();
+  await expect(page.getByText("Je n'entends rien")).toHaveCount(0);
   await context.close();
 });
 

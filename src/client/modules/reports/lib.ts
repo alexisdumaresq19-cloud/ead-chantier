@@ -76,6 +76,14 @@ const fullFormat = new Intl.DateTimeFormat(LOCALE, {
 export const monthLabel = (day: string) => capitalize(monthFormat.format(atNoon(day)));
 /** "jeu." */
 export const weekdayShort = (day: string) => weekdayFormat.format(atNoon(day));
+/** "jeu. 19 nov.", short enough for a button of a 360 px phone. */
+export const formatBriefDay = (day: string) =>
+  `${weekdayShort(day)}${NBSP}${formatShortDay(day).replace(/\s/g, NBSP)}`;
+/** Monday to Friday: the days a report is expected. */
+export const isWorkday = (day: string) => {
+  const weekday = atNoon(day).getDay();
+  return weekday !== 0 && weekday !== 6;
+};
 /** "jeudi 19 novembre 2026" */
 export const formatFullDay = (day: string) => withFirst(fullFormat.format(atNoon(day)));
 

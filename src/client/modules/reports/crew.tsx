@@ -1,12 +1,13 @@
 import type { UseQueryResult } from "@tanstack/react-query";
-import { History, Minus, Plus, UserPlus, X } from "lucide-react";
+import { ChevronDown, History, Minus, Plus, UserMinus, UserPlus } from "lucide-react";
 import { useState, type Dispatch, type SetStateAction } from "react";
 
 import type { Member } from "@/shared/api";
 import { isValidHours, REPORT_LIMITS, type CrewLine } from "@/shared/reports";
 
+import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
-import { Avatar, Button, IconButton, Input, Skeleton, toast } from "../../ui";
+import { Avatar, Button, IconButton, Input, Sheet, Skeleton, toast } from "../../ui";
 import {
   addBlankRow,
   addMember,
@@ -16,16 +17,19 @@ import {
   setRowHours,
   setRowName,
   stepDayHours,
+  stepRowHours,
   takeCrew,
   type CrewRow,
   type FormProblem,
   type ReportForm,
 } from "./form";
-import { hoursText, parseHours, previousCrewLabel } from "./lib";
+import { formatHours, hoursText, parseHours, previousCrewLabel } from "./lib";
 
 // The crew of the day: one line per person, a name and hours. The people of
 // the project are added in one tap, the hours of the day are set once for
-// everyone, and yesterday's crew can be taken over as it was.
+// everyone, and yesterday's crew can be taken over as it was. One person's
+// hours change in a window of taps, with no keyboard; removing someone is
+// done there too, away from the thumb's path.
 
 export function CrewEditor({
   form,
@@ -45,6 +49,9 @@ export function CrewEditor({
 }) {
   // The line just added by hand: its name field takes the keyboard.
   const [justAdded, setJustAdded] = useState<string | null>(null);
+  // The line whose hours are being changed, in the window.
+  const [editing, setEditing] = useState<string | null>(null);
+  const editedRow = form.crew.find((row) => row.key === editing) ?? null;
   const full = form.crew.length >= REPORT_LIMITS.crew;
   const toAdd = membersToAdd(form, members.data ?? []);
 
@@ -97,7 +104,8 @@ export function CrewEditor({
           </IconButton>
         </div>
         <p className="text-dim mt-0.5 pr-2 pb-1 text-[13px] leading-snug">
-          Changer ce nombre change les heures de toute l&apos;équipe, sauf celles écrites à la main.
+          Ce nombre s&apos;applique à toute l&apos;équipe, sauf aux heures que vous avez changées
+          une par une.
         </p>
       </div>
 
@@ -110,8 +118,7 @@ export function CrewEditor({
               problem={problems.find((problem) => problem.rowKey === row.key)?.message}
               autoFocus={row.key === justAdded}
               onName={(name) => setForm((current) => setRowName(current, row.key, name))}
-              onHours={(hours) => setForm((current) => setRowHours(current, row.key, hours))}
-              onRemove={() => setForm((current) => removeRow(current, row.key))}
+              onOpenHours={() => setEditing(row.key)}
             />
           ))}
         </ul>
@@ -188,8 +195,26 @@ export function CrewEditor({
           ) : null}
         </>
       )}
+
+      <HoursSheet
+        row={editedRow}
+        onClose={() => setEditing(null)}
+        onHours={(hours) => editing && setForm((current) => setRowHours(current, editing, hours))}
+        onStep={(step) => editing && setForm((current) => stepRowHours(current, editing, step))}
+        onRemove={() => {
+          if (editing) setForm((current) => removeRow(current, editing));
+          setEditing(null);
+        }}
+      />
     </div>
   );
+}
+
+/** "10 h" for hours that read; what was typed otherwise, to be corrected. */
+function hoursLabel(text: string): string {
+  const hours = parseHours(text);
+  if (hours !== null && isValidHours(hours)) return formatHours(hours);
+  return text.trim() || "—";
 }
 
 function CrewRowLine({
@@ -197,22 +222,15 @@ function CrewRowLine({
   problem,
   autoFocus,
   onName,
-  onHours,
-  onRemove,
+  onOpenHours,
 }: {
   row: CrewRow;
   problem?: string;
   autoFocus: boolean;
   onName: (name: string) => void;
-  onHours: (hours: string) => void;
-  onRemove: () => void;
+  onOpenHours: () => void;
 }) {
-  // "7.5" and "7h30" are rewritten "7,5" once the field is left.
-  const tidy = () => {
-    const hours = parseHours(row.hours);
-    if (hours !== null && isValidHours(hours) && hoursText(hours) !== row.hours)
-      onHours(hoursText(hours));
-  };
+  const named = Boolean(row.name.trim());
   return (
     <li className="py-1.5">
       <div className="flex items-center gap-2">
@@ -230,7 +248,7 @@ function CrewRowLine({
             onChange={(event) => onName(event.target.value)}
             placeholder="Nom ou entreprise"
             aria-label="Nom"
-            aria-invalid={Boolean(problem) && !row.name.trim()}
+            aria-invalid={Boolean(problem) && !named}
             maxLength={REPORT_LIMITS.name}
             autoComplete="off"
             autoCapitalize="words"
@@ -238,33 +256,154 @@ function CrewRowLine({
             className="min-w-0 flex-1 px-3"
           />
         )}
-        <span className="relative shrink-0">
+        <button
+          type="button"
+          id={`crew-${row.key}`}
+          onClick={onOpenHours}
+          aria-label={`Heures de ${row.name.trim() || "cette personne"}\u00a0: ${hoursLabel(row.hours)}`}
+          aria-describedby={problem ? `crew-${row.key}-problem` : undefined}
+          data-invalid={(Boolean(problem) && named) || undefined}
+          className={cn(
+            "border-line bg-surface hover:border-ead/60 active:bg-ead-tint data-invalid:border-bad flex h-13 w-24 shrink-0 cursor-pointer items-center justify-between gap-1 rounded-xl border pr-2.5 pl-3.5 transition-colors",
+            row.own && "border-ead/50 bg-ead-tint/60",
+          )}
+        >
+          <span className="font-display truncate text-lg font-bold tabular-nums">
+            {hoursLabel(row.hours)}
+          </span>
+          <ChevronDown className="text-dim size-4.5 shrink-0" aria-hidden />
+        </button>
+      </div>
+      {problem ? (
+        <p id={`crew-${row.key}-problem`} className="text-bad mt-1 text-sm font-medium">
+          {problem}
+        </p>
+      ) : null}
+    </li>
+  );
+}
+
+/** The usual days, one tap each. */
+const QUICK_HOURS = [7, 8, 9, 10, 11, 12];
+
+/**
+ * One person's hours without the keyboard: a usual day in one tap, half an
+ * hour more or less, or any other number in the field. Taking the person off
+ * the crew is here, at the bottom, where no tap lands by mistake.
+ */
+function HoursSheet({
+  row,
+  onClose,
+  onHours,
+  onStep,
+  onRemove,
+}: {
+  row: CrewRow | null;
+  onClose: () => void;
+  onHours: (hours: string) => void;
+  onStep: (step: number) => void;
+  onRemove: () => void;
+}) {
+  // Keeps the window's text while it closes, once the line is gone.
+  const [shown, setShown] = useState(row);
+  if (row && row !== shown) setShown(row);
+  const current = row ?? shown;
+  const name = current?.name.trim() || "cette personne";
+  const value = current ? parseHours(current.hours) : null;
+
+  // "7.5" and "7h30" are rewritten "7,5" once the window closes.
+  const close = () => {
+    if (row && value !== null && isValidHours(value) && hoursText(value) !== row.hours)
+      onHours(hoursText(value));
+    onClose();
+  };
+
+  return (
+    <Sheet
+      open={row !== null}
+      onClose={close}
+      title={`Heures de ${name}`}
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            onClick={onRemove}
+            className="text-bad hover:bg-bad-tint active:bg-bad-tint"
+          >
+            <UserMinus aria-hidden />
+            Retirer de l&apos;équipe
+          </Button>
+          <Button size="lg" onClick={close}>
+            OK
+          </Button>
+        </>
+      }
+    >
+      <div role="group" aria-label="Heures habituelles" className="grid grid-cols-3 gap-2">
+        {QUICK_HOURS.map((hours) => {
+          const chosen = value === hours;
+          return (
+            <button
+              key={hours}
+              type="button"
+              aria-pressed={chosen}
+              onClick={() => {
+                onHours(hoursText(hours));
+                onClose();
+              }}
+              className={cn(
+                "font-display h-14 cursor-pointer rounded-xl border text-lg font-bold tabular-nums transition-colors",
+                chosen
+                  ? "border-ead-dark bg-ead-dark text-white shadow-sm"
+                  : "border-line bg-surface hover:border-ead/60 active:bg-ead-tint",
+              )}
+            >
+              {formatHours(hours)}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="bg-canvas mt-4 flex items-center gap-2 rounded-xl py-1.5 pr-1.5 pl-3.5">
+        <label htmlFor="crew-hours-other" className="min-w-0 flex-1 text-[15px] font-semibold">
+          Autre nombre
+        </label>
+        <IconButton
+          label="Une demi-heure de moins"
+          onClick={() => onStep(-0.5)}
+          className="border-line bg-surface text-text size-12 border"
+        >
+          <Minus aria-hidden />
+        </IconButton>
+        <span className="relative">
           <Input
-            id={`crew-${row.key}`}
-            value={row.hours}
+            id="crew-hours-other"
+            value={current?.hours ?? ""}
             onChange={(event) => onHours(event.target.value)}
             onFocus={(event) => event.target.select()}
-            onBlur={tidy}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") close();
+            }}
             inputMode="decimal"
             autoComplete="off"
             maxLength={8}
-            aria-label={`Heures de ${row.name.trim() || "cette personne"}`}
-            aria-invalid={Boolean(problem) && Boolean(row.name.trim())}
-            className="w-21 pr-6 pl-1.5 text-center font-semibold tabular-nums"
+            className="font-display w-20 pr-6 pl-1.5 text-center text-lg font-bold tabular-nums"
           />
-          <span className="text-dim pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-sm">
+          <span className="text-dim pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2 text-sm">
             h
           </span>
         </span>
         <IconButton
-          label={`Retirer ${row.name.trim() || "cette ligne"}`}
-          onClick={onRemove}
-          className="-mr-2"
+          label="Une demi-heure de plus"
+          onClick={() => onStep(0.5)}
+          className="border-line bg-surface text-text size-12 border"
         >
-          <X aria-hidden />
+          <Plus aria-hidden />
         </IconButton>
       </div>
-      {problem ? <p className="text-bad mt-1 text-sm font-medium">{problem}</p> : null}
-    </li>
+      <p className="text-dim mt-2 px-1 text-[13px] leading-snug">
+        Au quart d&apos;heure près&nbsp;: 7,25 · 7,5 · 7,75.
+      </p>
+    </Sheet>
   );
 }

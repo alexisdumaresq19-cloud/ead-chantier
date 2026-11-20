@@ -77,6 +77,24 @@ async function addPhoto(who: BrowserContext, projectId: string, takenAt?: string
   });
 }
 
+/** The button that opens one person's hours, which reads them. */
+const hoursOf = (page: Page, name: string) =>
+  page.getByRole("button", { name: new RegExp(`^Heures de ${name}`) });
+
+/**
+ * Where a saved report's printing and deleting are: in the "…" window on a
+ * phone, in the header on a computer.
+ */
+async function reportActions(page: Page) {
+  const more = page.getByRole("button", { name: "Autres actions" });
+  if (!(await more.isVisible())) return page.locator("header");
+  await more.click();
+  const sheet = page.getByRole("dialog", { name: "Rapport journalier" });
+  await expect(sheet).toBeVisible();
+  await page.waitForTimeout(450);
+  return sheet;
+}
+
 /** A window opened by a tap ignores taps for a moment (against double taps). */
 async function choose(page: Page, dialog: string, button: string) {
   const sheet = page.getByRole("dialog", { name: dialog });
@@ -104,17 +122,23 @@ test("the foreman writes today's report on the screen, and a day keeps one repor
 
   const page = await foreman.newPage();
   await page.goto(`/projets/${projectId}/rapports`);
-  await page.getByRole("link", { name: /Rapport d'aujourd'hui/ }).click();
+  await page.getByRole("link", { name: /^Rapport du jour/ }).click();
   await expect(page.getByRole("heading", { name: "Nouveau rapport" })).toBeVisible();
 
   await page.getByRole("button", { name: "Neige" }).click();
   await page.getByLabel("Température").fill("12");
   await page.getByRole("button", { name: "Sous zéro" }).click();
   await page.getByRole("button", { name: "Reprendre l'équipe d'hier" }).click();
-  await expect(page.getByLabel(`Heures de ${seed.people.worker}`)).toHaveValue("10");
-  // Everyone's hours at once, typed with a comma; one person's own hours by hand.
+  await expect(hoursOf(page, seed.people.worker)).toContainText("10 h");
+  // Everyone's hours at once, typed with a comma; one person's own hours in their window.
   await page.getByLabel("Heures pour tous").fill("7,5");
-  await page.getByLabel(`Heures de ${seed.people.worker}`).fill("6h15");
+  await hoursOf(page, seed.people.worker).click();
+  const window = page.getByRole("dialog", { name: `Heures de ${seed.people.worker}` });
+  await page.waitForTimeout(450);
+  await window.getByLabel("Autre nombre").fill("6h15");
+  await window.getByRole("button", { name: "OK" }).click();
+  await expect(window).toBeHidden();
+  await expect(hoursOf(page, seed.people.worker)).toContainText("6,25 h");
   await page.getByRole("button", { name: "Ajouter un nom" }).click();
   await page.getByLabel("Nom", { exact: true }).fill("Pavage Exemple inc.");
   await page.getByLabel("Travaux réalisés").fill("Pose de 24 m de conduite d'égout 300 mm.");
@@ -131,7 +155,7 @@ test("the foreman writes today's report on the screen, and a day keeps one repor
   // In the list, under today, and the big button now leads to that report.
   await page.getByRole("link", { name: "Rapports", exact: true }).first().click();
   await expect(page.getByRole("link", { name: /Pose de 24 m de conduite/ })).toBeVisible();
-  await page.getByRole("link", { name: /Compléter le rapport d'aujourd'hui/ }).click();
+  await page.getByRole("link", { name: /Compléter le rapport du jour/ }).click();
   await expect(page.getByRole("heading", { name: "Modifier le rapport" })).toBeVisible();
 
   // A new report for a day that has one opens that one instead.
@@ -202,7 +226,7 @@ test("a save over a version saved since is refused, and the foreman chooses", as
     `/api/projects/${projectId}/reports`,
     reportOf(siteDay()),
   );
-  await page.getByRole("link", { name: /^Rapport d'aujourd'hui/ }).click();
+  await page.getByRole("link", { name: /^Rapport du jour/ }).click();
   await expect(page).toHaveURL(new RegExp(`/rapports/${report.id}/modifier$`));
   await expect(page.getByLabel("Travaux réalisés")).toHaveValue("Excavation de la tranchée.");
 
@@ -337,12 +361,13 @@ test("an archived project's reports are read, not changed, except by the office"
   const page = await foreman.newPage();
   await page.goto(`/projets/${projectId}/rapports`);
   await expect(page.getByText("Projet archivé")).toBeVisible();
-  await expect(page.getByRole("link", { name: /Rapport d'aujourd'hui/ })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /Rapport du jour/ })).toHaveCount(0);
   await page.getByRole("link", { name: /Excavation de la tranchée/ }).click();
   await expect(page.getByRole("heading", { name: "Rapport journalier" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Imprimer" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Modifier" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Supprimer le rapport" })).toHaveCount(0);
+  const actions = await reportActions(page);
+  await expect(actions.getByRole("button", { name: "Imprimer" })).toBeVisible();
+  await expect(actions.getByRole("button", { name: "Supprimer le rapport" })).toHaveCount(0);
   for (const path of ["nouveau", `${report.id}/modifier`]) {
     await page.goto(`/projets/${projectId}/rapports/${path}`);
     await expect(
@@ -474,6 +499,141 @@ test("without a network the report stays on the device and says it is not saved"
       Object.keys(localStorage).filter((key) => key.startsWith("ead:rapport:")),
     ),
   ).toEqual([]);
+
+  await leave(office, projectId, [foreman]);
+  await Promise.all([office.close(), foreman.close()]);
+});
+
+test("one person's hours change with taps, and a person leaves the crew from there", async ({
+  browser,
+}) => {
+  const office = await contextAs(browser, "admin");
+  const foreman = await contextAs(browser, "foreman");
+  const worker = await contextAs(browser, "worker");
+  const projectId = await projectWith(office, "heures", [foreman, worker]);
+  const page = await foreman.newPage();
+  await page.goto(`/projets/${projectId}/rapports/nouveau?jour=${siteDay(4)}`);
+  await page.getByRole("button", { name: "Ajouter tout le monde" }).click();
+  await expect(page.getByText("Ce nombre s'applique à toute l'équipe")).toBeVisible();
+  // No field to type in on the line, and nothing to remove someone by a slip.
+  await expect(page.getByRole("button", { name: /^Retirer/ })).toHaveCount(0);
+  await expect(hoursOf(page, seed.people.worker)).toContainText("8 h");
+
+  // A usual day in one tap: the window closes on it.
+  await hoursOf(page, seed.people.worker).click();
+  await choose(page, `Heures de ${seed.people.worker}`, "10 h");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(hoursOf(page, seed.people.worker)).toContainText("10 h");
+
+  // Half an hour less, then the hours of the day move everyone else only.
+  await hoursOf(page, seed.people.worker).click();
+  await choose(page, `Heures de ${seed.people.worker}`, "Une demi-heure de moins");
+  await page.getByRole("dialog").getByRole("button", { name: "OK" }).click();
+  await expect(hoursOf(page, seed.people.worker)).toContainText("9,5 h");
+  await page.getByRole("button", { name: "Une demi-heure de plus" }).click();
+  await expect(hoursOf(page, seed.people.foreman)).toContainText("8,5 h");
+  await expect(hoursOf(page, seed.people.worker)).toContainText("9,5 h");
+
+  // Taken off the crew from the window, at its bottom.
+  await hoursOf(page, seed.people.foreman).click();
+  await choose(page, `Heures de ${seed.people.foreman}`, "Retirer de l'équipe");
+  await expect(hoursOf(page, seed.people.foreman)).toHaveCount(0);
+  await expect(page.getByText("1 personne · 9,5 h").first()).toBeVisible();
+
+  await page.getByLabel("Travaux réalisés").fill("Pose de bordures.");
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page).toHaveURL(/\/rapports\/(?!nouveau)[a-z0-9]+$/);
+  const saved = (await call<Report[]>(foreman.request, "GET", `/api/projects/${projectId}/reports`))
+    .body;
+  const report = (await call<Report>(foreman.request, "GET", `/api/reports/${saved[0].id}`)).body;
+  expect(report.crew.map((line) => line.hours)).toEqual([9.5]);
+
+  await leave(office, projectId, [foreman, worker]);
+  await Promise.all([office.close(), foreman.close(), worker.close()]);
+});
+
+test("the date under the title changes the day, and the week shows the reports missing", async ({
+  browser,
+}) => {
+  const office = await contextAs(browser, "admin");
+  const foreman = await contextAs(browser, "foreman");
+  const projectId = await projectWith(office, "date", [foreman]);
+  const page = await foreman.newPage();
+  await page.goto(`/projets/${projectId}/rapports`);
+
+  // Working days gone by without a report are marked; today and weekends are not.
+  const missing = page.getByRole("link", { name: /, rapport manquant$/ });
+  const weekdays = [1, 2, 3, 4, 5, 6].filter((ago) => {
+    const day = new Date(`${siteDay(ago)}T12:00:00`).getDay();
+    return day !== 0 && day !== 6;
+  });
+  await expect(missing).toHaveCount(weekdays.length);
+  await expect(page.getByRole("link", { name: /^Aujourd'hui|, aucun rapport/ })).toHaveCount(
+    7 - weekdays.length,
+  );
+
+  await page.getByRole("link", { name: /^Rapport du jour/ }).click();
+  await expect(page.getByRole("heading", { name: "Nouveau rapport" })).toBeVisible();
+  await expect(page.getByText("(aujourd'hui)")).toBeVisible();
+  // No separate date card: the date field lies under "Changer".
+  await expect(page.getByRole("heading", { name: "Date" })).toHaveCount(0);
+  await page.getByLabel("Date du rapport").fill(siteDay(1));
+  await expect(page).toHaveURL(new RegExp(`jour=${siteDay(1)}$`));
+  await expect(page.getByText("(hier)")).toBeVisible();
+  await page.getByRole("button", { name: "Nuageux" }).click();
+  await page.getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page).toHaveURL(/\/rapports\/(?!nouveau)[a-z0-9]+$/);
+  const reportId = page.url().split("/").at(-1) ?? "";
+  expect((await call<Report>(foreman.request, "GET", `/api/reports/${reportId}`)).body.day).toBe(
+    siteDay(1),
+  );
+
+  // The day of an existing report cannot be taken by another: said under the title.
+  await page.goto(`/projets/${projectId}/rapports/nouveau?jour=${siteDay(2)}`);
+  await page.getByRole("button", { name: "Pluie" }).click();
+  await page.getByLabel("Date du rapport").fill(siteDay(1));
+  await expect(page.getByText("Une journée n'a qu'un rapport.")).toBeVisible();
+
+  await leave(office, projectId, [foreman]);
+  await Promise.all([office.close(), foreman.close()]);
+});
+
+test("a saved report is changed from its main button, and deleted only once confirmed", async ({
+  browser,
+}) => {
+  const office = await contextAs(browser, "admin");
+  const foreman = await contextAs(browser, "foreman");
+  const projectId = await projectWith(office, "lecture", [foreman]);
+  const { report } = await post<{ report: Report }>(
+    foreman.request,
+    `/api/projects/${projectId}/reports`,
+    reportOf(siteDay(), "Réfection du trottoir."),
+  );
+  const page = await foreman.newPage();
+  await page.goto(`/projets/${projectId}/rapports/${report.id}`);
+  await expect(page.getByText("Réfection du trottoir.")).toBeVisible();
+  await expect(page.getByRole("definition").filter({ hasText: seed.people.foreman })).toBeVisible();
+  // The frame names the project already: only paper repeats it.
+  await expect(page.getByText("Projet", { exact: true })).toBeHidden();
+
+  const edit = page.getByRole("link", { name: "Modifier" });
+  await expect(edit).toBeVisible();
+  if (test.info().project.name === "phone") {
+    // Stuck to the bottom, within the thumb's reach, whatever the scroll.
+    const box = await edit.boundingBox();
+    expect(box!.y + box!.height).toBeGreaterThan(page.viewportSize()!.height - 160);
+  }
+
+  let actions = await reportActions(page);
+  await actions.getByRole("button", { name: "Supprimer le rapport" }).click();
+  await choose(page, "Supprimer ce rapport?", "Annuler");
+  expect((await call(foreman.request, "GET", `/api/reports/${report.id}`)).status).toBe(200);
+
+  actions = await reportActions(page);
+  await actions.getByRole("button", { name: "Supprimer le rapport" }).click();
+  await choose(page, "Supprimer ce rapport?", "Supprimer");
+  await expect(page).toHaveURL(new RegExp(`/projets/${projectId}/rapports$`));
+  expect((await call(foreman.request, "GET", `/api/reports/${report.id}`)).status).toBe(404);
 
   await leave(office, projectId, [foreman]);
   await Promise.all([office.close(), foreman.close()]);
