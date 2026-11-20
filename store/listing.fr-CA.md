@@ -96,7 +96,7 @@ Besoin d'un compte ou d'aide? Adressez-vous au bureau d'EAD ou visitez https://e
 contremaître,génie civil,construction,dessins,feuilles,photos,documents,dictée,hors ligne,équipe
 ```
 
-96 caractères sur 100 (100 octets, donc accepté même si Apple compte les accents en double). Virgules sans espace. Les mots du nom et du sous-titre (EAD, plans, rapports, chantier) n'y sont pas&nbsp;: Apple les cherche déjà. Une app non répertoriée n'apparaît pas dans les recherches de l'App Store&nbsp;; le champ reste obligatoire.
+96 caractères sur 100 (100 octets, donc accepté même si Apple compte les accents en double). Virgules sans espace. Le nom de l'app (EAD) et celui de l'entreprise n'y sont pas&nbsp;: Apple les cherche déjà. Les mots du sous-titre (plans, rapports, chantier) n'y sont pas non plus&nbsp;: le champ est plein. Une app non répertoriée n'apparaît pas dans les recherches de l'App Store&nbsp;; le champ reste obligatoire.
 
 ## Catégories
 
@@ -145,11 +145,12 @@ Les catégories et les questions ci-dessous suivent la page de référence d'App
 | Médical ou bien-être                          | Santé ou bien-être (Health or Wellness Topics)                              | Aucun   |
 | Sexualité ou nudité (Sexuality or Nudity)     | Thèmes suggestifs, contenu sexuel, nudité (les trois questions)             | Aucun   |
 | Violence                                      | Violence de dessin animé, réaliste, prolongée, armes (les quatre questions) | Aucun   |
-| Activités de hasard (Chance-Based Activities) | Jeux d'argent, jeux de hasard simulés, concours, coffres à butin            | Aucun   |
+| Activités de hasard (Chance-Based Activities) | Jeux d'argent (Gambling), coffres à butin (Loot Boxes)                      | Non     |
+| Activités de hasard                           | Jeux de hasard simulés et concours (Simulated Gambling, Contests)           | Aucun   |
 
 Contenu généré par les utilisateurs&nbsp;: Apple le définit comme la diffusion **large** de contenu créé par les utilisateurs. Dans EAD, les photos, rapports et documents restent dans l'équipe d'une seule entreprise, sur des comptes que l'entreprise donne&nbsp;; rien n'est public et personne ne peut écrire à un inconnu. D'où «&nbsp;Non&nbsp;». Selon le même tableau d'Apple, un «&nbsp;Oui&nbsp;» à cette question donnerait quand même 4+. Vérifiez la cote affichée à la fin&nbsp;: elle doit être 4+.
 
-Apple demande aussi si l'app est conçue pour les enfants&nbsp;: **Non**.
+Sous «&nbsp;Age Categories and Override&nbsp;», choisir **Not Applicable**&nbsp;: l'app n'est pas faite pour les enfants.
 
 ## Nouveautés de la version 1.0
 
@@ -157,7 +158,7 @@ Apple demande aussi si l'app est conçue pour les enfants&nbsp;: **Non**.
 Première version de l'application EAD pour iPhone. Les plans, les documents, les photos et les rapports journaliers des chantiers d'EAD, sur votre téléphone.
 ```
 
-157 caractères sur 4000. Pour une toute première version, App Store Connect n'affiche souvent pas ce champ&nbsp;; gardez alors ce texte pour la version suivante.
+157 caractères sur 4000. Ce champ n'existe pas pour la première version&nbsp;; gardez ce texte pour la version suivante.
 
 ## Confidentialité de l'app (questionnaire sur les données)
 
@@ -166,14 +167,14 @@ Ces réponses décrivent ce que l'application garde aujourd'hui. Elles doivent d
 - Suivi (tracking) d'une app à l'autre&nbsp;: **Non**. Aucune publicité, aucun outil de mesure d'audience.
 - Données collectées, toutes **liées à la personne**, pour les **fonctionnalités de l'app** seulement&nbsp;:
 
-| Type de données (libellé d'Apple)           | Ce que c'est dans EAD                                                                       |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Coordonnées → Nom                           | Le nom de la personne, vu par son équipe                                                    |
-| Coordonnées → Numéro de téléphone           | Le cellulaire, pour entrer avec un code du bureau et pour que l'équipe joigne la personne   |
-| Coordonnées → Adresse courriel              | Seulement si le bureau l'inscrit                                                            |
-| Contenu utilisateur → Photos ou vidéos      | Les photos de chantier (sans leur position GPS&nbsp;: l'app ne la garde pas)                |
-| Contenu utilisateur → Données audio         | La dictée du rapport, envoyée au service d'intelligence artificielle, jamais gardée par EAD |
-| Contenu utilisateur → Autre contenu         | Les rapports journaliers, les descriptions de photos, les documents ajoutés                 |
-| Identifiants → Identifiant de l'utilisateur | Le numéro interne du compte                                                                 |
+| Type de données (libellé d'Apple)                                        | Ce que c'est dans EAD                                                                       |
+| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Coordonnées → Nom (Contact Info → Name)                                  | Le nom de la personne, vu par son équipe                                                    |
+| Coordonnées → Numéro de téléphone (Contact Info → Phone Number)          | Le cellulaire, pour entrer avec un code du bureau et pour que l'équipe joigne la personne   |
+| Coordonnées → Adresse courriel (Contact Info → Email Address)            | Seulement si le bureau l'inscrit                                                            |
+| Contenu utilisateur → Photos ou vidéos (User Content → Photos or Videos) | Les photos de chantier (sans leur position GPS&nbsp;: l'app ne la garde pas)                |
+| Contenu utilisateur → Données audio (User Content → Audio Data)          | La dictée du rapport, envoyée au service d'intelligence artificielle, jamais gardée par EAD |
+| Contenu utilisateur → Autre contenu (User Content → Other User Content)  | Les rapports journaliers, les descriptions de photos, les documents ajoutés                 |
+| Identifiants → Identifiant de l'utilisateur (Identifiers → User ID)      | Le numéro interne du compte                                                                 |
 
 - Non collectées&nbsp;: localisation, contacts du téléphone, historique de navigation, données de santé, achats, diagnostics.

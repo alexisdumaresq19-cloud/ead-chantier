@@ -22,9 +22,9 @@ Only the employees of Les Entreprises Allen Dumaresq: the office staff, the fore
 
 The app is of no use to the public: it shows nothing without an account, and accounts are given by the company to its own employees only (a personal link, the QR code of a site, or a code given by the office). Listing it publicly would only bring people who cannot sign in. Unlisted distribution lets the office send one link to each new employee, who installs the app from the App Store like any other app.
 
-## Why not Apple Business Manager (custom apps)?
+## Why not private distribution through Apple Business?
 
-The staff use their own iPhones, not phones owned or managed by the company. Custom apps through Apple Business Manager reach devices that the company manages, or people through redemption codes that the office would have to obtain, track and hand out one by one, for every new employee and every replaced phone. Site workers join on their first day, often from the site itself: a single App Store link, sent by text message with their invitation, is the simplest path, with no code to redeem. Apple's own page names this case: employee-owned devices that are not eligible to be managed through Apple Business.
+The staff use their own iPhones, not phones owned or managed by the company. Private distribution through Apple Business reaches devices that the company manages, or people through redemption codes that the office would have to obtain, track and hand out one by one, for every new employee and every replaced phone. Site workers join on their first day, often from the site itself: a single App Store link, sent by text message with their invitation, is the simplest path, with no code to redeem. Apple's own page names this case: employee-owned devices that are not eligible to be managed through Apple Business.
 
 ## Sign-in for Apple
 

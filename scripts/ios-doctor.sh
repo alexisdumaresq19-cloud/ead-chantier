@@ -65,7 +65,8 @@ else
       "Ouvrez Xcode une fois pour finir son installation, puis relancez."
   elif [ "$xcode_major" -lt "$MIN_XCODE" ]; then
     todo "Xcode $xcode_version est trop ancien${NB}: Apple refuse les envois faits avant Xcode $MIN_XCODE." \
-      "Mettez Xcode à jour dans l'App Store du Mac."
+      "Mettez Xcode à jour dans l'App Store du Mac. S'il ne s'y met pas à jour (macOS trop ancien)${NB}:" \
+      "docs/ios/MAC.md, section 3, point 1."
   else
     ok "Xcode $xcode_version ($developer_dir)"
   fi
@@ -95,7 +96,8 @@ else
       "Lancez${NB}: xcodebuild -downloadPlatform iOS (plusieurs Go, prévoir du temps)."
   elif ! xcrun simctl list devices available 2>/dev/null | grep -q 'iPhone'; then
     todo "Aucun iPhone dans les simulateurs." \
-      "Dans Xcode${NB}: Window > Devices and Simulators > Simulators > +, choisir un iPhone."
+      "Xcode 27${NB}: menu Xcode > Open Developer Tool > Device Hub, bouton + en haut de la liste, choisir un iPhone sous Simulators, Create." \
+      "Xcode 26${NB}: menu Window > Devices and Simulators > Simulators > +, choisir un iPhone."
   else
     ok "Simulateur ${runtime%% (*}"
   fi
@@ -114,10 +116,12 @@ else
   todo "Node.js est introuvable." "Installez la version LTS depuis https://nodejs.org (paquet pour macOS), puis relancez."
 fi
 
-if command -v git >/dev/null 2>&1; then
+# /usr/bin/git is always there on a Mac, but answers only once Xcode (or
+# its command line tools) is installed: ask it for its version.
+if git --version >/dev/null 2>&1; then
   ok "git $(git --version | sed 's/^git version //')"
 else
-  todo "git est introuvable." "Il vient avec les outils d'Xcode${NB}: xcode-select --install"
+  todo "git ne répond pas." "Il vient avec Xcode${NB}: installez Xcode depuis l'App Store du Mac, ouvrez-le une fois, puis relancez."
 fi
 
 if [ -x node_modules/.bin/cap ]; then

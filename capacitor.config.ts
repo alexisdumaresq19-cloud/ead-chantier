@@ -70,11 +70,16 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // The pages call SplashScreen.hide() as soon as they are drawn. If one
-      // never does (an older deployment, a page that failed), the logo goes
-      // away by itself: the screen does not take touches while it shows.
+      // The site hides the logo itself after its first paint, so in the
+      // normal case nothing waits for this limit. On a slow cellular first
+      // load the logo stays until the page is there, rather than giving way
+      // to an empty black screen after 3 seconds; the shell's own pages
+      // (ios-shell/index.html and offline.html) hide it themselves. The
+      // limit stays, so a page that never calls SplashScreen.hide() (an
+      // older deployment) cannot leave the logo up for ever: the screen takes
+      // no touches while it shows.
       launchAutoHide: true,
-      launchShowDuration: 3000,
+      launchShowDuration: 8000,
       launchFadeOutDuration: 200,
       backgroundColor: "#0b0d10",
       showSpinner: false,
