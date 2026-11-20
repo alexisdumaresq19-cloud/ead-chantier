@@ -82,11 +82,11 @@ const DEMO_MADE = "access_demo";
 type Outcome = typeof NETWORK | typeof NUMBER | typeof DEMO_MADE;
 const attempts = schema.signupAttempts;
 
-/** A row of the table under this door's own outcome (the column's type names account creation's). */
+/** A row of the table under one of this door's own outcomes. */
 const row = (outcome: Outcome, addressHash: string, now: Date) => ({
   id: newId(),
   addressHash,
-  outcome: outcome as unknown as typeof attempts.$inferInsert.outcome,
+  outcome,
   createdAt: now,
 });
 

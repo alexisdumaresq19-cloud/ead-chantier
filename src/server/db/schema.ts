@@ -49,9 +49,12 @@ export const users = pgTable("users", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   /**
    * The demonstration account: the one the office hands to someone who must
-   * see the app without being on the team (Apple's reviewer). It is a worker
-   * like another, on the projects the office puts it on; its access code
-   * lasts and serves more than once.
+   * see the app without being on the team (Apple's reviewer). A foreman on
+   * the projects the office chose for it, who adds photos, documents and
+   * reports, changes only what it added itself, and never the plans or the
+   * team (src/server/access-code/rules.ts). Its number is fictional and its
+   * code serves more than once; each sign-in lasts a day, and a visitor who
+   * deletes the account finds it made again at the next one.
    */
   demo: boolean("demo").notNull().default(false),
   /**
@@ -113,6 +116,8 @@ export const invites = pgTable(
  * The app's own settings, one row per setting, changed by the office: who
  * changed it last and when. "company_code": the code that lets a newcomer
  * make their own account (null while account creation is closed).
+ * "demo_access": the demonstration access, as JSON {phone, code, projectIds},
+ * readable because the office reads it again to hand it on.
  */
 export const appSettings = pgTable("app_settings", {
   key: text("key").primaryKey(),
@@ -122,17 +127,32 @@ export const appSettings = pgTable("app_settings", {
 });
 
 /**
- * One row per attempt to make an account with the company code that was
- * refused (a wrong code, a number already in use), or that made an account.
- * It is what the door's ceilings are counted from (src/server/signup/door.ts),
- * kept two days. The address is kept as a keyed digest, the code never.
+ * What the two doors count from, kept two days. The address is kept as a
+ * keyed digest, the code never.
+ * - Account creation (src/server/signup/door.ts): one row per attempt that
+ *   was refused ("wrong_code", "phone_taken") or that made an account
+ *   ("created").
+ * - Signing in with a typed code (src/server/access-code/door.ts): one row
+ *   per wrong try, under the network ("access_network") and under the number
+ *   ("access_number", keyed "<number's key>.<network's key>"), and one each
+ *   time a visitor's sign-in makes the demonstration account again
+ *   ("access_demo").
  */
 export const signupAttempts = pgTable(
   "signup_attempts",
   {
     id: id(),
     addressHash: text("address_hash").notNull(),
-    outcome: text("outcome").$type<"wrong_code" | "phone_taken" | "created">().notNull(),
+    outcome: text("outcome")
+      .$type<
+        | "wrong_code"
+        | "phone_taken"
+        | "created"
+        | "access_network"
+        | "access_number"
+        | "access_demo"
+      >()
+      .notNull(),
     createdAt: createdAt(),
   },
   (t) => [
