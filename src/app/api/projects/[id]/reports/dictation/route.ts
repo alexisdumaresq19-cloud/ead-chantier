@@ -1,6 +1,7 @@
 import { and, asc, eq } from "drizzle-orm";
 
 import { projectToChange } from "@/server/access";
+import { countDictation } from "@/server/ai/usage";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { applyDictation, reportOnScreen } from "@/server/dictation/patch";
@@ -48,22 +49,26 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
     : [...members, { id: user.id, name: user.name }];
 
   const audio = form.get("audio");
+  const recorded = audio instanceof Blob && audio.size > 0 ? audio : null;
   let heard = String(form.get("text") ?? "").trim();
-  if (audio instanceof Blob && audio.size > 0) {
-    if (!AUDIO.test(audio.type))
+  if (recorded) {
+    if (!AUDIO.test(recorded.type))
       throw badRequest("Cet enregistrement n'est pas dans un format accepté.");
-    if (audio.size > DICTATION_MAX_BYTES)
+    if (recorded.size > DICTATION_MAX_BYTES)
       throw badRequest("L'enregistrement est trop long. Dictez en plusieurs fois.");
-    heard = await transcribeDictation(new Uint8Array(await audio.arrayBuffer()), known);
+  } else {
+    if (heard.length > DICTATION_MAX_TEXT)
+      throw badRequest("Le texte est trop long. Dictez en plusieurs fois.");
+    if (heard.length < 3) throw nothingHeard();
   }
-  if (heard.length > DICTATION_MAX_TEXT)
-    throw badRequest("Le texte est trop long. Dictez en plusieurs fois.");
-  if (heard.length < 3)
-    throw new HttpError(
-      422,
-      "nothing_heard",
-      "Je n'ai rien entendu. Réessayez en parlant plus près du micro.",
-    );
+
+  // From here on the request costs money: it counts against the person's allowance.
+  await countDictation(user.id);
+  if (recorded) {
+    heard = await transcribeDictation(new Uint8Array(await recorded.arrayBuffer()), known);
+    if (heard.length < 3) throw nothingHeard();
+    heard = heard.slice(0, DICTATION_MAX_TEXT);
+  }
 
   const patch = await readDictation({
     heard,
@@ -75,6 +80,13 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   const applied = applyDictation(report, patch, known);
   return { heard, ...applied } satisfies DictationResult;
 });
+
+const nothingHeard = () =>
+  new HttpError(
+    422,
+    "nothing_heard",
+    "Je n'ai rien entendu. Réessayez en parlant plus près du micro.",
+  );
 
 /** The questions of the previous turn, as the screen sends them back: a few short lines at most. */
 function questionsAsked(value: FormDataEntryValue | null): string[] {

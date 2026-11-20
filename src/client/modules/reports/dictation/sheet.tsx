@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import {
   Check,
   CircleHelp,
@@ -9,6 +9,8 @@ import {
   Send,
   Square,
   TriangleAlert,
+  Volume2,
+  VolumeX,
   WifiOff,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +19,6 @@ import {
   DICTATION_FIELD_LABELS,
   DICTATION_MAX_SECONDS,
   DICTATION_MAX_TEXT,
-  type AssistantStatus,
   type DictationField,
   type DictationResult,
 } from "@/shared/dictation";
@@ -30,19 +31,18 @@ import type { ReportForm } from "../form";
 import { Notice } from "../status";
 import { contentForDictation, formAfterDictation } from "./convert";
 import { canRecord, useRecorder, type RecorderProblem, type Recording } from "./recorder";
+import {
+  canSpeak,
+  prepareSpeech,
+  setAnswersAloud,
+  speak,
+  stopSpeaking,
+  wantsAnswersAloud,
+} from "./speak";
 
 // Dictating a report: the foreman talks, the report fills itself, and what is
 // still missing comes back as questions to answer the same way. Nothing is
 // saved here: the form is filled, then checked and saved as usual.
-
-/** Whether reports can be dictated here; unknown (undefined) until the server said. */
-export function useAssistant() {
-  return useQuery({
-    queryKey: ["assistant"],
-    queryFn: () => api<AssistantStatus>("/api/assistant"),
-    staleTime: 10 * 60 * 1000,
-  });
-}
 
 type Job = { recording: Recording; text?: undefined } | { text: string; recording?: undefined };
 
@@ -70,6 +70,14 @@ const EXTENSIONS: Record<string, string> = { webm: "webm", mp4: "m4a", ogg: "ogg
 const fileName = (audio: Blob) =>
   `dictee.${EXTENSIONS[/^audio\/(\w+)/.exec(audio.type)?.[1] ?? ""] ?? "webm"}`;
 
+/** The answer as the phone says it. */
+function spokenAnswer(result: DictationResult): string {
+  const parts = result.changed.map((field) => DICTATION_FIELD_LABELS[field].toLowerCase());
+  const noted =
+    parts.length > 0 ? `C'est noté : ${parts.join(", ")}.` : "Je n'ai rien trouvé à inscrire.";
+  return [noted, ...result.questions].join(" ");
+}
+
 export function DictationSheet({
   open,
   onClose,
@@ -91,6 +99,7 @@ export function DictationSheet({
   const online = useOnline();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [writing, setWriting] = useState(() => !canRecord());
+  const [aloud, setAloud] = useState(wantsAnswersAloud);
   const [text, setText] = useState("");
   /** What could not be sent, kept so nothing has to be said twice. */
   const [failed, setFailed] = useState<{ job: Job; message: string; offline: boolean } | null>(
@@ -131,6 +140,7 @@ export function DictationSheet({
         },
       ]);
       if (job.text !== undefined) setText("");
+      if (aloud) speak(spokenAnswer(result));
     },
     onError: (error, job) =>
       setFailed({
@@ -160,6 +170,7 @@ export function DictationSheet({
     if (open && !wasOpen.current && startRecording && canRecord() && online) void start();
     if (!open && wasOpen.current) {
       cancel();
+      stopSpeaking();
       // Once the window is closed the form can be edited by hand: a turn can
       // no longer be put back without losing that.
       setTurns((list) => list.map((turn) => ({ ...turn, before: null })));
@@ -179,7 +190,9 @@ export function DictationSheet({
 
   const sendText = () => {
     const said = text.trim();
-    if (said.length >= 3) send.mutate({ text: said });
+    if (said.length < 3) return;
+    if (aloud) prepareSpeech();
+    send.mutate({ text: said });
   };
 
   const left = DICTATION_MAX_SECONDS - recorder.seconds;
@@ -256,7 +269,19 @@ export function DictationSheet({
                 waiting={phase === "asking" || busy}
                 level={recorder.level}
                 disabled={!online}
-                onPress={recording ? recorder.stop : () => void start()}
+                onPress={
+                  recording
+                    ? () => {
+                        // Inside the tap: an iPhone only speaks later if a tap allowed it.
+                        if (aloud) prepareSpeech();
+                        recorder.stop();
+                      }
+                    : () => {
+                        // The phone must not record its own voice.
+                        stopSpeaking();
+                        void start();
+                      }
+                }
               />
               <div className="justify-self-end">
                 {turns.length > 0 && !recording ? (
@@ -282,6 +307,33 @@ export function DictationSheet({
       }
     >
       <div className="space-y-3">
+        {canSpeak() ? (
+          <button
+            type="button"
+            role="switch"
+            aria-checked={aloud}
+            onClick={() => {
+              const next = !aloud;
+              setAloud(next);
+              setAnswersAloud(next);
+              if (next) prepareSpeech();
+            }}
+            className={cn(
+              "flex h-10 cursor-pointer items-center gap-2 rounded-full border px-3.5 text-sm font-semibold transition-colors",
+              aloud
+                ? "border-ead-dark bg-ead-tint text-ead-dark"
+                : "border-line text-dim hover:text-text",
+            )}
+          >
+            {aloud ? (
+              <Volume2 className="size-4.5" aria-hidden />
+            ) : (
+              <VolumeX className="size-4.5" aria-hidden />
+            )}
+            Réponses à voix haute
+          </button>
+        ) : null}
+
         {turns.length === 0 && !busy ? <Example /> : null}
 
         {turns.map((turn, index) => (

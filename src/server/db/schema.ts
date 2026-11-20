@@ -340,3 +340,22 @@ export const dailyReports = pgTable(
   // One report per project and per day.
   (t) => [uniqueIndex("daily_reports_project_day").on(t.projectId, t.day)],
 );
+
+// --- Assistant ----------------------------------------------------------------
+
+/**
+ * One row per call to the paid AI service, kept two days: it is what the
+ * allowance per person is counted from (see src/server/ai/usage.ts).
+ */
+export const assistantUses = pgTable(
+  "assistant_uses",
+  {
+    id: id(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"dictation">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("assistant_uses_user_created").on(t.userId, t.createdAt)],
+);

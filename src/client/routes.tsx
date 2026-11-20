@@ -3,7 +3,8 @@ import { Redirect, Route, Router, Switch, useLocation, useParams, useRoute } fro
 
 import { ApiFailure } from "./lib/api";
 import { useAppLocation, useAppSearch } from "./lib/location";
-import { MeContext, ProjectContext, useMe, useProject } from "./lib/session";
+import { noteSheetOpened } from "./lib/recents";
+import { MeContext, ProjectContext, useCurrentUser, useMe, useProject } from "./lib/session";
 import { Page } from "./shell/page";
 import { PublicLayout } from "./shell/public-layout";
 import { Shell } from "./shell/shell";
@@ -148,8 +149,15 @@ function Framed({ children }: { children: React.ReactNode }) {
 function ProjectArea() {
   const { projectId } = useParams<{ projectId: string }>();
   const project = useProject(projectId);
-  const [fullScreen] = useRoute("/projets/:projectId/feuilles/:sheetId");
+  const [fullScreen, shown] = useRoute("/projets/:projectId/feuilles/:sheetId");
   const waiting = fullScreen ? <Splash /> : <PageLoading />;
+
+  // The sheets opened last are offered again on the project's home.
+  const me = useCurrentUser();
+  const sheetId = shown?.sheetId;
+  useEffect(() => {
+    if (sheetId) noteSheetOpened(me.id, projectId, sheetId);
+  }, [me.id, projectId, sheetId]);
 
   let content: React.ReactNode;
   if (project.data !== undefined) {

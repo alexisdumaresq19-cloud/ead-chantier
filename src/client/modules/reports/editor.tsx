@@ -23,6 +23,7 @@ import {
 } from "@/shared/reports";
 
 import { api, ApiFailure, errorMessage } from "../../lib/api";
+import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
 import { navigate } from "../../lib/location";
@@ -51,7 +52,7 @@ import {
   useStillShown,
   useToday,
 } from "./data";
-import { DictationCard, DictationSheet, useAssistant } from "./dictation/sheet";
+import { DictationCard, DictationSheet } from "./dictation/sheet";
 import { canKeepDrafts, draftKey, readDraft, removeDraft, writeDraft, type Draft } from "./drafts";
 import { Fetched } from "./fetched";
 import {
@@ -157,10 +158,18 @@ function Editor({
   const [savedOffline, setSavedOffline] = useState(false);
   const [clash, setClash] = useState<Clash | null>(null);
   // Dictating: closed, open, or open with the recording started by the same tap.
-  // "?dicter=1" comes from the list's "Dicter" button and opens it at once.
+  // "?dicter=1" comes from a "Dicter" button elsewhere (the project's home, the
+  // list): that tap starts the recording, and the mark then leaves the address
+  // so that reloading the page does not.
   const [dictating, setDictating] = useState<"closed" | "open" | "recording">(() =>
-    new URLSearchParams(window.location.search).get("dicter") === "1" ? "open" : "closed",
+    new URLSearchParams(window.location.search).get("dicter") === "1" ? "recording" : "closed",
   );
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has("dicter")) return;
+    url.searchParams.delete("dicter");
+    navigate(url.pathname + url.search, { replace: true });
+  }, []);
   // The parts of the report filled by voice, marked so the person checks them.
   const [dictated, setDictated] = useState<DictationField[]>([]);
   const canDictate = useAssistant().data?.dictation === true;

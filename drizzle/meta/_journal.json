@@ -15,6 +15,13 @@
       "when": 1795133502656,
       "tag": "0001_limits_and_one_report_per_day",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1795137917171,
+      "tag": "0002_assistant_uses",
+      "breakpoints": true
     }
   ]
 }

@@ -140,3 +140,42 @@ test("only those who write reports may dictate, and silence is said so", async (
   expect(wrong.status()).toBe(400);
   await foreman.close();
 });
+
+test("from the project's home, one tap starts dictating the day's report", async ({ browser }) => {
+  const context = await contextAs(browser, "foreman");
+  const page = await context.newPage();
+  await page.goto(`/projets/${seed.projectId}`);
+  const shortcut = page.getByRole("link", { name: /Dicter le rapport du jour/ });
+  const done = page.getByRole("link", { name: /Rapport du jour fait/ });
+  await expect(shortcut.or(done)).toBeVisible();
+  // Another test may have written today's report: the home then links to it.
+  test.skip(await done.isVisible(), "today's report exists");
+  await shortcut.click();
+  await expect(page.getByRole("button", { name: "Terminer l'enregistrement" })).toBeVisible();
+  // The mark has left the address: reloading would not start a recording.
+  await expect(page).toHaveURL(/\/rapports\/nouveau(\?jour=[\d-]+)?$/);
+  await page.getByRole("button", { name: "Annuler" }).click();
+  await context.close();
+});
+
+test("the home offers again the plans opened last", async ({ browser }) => {
+  const context = await contextAs(browser, "worker");
+  const page = await context.newPage();
+  await page.goto(`/projets/${seed.projectId}`);
+  await expect(page.getByRole("link", { name: "Prendre une photo" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Derniers plans ouverts" })).toHaveCount(0);
+  // A worker has no report to write.
+  await expect(page.getByRole("link", { name: /rapport du jour/i })).toHaveCount(0);
+
+  await page.goto(`/projets/${seed.projectId}/feuilles/${seed.sheetIds[2]}`);
+  await page.waitForTimeout(800);
+  await page.goto(`/projets/${seed.projectId}`);
+  const recent = page
+    .getByRole("heading", { name: "Derniers plans ouverts" })
+    .locator("xpath=ancestor::section")
+    .getByRole("link");
+  await expect(recent).toHaveCount(1);
+  await recent.click();
+  await expect(page).toHaveURL(new RegExp(`/feuilles/${seed.sheetIds[2]}`));
+  await context.close();
+});

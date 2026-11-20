@@ -1,12 +1,16 @@
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Camera,
   ChevronRight,
+  CircleCheck,
   ClipboardList,
   FileText,
   Layers,
   LayoutGrid,
   MapPin,
+  Mic,
   Navigation,
+  PenLine,
   Plus,
   Settings,
   Users,
@@ -15,12 +19,19 @@ import {
 import { useState } from "react";
 import { Link } from "wouter";
 
-import type { ProjectSummary } from "@/shared/api";
+import type { ProjectDetail, ProjectSummary } from "@/shared/api";
+import { crewTotals } from "@/shared/reports";
 import { isAdmin } from "@/shared/roles";
 
+import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
-import { count } from "../../lib/format";
+import { count, formatWeekday } from "../../lib/format";
+import { recentSheetIds } from "../../lib/recents";
 import { useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
+import { planPaths, usePlans, warmSheet } from "../plans/data";
+import { PlanThumb } from "../plans/parts";
+import { useDayReport, useToday } from "../reports/data";
+import { formatHours } from "../reports/lib";
 import { OfflineProject } from "../../pwa/offline-project";
 import { Page, Section } from "../../shell/page";
 import {
@@ -267,6 +278,9 @@ export function ProjectHomeScreen() {
           ) : null}
         </div>
 
+        <Today project={project} />
+        <RecentPlans projectId={project.id} />
+
         <OfflineProject project={project} />
 
         {project.description ? (
@@ -292,6 +306,157 @@ export function ProjectHomeScreen() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * What is done every day at the site, one tap away: the day's report (for
+ * those who write it) and a photo.
+ */
+function Today({ project }: { project: ProjectDetail }) {
+  const base = `/projets/${project.id}`;
+  const today = useToday();
+  const writes = project.canManage && project.status !== "archive";
+  const day = useDayReport(project.id, today, writes && today !== "");
+  const canDictate = useAssistant().data?.dictation === true;
+  const report = day.data?.report ?? null;
+  const totals = report ? crewTotals(report.crew) : null;
+  if (project.status === "archive") return null;
+
+  return (
+    <Section title={today ? `Aujourd'hui · ${formatWeekday(today)}` : "Aujourd'hui"}>
+      <div className={cn("grid grid-cols-1 gap-2.5 sm:gap-3", writes && "sm:grid-cols-2")}>
+        {writes && report ? (
+          <ActionRow
+            href={`${base}/rapports/${report.id}`}
+            icon={CircleCheck}
+            tone="done"
+            label="Rapport du jour fait"
+            detail={
+              totals && totals.people > 0
+                ? `${count(totals.people, "personne")} · ${formatHours(totals.hours)}`
+                : "Ouvrir le rapport"
+            }
+          />
+        ) : writes && canDictate ? (
+          <ActionRow
+            href={`${base}/rapports/nouveau?dicter=1`}
+            icon={Mic}
+            tone="dark"
+            label="Dicter le rapport du jour"
+            detail="Parlez, le rapport se remplit."
+          />
+        ) : writes ? (
+          <ActionRow
+            href={`${base}/rapports/nouveau`}
+            icon={PenLine}
+            tone="dark"
+            label="Rapport du jour"
+            detail={day.isPending && day.fetchStatus !== "idle" ? "…" : "À faire"}
+          />
+        ) : null}
+        <ActionRow
+          href={`${base}/photos`}
+          icon={Camera}
+          tone="light"
+          label="Prendre une photo"
+          detail="Avancement, imprévu, état des lieux."
+        />
+      </div>
+    </Section>
+  );
+}
+
+function ActionRow({
+  href,
+  icon: Icon,
+  tone,
+  label,
+  detail,
+}: {
+  href: string;
+  icon: LucideIcon;
+  tone: "dark" | "light" | "done";
+  label: string;
+  detail: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "group flex min-h-19 items-center gap-3.5 rounded-2xl border p-3.5 shadow-xs transition active:scale-[0.99]",
+        tone === "dark"
+          ? "border-ink bg-ink text-white"
+          : "border-line bg-surface hover:border-ead/60 active:bg-canvas",
+      )}
+    >
+      <span
+        className={cn(
+          "grid size-12 shrink-0 place-items-center rounded-full",
+          tone === "dark" && "bg-ead text-white shadow-md",
+          tone === "light" && "bg-ead-tint text-ead-dark",
+          tone === "done" && "bg-good-tint text-good",
+        )}
+      >
+        <Icon className="size-6" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="font-display block text-[17px] leading-tight font-bold">{label}</span>
+        <span
+          className={cn(
+            "mt-0.5 block text-sm leading-snug text-pretty",
+            tone === "dark" ? "text-white/70" : "text-dim",
+          )}
+        >
+          {detail}
+        </span>
+      </span>
+      <ChevronRight
+        className={cn(
+          "size-5 shrink-0 transition-transform group-hover:translate-x-0.5",
+          tone === "dark" ? "text-white/70" : "text-dim",
+        )}
+        aria-hidden
+      />
+    </Link>
+  );
+}
+
+/** The sheets this person opened last: a crew works off the same few for days. */
+function RecentPlans({ projectId }: { projectId: string }) {
+  const me = useCurrentUser();
+  const client = useQueryClient();
+  const plans = usePlans(projectId);
+  // Read when the screen opens: coming back from a sheet shows it first.
+  const [ids] = useState(() => recentSheetIds(me.id, projectId));
+  const sheets = ids.flatMap((id) => plans.data?.sheets.find((sheet) => sheet.id === id) ?? []);
+  if (sheets.length === 0) return null;
+
+  return (
+    <Section title="Derniers plans ouverts">
+      {/* Bleeds to the screen's edges, so the strip scrolls from side to side. */}
+      <ul className="-mx-4 flex snap-x scroll-px-4 [scrollbar-width:none] gap-2.5 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:scroll-px-6 sm:px-6 lg:mx-0 lg:scroll-px-0 lg:px-0">
+        {sheets.map((sheet) => (
+          <li key={sheet.id} className="w-38 shrink-0 snap-start sm:w-44">
+            <Link
+              href={planPaths.sheet(projectId, sheet.id)}
+              onPointerDown={() => warmSheet(client, projectId, sheet.id)}
+              className="group border-line bg-surface hover:border-ead/60 active:bg-canvas block rounded-2xl border p-2 shadow-xs transition active:scale-[0.98]"
+            >
+              <PlanThumb
+                url={sheet.current?.thumbUrl}
+                tiles={sheet.current?.tiles}
+                className="aspect-[4/3] w-full rounded-xl"
+              />
+              <span className="font-display mt-2 block truncate px-1 text-[15px] leading-tight font-bold">
+                {sheet.number}
+              </span>
+              <span className="text-dim block truncate px-1 pb-0.5 text-[13px]">{sheet.title}</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Section>
   );
 }
 

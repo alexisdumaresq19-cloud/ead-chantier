@@ -70,13 +70,17 @@ export async function signOut(to = "/bienvenue") {
 
 /**
  * What modules keep in the browser's local storage for the person: unsaved
- * daily reports, the site code they made. A device that is handed on after a
+ * daily reports, the site code they made, the plans they opened last. A device that is handed on after a
  * sign-out keeps none of it. (Display preferences stay.)
  */
 function forgetLocalTraces() {
   try {
     for (const key of Object.keys(window.localStorage))
-      if (key.startsWith("ead:rapport:") || key.startsWith("ead-site-code:"))
+      if (
+        key.startsWith("ead:rapport:") ||
+        key.startsWith("ead-site-code:") ||
+        key.startsWith("ead:recents:")
+      )
         window.localStorage.removeItem(key);
   } catch {
     // Local storage can be closed to the page (private mode): nothing to forget.
