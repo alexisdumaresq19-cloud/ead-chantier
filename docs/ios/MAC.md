@@ -41,7 +41,7 @@ Claude Code demande ces éléments avant toute commande, un à la fois, et atten
 
 Le propriétaire donne le Key ID, l'Issuer ID et le Team ID à Claude Code quand il les demande à l'étape 4.3. Claude Code les écrit dans un fichier du Mac hors du projet, jamais dans un fichier du projet.
 
-**Les commandes avec `sudo` et les connexions.** Claude Code ne peut pas taper de mot de passe&nbsp;: ses commandes n'ont pas de terminal. Quand une commande demande le mot de passe du Mac (`sudo …`) ou une connexion (`gh auth login`), Claude Code l'affiche ; le propriétaire ouvre **Terminal** (Finder > **Applications** > **Utilitaires** > **Terminal**), colle la commande, appuie sur Entrée, tape ce qu'elle demande (le mot de passe ne s'affiche pas pendant qu'on le tape), puis dit à Claude Code de continuer.
+**Les commandes avec `sudo` et les connexions.** Claude Code ne peut pas taper de mot de passe&nbsp;: ses commandes n'ont pas de terminal. Quand une commande demande le mot de passe du Mac (`sudo …`) ou une connexion (`gh auth login`), Claude Code l'affiche ; le propriétaire ouvre une autre fenêtre de **Terminal** (menu **Shell** > **Nouvelle fenêtre**, ou Commande + N, sans fermer celle où tourne Claude Code), colle la commande, appuie sur Entrée, tape ce qu'elle demande (le mot de passe ne s'affiche pas pendant qu'on le tape), puis dit à Claude Code de continuer.
 
 ## 4. Les étapes
 
@@ -61,7 +61,7 @@ grep -q '.local/bin' ~/.zshrc 2>/dev/null || echo 'export PATH="$HOME/.local/bin
 ~/.local/bin/gh --version
 ```
 
-Les commandes de Claude Code ne lisent pas `~/.zshrc`&nbsp;: les siennes commencent par `export PATH="$HOME/.local/bin:$PATH"`, comme dans les blocs ci-dessous. Le propriétaire, lui, quitte Terminal (Commande + Q) et le rouvre, puis y colle&nbsp;:
+Les commandes de Claude Code ne lisent pas `~/.zshrc`&nbsp;: les siennes commencent par `export PATH="$HOME/.local/bin:$PATH"`, comme dans les blocs ci-dessous. Le propriétaire, lui, ouvre une nouvelle fenêtre de Terminal (menu **Shell** > **Nouvelle fenêtre**, ou Commande + N), sans fermer celle où tourne Claude Code, et y colle&nbsp;:
 
 ```bash
 gh auth login --hostname github.com --git-protocol https --web

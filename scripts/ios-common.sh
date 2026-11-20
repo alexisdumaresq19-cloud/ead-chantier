@@ -22,7 +22,7 @@ die() {
 
 # Said with every command the doctor suggests that needs the Mac's password:
 # sudo cannot ask for it through Claude Code, which has no terminal.
-SUDO_HINT="Commande avec sudo${NB}: le propriétaire la colle dans Terminal (Applications > Utilitaires) et tape le mot de passe du Mac."
+SUDO_HINT="Commande avec sudo${NB}: le propriétaire la colle dans une autre fenêtre de Terminal (Commande + N) et tape le mot de passe du Mac."
 
 # The App Store Connect key's settings (ASC_KEY_PATH, ASC_KEY_ID,
 # ASC_ISSUER_ID, ASC_TEAM_ID) live in this file outside the repository, and
