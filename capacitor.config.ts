@@ -24,14 +24,17 @@ const version = "1.0.0";
  * WKAppBoundDomains in ios/App/App/Info.plist: the site, and "localhost" for
  * the shell's own pages (capacitor://localhost). In exchange WebKit gives the
  * site its service worker, which is what opens kept plans without a network:
- * an app's WKWebView runs service workers on app-bound domains only. Links to
- * other sites still open, in Safari: Capacitor hands them to the system
- * before WebKit is asked (WebViewDelegationHandler.decidePolicyFor), and
- * pictures or requests to other hosts are not navigations, so they still load.
+ * in an app that is not a browser, WebKit runs service workers only in a web
+ * view created with this option (WebPage::updatePreferences), so off means no
+ * service worker at all. Links to other sites still open, in Safari: WebKit
+ * asks Capacitor's policy delegate first, which hands them to the system
+ * (WebViewDelegationHandler.decidePolicyFor), and pictures or requests to
+ * other hosts are not navigations, so they still load.
  *
  * Only a run on an iPhone or in the Simulator proves it: docs/ios/MAC.md
  * ("Premier essai dans le simulateur") says what to read on /diagnostic and
- * when to turn this off. docs/ios/README.md has the reasoning.
+ * when to turn this off (only if the bridge is missing with it on).
+ * docs/ios/README.md has the reasoning, with WebKit's source.
  */
 const appBoundDomains = true;
 

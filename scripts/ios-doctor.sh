@@ -3,8 +3,8 @@
 # Apple still accepts for uploads), its command line tools, its license and
 # first-launch components, an iPhone simulator, Node.js 22 or later, git and
 # the project's modules. With --envoi it also checks what an upload to App
-# Store Connect needs: the four ASC_* variables and the key file, kept
-# outside the repository. Prints a summary in French; fails if anything is
+# Store Connect needs: the four ASC_* variables (from the environment or
+# ~/.appstoreconnect/ead.env) and the key file, kept outside the repository. Prints a summary in French; fails if anything is
 # missing, each line saying what to do.
 #   scripts/ios-doctor.sh            before a build in the Simulator
 #   scripts/ios-doctor.sh --envoi    before scripts/ios-release.sh
@@ -16,6 +16,7 @@ cd "$ROOT"
 # The oldest Xcode whose builds App Store Connect accepts: since April 2026,
 # apps must be built with Xcode 26 (iOS 26 SDK) or later. Apple raises it
 # about once a year: https://developer.apple.com/news/upcoming-requirements/
+# (read on 2026-11-20: "built with Xcode 26 or later", since April 28, 2026).
 MIN_XCODE=26
 MIN_NODE=22
 
@@ -53,7 +54,8 @@ if [ -z "$developer_dir" ] || ! command -v xcodebuild >/dev/null 2>&1; then
   todo "Xcode est introuvable." "Installez Xcode depuis l'App Store du Mac, ouvrez-le une fois, puis relancez."
 elif printf '%s' "$developer_dir" | grep -q CommandLineTools; then
   todo "Seuls les outils en ligne de commande sont actifs, sans Xcode." \
-    "Installez Xcode depuis l'App Store du Mac, puis${NB}: sudo xcode-select -s /Applications/Xcode.app"
+    "Installez Xcode depuis l'App Store du Mac, puis${NB}: sudo xcode-select -s /Applications/Xcode.app" \
+      "$SUDO_HINT"
 else
   xcode_line="$(xcodebuild -version 2>/dev/null | head -n 1 || true)"
   xcode_version="$(printf '%s' "$xcode_line" | sed -n 's/^Xcode \([0-9][0-9.]*\)$/\1/p')"
@@ -71,20 +73,20 @@ else
   if xcodebuild -license check >/dev/null 2>&1; then
     ok "Licence d'Xcode acceptée"
   else
-    todo "La licence d'Xcode n'est pas acceptée." "Lancez${NB}: sudo xcodebuild -license accept"
+    todo "La licence d'Xcode n'est pas acceptée." "Lancez${NB}: sudo xcodebuild -license accept" "$SUDO_HINT"
   fi
 
   if xcodebuild -checkFirstLaunchStatus >/dev/null 2>&1; then
     ok "Composants du premier lancement d'Xcode installés"
   else
-    todo "Les composants du premier lancement d'Xcode manquent." "Lancez${NB}: sudo xcodebuild -runFirstLaunch"
+    todo "Les composants du premier lancement d'Xcode manquent." "Lancez${NB}: sudo xcodebuild -runFirstLaunch" "$SUDO_HINT"
   fi
 
   if xcrun --find simctl >/dev/null 2>&1; then
     ok "Outils en ligne de commande d'Xcode (xcrun, simctl)"
   else
     todo "Les outils en ligne de commande d'Xcode ne répondent pas." \
-      "Lancez${NB}: sudo xcode-select -s /Applications/Xcode.app"
+      "Lancez${NB}: sudo xcode-select -s /Applications/Xcode.app" "$SUDO_HINT"
   fi
 
   runtime="$(xcrun simctl list runtimes 2>/dev/null | grep '^iOS ' | grep -v unavailable | tail -n 1 || true)"
@@ -127,12 +129,23 @@ fi
 if [ -n "$UPLOAD" ]; then
   printf '\nEnvoi vers App Store Connect\n\n'
 
+  load_asc_env
+  if [ -f "$ASC_ENV_FILE" ]; then
+    env_mode="$(stat -f '%Lp' "$ASC_ENV_FILE" 2>/dev/null || true)"
+    if [ "$env_mode" = "600" ] || [ "$env_mode" = "400" ]; then
+      ok "Réglages de la clé dans $ASC_ENV_FILE"
+    else
+      todo "Le fichier $ASC_ENV_FILE est lisible par d'autres comptes du Mac." \
+        "Lancez${NB}: chmod 600 \"$ASC_ENV_FILE\""
+    fi
+  fi
+
   check_var() {
     local name="$1" pattern="$2" hint="$3" value
     eval "value=\"\${$name:-}\""
     if [ -z "$value" ]; then
       todo "La variable $name n'est pas définie." "$hint" \
-        "Ajoutez export $name=… dans ~/.zshrc, puis ouvrez un nouveau terminal."
+        "Ajoutez la ligne export $name=… dans $ASC_ENV_FILE (docs/ios/MAC.md, étape 4.3), puis relancez."
     elif ! printf '%s' "$value" | grep -Eq "$pattern"; then
       todo "La variable $name n'a pas la bonne forme." "$hint"
     else
@@ -152,7 +165,7 @@ if [ -n "$UPLOAD" ]; then
   if [ -n "$key" ]; then
     if [ ! -f "$key" ]; then
       todo "Le fichier de clé $key n'existe pas." \
-        "Placez le fichier .p8 téléchargé dans ~/.appstoreconnect/private_keys/ (docs/ios/MAC.md, étape 2)."
+        "Placez le fichier .p8 téléchargé dans ~/.appstoreconnect/private_keys/ (docs/ios/MAC.md, étape 4.3)."
     else
       key_dir="$(cd "$(dirname "$key")" && pwd -P)"
       case "$key_dir/" in

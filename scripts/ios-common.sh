@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # What the scripts/ios-*.sh scripts share: where things are, how to stop with
 # a message the owner can act on. Sourced, never run. Written for the bash
 # 3.2 that macOS ships (no associative arrays, no ${x,,}, no mapfile).
@@ -17,6 +18,22 @@ die() {
   shift
   for line in "$@"; do printf '  %s\n' "$line" >&2; done
   exit 1
+}
+
+# Said with every command the doctor suggests that needs the Mac's password:
+# sudo cannot ask for it through Claude Code, which has no terminal.
+SUDO_HINT="Commande avec sudo${NB}: le propriétaire la colle dans Terminal (Applications > Utilitaires) et tape le mot de passe du Mac."
+
+# The App Store Connect key's settings (ASC_KEY_PATH, ASC_KEY_ID,
+# ASC_ISSUER_ID, ASC_TEAM_ID) live in this file outside the repository, and
+# ~/.zshrc reads it. The scripts read it too, because a command run by Claude
+# Code does not see what was added to ~/.zshrc after its session started.
+ASC_ENV_FILE="${ASC_ENV_FILE:-$HOME/.appstoreconnect/ead.env}"
+load_asc_env() {
+  if [ -f "$ASC_ENV_FILE" ]; then
+    # shellcheck source=/dev/null
+    . "$ASC_ENV_FILE"
+  fi
 }
 
 step() { printf '\n== %s\n' "$1"; }

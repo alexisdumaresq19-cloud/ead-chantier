@@ -4,8 +4,8 @@
 # address of the site than its home (debug builds only, through the
 # EAD_START_PATH launch variable read by EADViewController.swift), waits for
 # the page, and saves a screenshot.
-#   scripts/ios-sim.sh                                   the home screen
-#   scripts/ios-sim.sh /diagnostic ~/Desktop/diag.png    an address, a screenshot
+#   scripts/ios-sim.sh                                      the home screen
+#   scripts/ios-sim.sh /diagnostic ios/App/build/diag.png  an address, a screenshot
 # Settings (optional): EAD_SIM_DEVICE="iPhone 17" chooses the simulator,
 # EAD_SIM_WAIT=12 the seconds to wait before the screenshot (8 by default).
 set -euo pipefail

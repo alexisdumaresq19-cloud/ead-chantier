@@ -108,6 +108,17 @@
       const status = document.getElementById("status");
       let trying = false;
 
+      // The page that failed, as the app passes it after "#" (EADViewController's
+      // NavigationFilter), e.g. #/i/abc: once the network is back, the person
+      // lands where the link was going. Only a path of the site is taken.
+      function returnPath() {
+        let from = "/";
+        try {
+          from = decodeURIComponent(location.hash.slice(1)) || "/";
+        } catch {}
+        return /^\/(?![\/\\])[^\s\\#]*$/.test(from) ? from : "/";
+      }
+
       // The app's launch logo stays until a page says it is drawn.
       try {
         window.Capacitor?.nativePromise?.("SplashScreen", "hide", {}).catch(() => {});
@@ -142,7 +153,7 @@
         }
         if (await reachable()) {
           // Replaced, so a swipe back never lands on this page again.
-          location.replace(SITE + "/");
+          location.replace(SITE + returnPath());
           return;
         }
         trying = false;

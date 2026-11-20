@@ -6,8 +6,9 @@
 #
 # Signing is automatic: Xcode creates or renews the certificate and the
 # profile with the App Store Connect API key (-allowProvisioningUpdates).
-# Everything secret or personal comes from the environment, never from the
-# repository (docs/ios/MAC.md, step 2):
+# Everything secret or personal comes from the environment or from
+# ~/.appstoreconnect/ead.env, never from the repository (docs/ios/MAC.md,
+# step 4.3):
 #   ASC_KEY_PATH    the AuthKey_XXXXXXXXXX.p8 file, outside the repository
 #   ASC_KEY_ID      its Key ID
 #   ASC_ISSUER_ID   the Issuer ID of the account's keys
@@ -15,11 +16,13 @@
 # The build number is the date and time (UTC), so each upload is higher than
 # the last: YYYYMMDD.HHMM, e.g. 20261120.1945.
 #   scripts/ios-release.sh
+#   EAD_BUILD_NUMBER=2 scripts/ios-release.sh    another build number
 set -euo pipefail
 # shellcheck source=scripts/ios-common.sh
 . "$(dirname "$0")/ios-common.sh"
 require_mac
 cd "$ROOT"
+load_asc_env
 
 "$ROOT/scripts/ios-doctor.sh" --envoi || die "le Mac n'est pas prêt pour un envoi." \
   "Réglez les points «${NB}À FAIRE${NB}» ci-dessus, puis relancez."
@@ -37,7 +40,14 @@ fi
   "Lisez git diff, faites un commit si c'est voulu, puis relancez."
 
 STAMP="$(date -u +%Y%m%d%H%M)"
-BUILD_NUMBER="${STAMP:0:8}.$((10#${STAMP:8:4}))"
+# EAD_BUILD_NUMBER replaces it only if App Store Connect ever refuses this form
+# (docs/ios/MAC.md, "Dépannage").
+BUILD_NUMBER="${EAD_BUILD_NUMBER:-${STAMP:0:8}.$((10#${STAMP:8:4}))}"
+case "$BUILD_NUMBER" in
+  '' | *[!0-9.]* | .* | *. | *..* | *.*.*.*)
+    die "numéro de build invalide${NB}: $BUILD_NUMBER" \
+      "Il faut un à trois nombres séparés par des points, par exemple 2 ou 20261120.1945." ;;
+esac
 VERSION="$(marketing_version)"
 APP_ID="$(bundle_id)"
 COMMIT="$(git rev-parse --short HEAD)"
@@ -65,6 +75,15 @@ if ! xcodebuild -project "$PROJECT" -scheme App -configuration Release \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
   archive >"$LOG" 2>&1; then
   grep -E 'error:|fatal' "$LOG" | sort -u | head -n 30 >&2 || true
+  # Automatic signing archives with a development profile first, which Apple
+  # makes only for a team with at least one registered device.
+  if grep -Eq 'has no devices|No profiles for' "$LOG"; then
+    die "Apple n'a pas pu faire le profil de l'app." \
+      "La cause la plus probable${NB}: aucun iPhone n'est enregistré dans le compte." \
+      "docs/ios/MAC.md, étape 4.6, point 2${NB}: le propriétaire enregistre son iPhone, puis relancez." \
+      "Si l'identifiant de l'app n'est pas encore chez Apple${NB}: même étape, point 1." \
+      "Le journal complet${NB}: $LOG"
+  fi
   die "l'archive a échoué." "Le journal complet${NB}: $LOG" \
     "docs/ios/MAC.md, «${NB}Dépannage${NB}», décrit les erreurs les plus probables."
 fi
