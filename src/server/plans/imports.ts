@@ -3,33 +3,74 @@ import { and, asc, desc, eq, inArray, isNull, lt, ne, sql as raw } from "drizzle
 import { sheetNumberKey, type PlanImportSummary } from "@/shared/plans";
 
 import type { SessionUser } from "../auth";
-import { db, schema, sql } from "../db/client";
+import { db, schema } from "../db/client";
 import { badRequest, notFound } from "../http";
 import { newId, newPublicKey } from "../ids";
 import { storage } from "../storage";
-import type { Upload } from "../uploads";
+import { discardUpload, type Upload } from "../uploads";
 import { lockPlanNames } from "./lock";
 import { sheetsByNumber } from "./queries";
-import { openPdf, renderPage, TILE_OVERLAP, TILE_SIZE } from "./render";
+import {
+  openPlanPdf,
+  PAGE_FAILED,
+  PageFailure,
+  PDF_TOO_SLOW,
+  PDF_UNREADABLE,
+  TILE_OVERLAP,
+  TILE_SIZE,
+  UnreadablePdf,
+  type PlanPdf,
+  type RenderedPage,
+} from "./render";
 import { suggestSheetName } from "./suggest";
 
 // Bringing a PDF of plans in. The PDF is read, then each page is drawn and
 // cut into tiles ("processing"); the office checks the sheet names
 // ("review") and publishes. Until then the site sees nothing new.
 //
-// Pages are worked on by short-lived workers that each take the next page
-// still waiting. Several can run at once, and one that dies loses nothing:
-// its page goes back in the queue after a few minutes.
+// The work is done by short-lived workers, started after an answer by the
+// requests that look at the import. Any number may be started: each admits
+// itself in the database before it downloads anything. One reads the PDF
+// (a lease on the reading), and at most MAX_WORKERS draw pages at once (a
+// claim per page, under a lock on the import). A worker that dies loses
+// nothing: its page or its reading is taken again after a few minutes, and
+// given up the second time.
 
 type Import = typeof schema.planImports.$inferSelect;
 type Revision = typeof schema.sheetRevisions.$inferSelect;
+type Executor = Pick<typeof db, "execute">;
 
-/** How long a worker keeps taking pages before it lets another take over. */
-const WORKER_BUDGET_MS = Number(process.env.PLAN_WORKER_BUDGET_MS ?? 240_000);
-/** A page "in progress" for longer than this was abandoned by its worker. */
-const STALE_MS = 5 * 60_000;
+/**
+ * How long a worker keeps taking new pages. Its last page may still take
+ * PAGE_TIME_LIMIT_MS (90 s) to draw, then its tiles have to be sent: all of
+ * it within the routes' 300 s.
+ */
+const WORKER_BUDGET_MS = Number(process.env.PLAN_WORKER_BUDGET_MS ?? 150_000);
+/** A page in progress, or a reading, older than this was abandoned by its worker. */
+export const STALE_MS = 5 * 60_000;
 export const MAX_WORKERS = 3;
+/** A page taken this many times without coming out is given up. */
+export const MAX_ATTEMPTS = 2;
+/** A plan set is a few dozen sheets; a PDF over this is refused. */
+export const MAX_PAGES = 500;
 const UPLOADS_AT_ONCE = 16;
+
+const NO_PAGE = "Ce PDF ne contient aucune page.";
+const READING_FAILED = "Ce PDF n'a pas pu être lu. Réessayez dans un moment.";
+const READING_STOPPED = "La lecture de ce PDF a été interrompue deux fois.";
+const GIVEN_UP = "Cette page n'a pas pu être convertie après deux essais.";
+export const tooManyPages = (pageCount: number) =>
+  `Ce PDF compte ${pageCount} pages, la limite est de ${MAX_PAGES}. Divisez-le en plusieurs PDF, puis importez-les un à un.`;
+
+/** What reading the same file again would only repeat. */
+const readingIsFinal = (error: string | null) =>
+  error === PDF_UNREADABLE ||
+  error === PDF_TOO_SLOW ||
+  error === NO_PAGE ||
+  (error?.startsWith("Ce PDF compte ") ?? false);
+
+/** A refusal of the PDF itself, in words fit for the office. */
+class RefusedPdf extends Error {}
 
 /**
  * Starts the import of an uploaded PDF. One import per PDF sent: asked twice
@@ -70,19 +111,24 @@ export async function createImport(
   });
 }
 
-/** True if a worker should be started for this import. */
+// --- Admitting workers ------------------------------------------------------
+
+/** No reader holds the reading: none started yet, or the last one was not heard of again. */
+const readingFree = raw<boolean>`(${schema.planImports.readingStartedAt} is null or ${schema.planImports.readingStartedAt} < now() - make_interval(secs => ${STALE_MS / 1000}))`;
+
+/**
+ * True if a worker should be started for this import. A guess that may race
+ * with another request: the worker admits itself again, in the database.
+ */
 export async function needsWorker(importId: string): Promise<boolean> {
-  const [current] = await db
-    .select()
+  const [row] = await db
+    .select({ status: schema.planImports.status, readingFree })
     .from(schema.planImports)
     .where(eq(schema.planImports.id, importId))
     .limit(1);
-  if (!current || (current.status !== "reading" && current.status !== "processing")) return false;
-  if (current.status === "reading") {
-    // Reading is quick; only restart it if it clearly never finished.
-    return Date.now() - current.createdAt.getTime() > 60_000;
-  }
-  await requeueStale(importId);
+  if (row?.status === "reading") return row.readingFree;
+  if (row?.status !== "processing") return false;
+  await removeTiles(await requeueStale(db, importId));
   const [counts] = await db
     .select({
       queued: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} = 'queued')::int`,
@@ -97,17 +143,111 @@ export async function needsWorker(importId: string): Promise<boolean> {
   return counts.active < MAX_WORKERS;
 }
 
-async function requeueStale(importId: string) {
-  await db
-    .update(schema.sheetRevisions)
-    .set({ status: "queued", startedAt: null })
-    .where(
-      and(
-        eq(schema.sheetRevisions.importId, importId),
-        eq(schema.sheetRevisions.status, "processing"),
-        lt(schema.sheetRevisions.startedAt, new Date(Date.now() - STALE_MS)),
-      ),
-    );
+/**
+ * Takes the reading of the PDF for one worker, or answers null when another
+ * holds it. A reader that was never heard of again was stopped with its
+ * server (a deployment, its memory, its time). Once is bad luck; the second
+ * time, the PDF is what stops it, and the import fails.
+ */
+async function takeReading(importId: string): Promise<Import | null> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ current: schema.planImports, readingFree })
+      .from(schema.planImports)
+      .where(eq(schema.planImports.id, importId))
+      .for("update");
+    if (row?.current.status !== "reading" || !row.readingFree) return null;
+    const interrupted = row.current.readingStartedAt !== null;
+    if (interrupted && row.current.error === READING_STOPPED) {
+      await tx
+        .update(schema.planImports)
+        .set({ status: "failed" })
+        .where(eq(schema.planImports.id, importId));
+      return null;
+    }
+    const [taken] = await tx
+      .update(schema.planImports)
+      // The message is kept for the second time; nobody sees it while reading.
+      .set({ readingStartedAt: raw`now()`, error: interrupted ? READING_STOPPED : null })
+      .where(eq(schema.planImports.id, importId))
+      .returning();
+    return taken;
+  });
+}
+
+/**
+ * Pages whose worker was not heard of again go back in the queue, or are
+ * given up once taken MAX_ATTEMPTS times. Answers the tile folders that
+ * worker may have begun, to be removed.
+ */
+async function requeueStale(executor: Executor, importId: string) {
+  const rows = await executor.execute<{ tileKey: string | null }>(raw`
+    with stale as (
+      select id, tile_key from sheet_revisions
+      where import_id = ${importId} and status = 'processing'
+        and started_at < now() - make_interval(secs => ${STALE_MS / 1000})
+      for update
+    )
+    update sheet_revisions page set
+      status = case when page.attempts >= ${MAX_ATTEMPTS} then 'failed' else 'queued' end,
+      error = case when page.attempts >= ${MAX_ATTEMPTS} then ${GIVEN_UP} else null end,
+      started_at = null,
+      tile_key = null
+    from stale where page.id = stale.id
+    returning stale.tile_key as "tileKey"`);
+  return [...rows];
+}
+
+/**
+ * Takes the next waiting page for a worker, or null when none is left or
+ * MAX_WORKERS pages are already being drawn. The import is locked meanwhile,
+ * so claims made together count each other.
+ */
+async function claimPage(importId: string): Promise<Revision | null> {
+  const { revision, leftovers } = await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: schema.planImports.status })
+      .from(schema.planImports)
+      .where(eq(schema.planImports.id, importId))
+      .for("update");
+    if (current?.status !== "processing") return { revision: null, leftovers: [] };
+    const leftovers = await requeueStale(tx, importId);
+    const [{ active }] = await tx
+      .select({ active: raw<number>`count(*)::int` })
+      .from(schema.sheetRevisions)
+      .where(
+        and(
+          eq(schema.sheetRevisions.importId, importId),
+          eq(schema.sheetRevisions.status, "processing"),
+        ),
+      );
+    if (active >= MAX_WORKERS) return { revision: null, leftovers };
+    const [next] = await tx
+      .select({ id: schema.sheetRevisions.id })
+      .from(schema.sheetRevisions)
+      .where(
+        and(
+          eq(schema.sheetRevisions.importId, importId),
+          eq(schema.sheetRevisions.status, "queued"),
+        ),
+      )
+      .orderBy(asc(schema.sheetRevisions.pageIndex))
+      .limit(1);
+    if (!next) return { revision: null, leftovers };
+    const [revision] = await tx
+      .update(schema.sheetRevisions)
+      .set({
+        status: "processing",
+        startedAt: raw`now()`,
+        attempts: raw`${schema.sheetRevisions.attempts} + 1`,
+        error: null,
+      })
+      .where(eq(schema.sheetRevisions.id, next.id))
+      .returning();
+    return { revision, leftovers };
+  });
+  await removeTiles(leftovers);
+  return revision;
 }
 
 /** Once no page is waiting: on to review, or failed if not one page came out. */
@@ -130,119 +270,150 @@ async function finishIfDone(importId: string) {
     .where(and(eq(schema.planImports.id, importId), eq(schema.planImports.status, "processing")));
 }
 
-/** Puts the pages that failed back in the queue, for another try. */
-export async function retryFailedPages(importId: string) {
-  const [current] = await db
-    .select()
-    .from(schema.planImports)
-    .where(eq(schema.planImports.id, importId))
-    .limit(1);
-  if (!current || current.status === "published")
-    throw badRequest("Cet import ne peut pas être relancé.");
-  const retried = await db
-    .update(schema.sheetRevisions)
-    .set({ status: "queued", error: null, startedAt: null })
-    .where(
-      and(eq(schema.sheetRevisions.importId, importId), eq(schema.sheetRevisions.status, "failed")),
-    )
-    .returning({ id: schema.sheetRevisions.id });
-  if (retried.length || current.pageCount === null) {
-    await db
-      .update(schema.planImports)
-      .set({ status: current.pageCount === null ? "reading" : "processing", error: null })
-      .where(eq(schema.planImports.id, importId));
-  }
-}
-
-/** Takes the next waiting page for this worker, or null when none is left. */
-async function claimPage(importId: string): Promise<Revision | null> {
-  const rows = await sql<{ id: string }[]>`
-    update sheet_revisions set status = 'processing', started_at = now(), error = null
-    where id = (
-      select id from sheet_revisions
-      where import_id = ${importId} and status = 'queued'
-      order by page_index
-      limit 1
-      for update skip locked
-    )
-    returning id`;
-  if (!rows.length) return null;
-  const [revision] = await db
-    .select()
-    .from(schema.sheetRevisions)
-    .where(eq(schema.sheetRevisions.id, rows[0].id));
-  return revision ?? null;
+/** Whether trying again could help: what failed has not been tried enough yet. */
+export function canRetry(current: Import, pages: Revision[]): boolean {
+  if (current.pageCount === null)
+    return current.status === "failed" && !readingIsFinal(current.error);
+  return pages.some((page) => page.status === "failed" && page.attempts < MAX_ATTEMPTS);
 }
 
 /**
- * One worker: reads the PDF if that is not done yet, then draws pages until
- * none is left or its time is up. Safe to run several at once.
+ * Puts what failed back in the queue, for one more try: the reading of the
+ * PDF when it failed for a reason that may pass, else the pages that failed
+ * fewer than MAX_ATTEMPTS times. Starting a worker is up to the caller.
+ */
+export async function retryFailedPages(importId: string) {
+  await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select()
+      .from(schema.planImports)
+      .where(eq(schema.planImports.id, importId))
+      .for("update");
+    if (!current) throw notFound("Import introuvable.");
+    if (current.status === "published") throw badRequest("Cet import est déjà publié.");
+    if (current.pageCount === null) {
+      // Still being read: there is nothing to try again yet.
+      if (current.status !== "failed") return;
+      if (readingIsFinal(current.error))
+        throw badRequest(
+          "Ce PDF ne peut pas être converti. Annulez cet import, puis envoyez un autre fichier.",
+        );
+      await tx
+        .update(schema.planImports)
+        .set({ status: "reading", error: null, readingStartedAt: null })
+        .where(eq(schema.planImports.id, importId));
+      return;
+    }
+    const retried = await tx
+      .update(schema.sheetRevisions)
+      .set({ status: "queued", error: null, startedAt: null })
+      .where(
+        and(
+          eq(schema.sheetRevisions.importId, importId),
+          eq(schema.sheetRevisions.status, "failed"),
+          lt(schema.sheetRevisions.attempts, MAX_ATTEMPTS),
+        ),
+      )
+      .returning({ id: schema.sheetRevisions.id });
+    if (!retried.length) {
+      if (current.status === "review" || current.status === "failed")
+        throw badRequest(
+          "Ces pages ont déjà été essayées deux fois. Publiez les autres, ou annulez l'import.",
+        );
+      return;
+    }
+    await tx
+      .update(schema.planImports)
+      .set({ status: "processing", error: null })
+      .where(eq(schema.planImports.id, importId));
+  });
+}
+
+// --- A worker ---------------------------------------------------------------
+
+/**
+ * One worker: reads the PDF if that is still to do, then draws pages until
+ * none is left or its time is up. Safe to start any number of times.
  */
 export async function runImportWorker(importId: string): Promise<void> {
   const startedAt = Date.now();
-  const [current] = await db
-    .select()
-    .from(schema.planImports)
-    .where(eq(schema.planImports.id, importId))
-    .limit(1);
-  if (!current || (current.status !== "reading" && current.status !== "processing")) return;
-  const [upload] = await db
-    .select()
-    .from(schema.uploads)
-    .where(eq(schema.uploads.id, current.uploadId))
-    .limit(1);
-  if (!upload) return;
-
-  let document: Awaited<ReturnType<typeof openPdf>>;
+  let pdf: PlanPdf | undefined;
   try {
-    document = await openPdf(await storage().get("private", upload.storageKey));
-  } catch (error) {
-    console.error("plan import: unreadable PDF", importId, error);
-    await db
-      .update(schema.planImports)
-      .set({ status: "failed", error: "Ce PDF est illisible ou protégé par un mot de passe." })
-      .where(eq(schema.planImports.id, importId));
-    return;
-  }
-
-  try {
-    if (current.status === "reading") await listPages(current, document.getPageCount());
+    let [current] = await db
+      .select()
+      .from(schema.planImports)
+      .where(eq(schema.planImports.id, importId))
+      .limit(1);
+    if (current?.status === "reading") {
+      const taken = await takeReading(importId);
+      if (!taken) return;
+      current = taken;
+      try {
+        pdf = await openImportPdf(current);
+        await listPages(current, pdf.pageCount);
+      } catch (error) {
+        // Whatever went wrong, the import does not stay "reading".
+        if (!(error instanceof UnreadablePdf || error instanceof RefusedPdf))
+          console.error("plan import: reading failed", importId, error);
+        await db
+          .update(schema.planImports)
+          .set({
+            status: "failed",
+            error:
+              error instanceof UnreadablePdf || error instanceof RefusedPdf
+                ? error.message
+                : READING_FAILED,
+          })
+          .where(
+            and(eq(schema.planImports.id, importId), eq(schema.planImports.status, "reading")),
+          );
+        return;
+      }
+    } else if (current?.status !== "processing") return;
 
     while (Date.now() - startedAt < WORKER_BUDGET_MS) {
       const revision = await claimPage(importId);
       if (!revision) break;
       try {
-        await processPage(current, revision, document);
+        // Only now that a page is ours: a worker with nothing to do downloads nothing.
+        pdf ??= await openImportPdf(current);
       } catch (error) {
-        console.error("plan import: page failed", importId, revision.pageIndex, error);
+        console.error("plan import: PDF not opened again", importId, error);
         await db
           .update(schema.sheetRevisions)
-          .set({ status: "failed", error: "Cette page n'a pas pu être convertie." })
+          .set({ status: "failed", error: PAGE_FAILED })
           .where(eq(schema.sheetRevisions.id, revision.id));
+        break;
       }
+      await processPage(current, revision, pdf);
     }
     await finishIfDone(importId);
   } finally {
-    document.destroy();
+    await pdf?.close();
   }
+}
+
+async function openImportPdf(current: Import): Promise<PlanPdf> {
+  const [upload] = await db
+    .select({ storageKey: schema.uploads.storageKey })
+    .from(schema.uploads)
+    .where(eq(schema.uploads.id, current.uploadId))
+    .limit(1);
+  if (!upload) throw new Error("The import's upload is gone");
+  return openPlanPdf(await storage().get("private", upload.storageKey));
 }
 
 /** Creates one waiting page per page of the PDF, exactly once. */
 async function listPages(current: Import, pageCount: number) {
-  if (pageCount === 0) {
-    await db
-      .update(schema.planImports)
-      .set({ status: "failed", error: "Ce PDF ne contient aucune page." })
-      .where(eq(schema.planImports.id, current.id));
-    return;
-  }
+  if (pageCount === 0) throw new RefusedPdf(NO_PAGE);
+  if (pageCount > MAX_PAGES) throw new RefusedPdf(tooManyPages(pageCount));
   await db.transaction(async (tx) => {
     const moved = await tx
       .update(schema.planImports)
-      .set({ status: "processing", pageCount })
+      .set({ status: "processing", pageCount, error: null })
       .where(and(eq(schema.planImports.id, current.id), eq(schema.planImports.status, "reading")))
       .returning({ id: schema.planImports.id });
-    if (!moved.length) return; // another worker got here first
+    if (!moved.length) return; // cancelled meanwhile
     await tx.insert(schema.sheetRevisions).values(
       Array.from({ length: pageCount }, (_, pageIndex) => ({
         id: newId(),
@@ -257,26 +428,48 @@ async function listPages(current: Import, pageCount: number) {
   });
 }
 
-async function processPage(
-  current: Import,
-  revision: Revision,
-  document: Awaited<ReturnType<typeof openPdf>>,
-) {
-  const rendered = await renderPage(document, revision.pageIndex);
+/** Draws a page this worker claimed. Never throws: a page that fails is marked so. */
+async function processPage(current: Import, revision: Revision, pdf: PlanPdf) {
+  // Still this worker's: not cancelled, nor given up and taken by another.
+  const ours = and(
+    eq(schema.sheetRevisions.id, revision.id),
+    eq(schema.sheetRevisions.status, "processing"),
+    eq(schema.sheetRevisions.attempts, revision.attempts),
+  );
+  const tileKey = newPublicKey("t");
+  // Where the tiles go is written down before the first is sent, so that
+  // they are removed whatever happens to this page or to its import.
+  const marked = await db
+    .update(schema.sheetRevisions)
+    .set({ tileKey })
+    .where(ours)
+    .returning({ id: schema.sheetRevisions.id });
+  if (!marked.length) return;
+
+  let rendered: RenderedPage | undefined;
   try {
-    const tileKey = newPublicKey("t");
+    rendered = await pdf.render(revision.pageIndex);
     const store = storage();
     const queue = [...rendered.files];
-    await Promise.all(
+    // Every sender has stopped before a failure is reported: a tile still
+    // on its way would land after the folder was removed, and stay.
+    const sent = await Promise.allSettled(
       Array.from({ length: UPLOADS_AT_ONCE }, async () => {
         for (let file = queue.pop(); file; file = queue.pop()) {
-          await store.put("public", `${tileKey}/${file.path}`, await file.data(), {
-            contentType: "image/webp",
-            immutable: true,
-          });
+          try {
+            await store.put("public", `${tileKey}/${file.path}`, await file.data(), {
+              contentType: "image/webp",
+              immutable: true,
+            });
+          } catch (error) {
+            queue.length = 0;
+            throw error;
+          }
         }
       }),
     );
+    const refused = sent.find((result) => result.status === "rejected");
+    if (refused) throw refused.reason;
     await store.put("public", `${tileKey}/thumb.webp`, rendered.thumb, {
       contentType: "image/webp",
       immutable: true,
@@ -290,7 +483,6 @@ async function processPage(
       .set({
         status: "ready",
         readyAt: new Date(),
-        tileKey,
         width: rendered.width,
         height: rendered.height,
         tileSize: TILE_SIZE,
@@ -300,12 +492,24 @@ async function processPage(
         draftTitle: name.title,
         draftSheetId: match?.id ?? null,
       })
-      .where(eq(schema.sheetRevisions.id, revision.id))
+      .where(ours)
       .returning({ id: schema.sheetRevisions.id });
     // The import was cancelled while this page was being drawn.
-    if (!saved.length) await store.removePrefix("public", tileKey).catch(() => {});
+    if (!saved.length) await removeTiles([{ tileKey }]);
+  } catch (error) {
+    if (!(error instanceof PageFailure))
+      console.error("plan import: page failed", current.id, revision.pageIndex, error);
+    await removeTiles([{ tileKey }]);
+    await db
+      .update(schema.sheetRevisions)
+      .set({
+        status: "failed",
+        error: error instanceof PageFailure ? error.message : PAGE_FAILED,
+        tileKey: null,
+      })
+      .where(ours);
   } finally {
-    await rendered.dispose();
+    await rendered?.dispose();
   }
 }
 
@@ -480,7 +684,7 @@ export async function publishImport(
 
 /** Abandons an import that was not published, with its images and its PDF. */
 export async function cancelImport(importId: string) {
-  const { pages, upload } = await db.transaction(async (tx) => {
+  const { pages, uploadId } = await db.transaction(async (tx) => {
     // The import is locked first: a publication under way finishes before
     // this looks at it, and its pages are then no longer there to take.
     const [current] = await tx
@@ -496,20 +700,14 @@ export async function cancelImport(importId: string) {
         and(eq(schema.sheetRevisions.importId, importId), isNull(schema.sheetRevisions.sheetId)),
       )
       .returning({ tileKey: schema.sheetRevisions.tileKey });
-    // The PDF was sent for this import alone; the import goes with it.
-    const [upload] = await tx
-      .delete(schema.uploads)
-      .where(eq(schema.uploads.id, current.uploadId))
-      .returning({ storageKey: schema.uploads.storageKey });
-    return { pages, upload };
+    await tx.delete(schema.planImports).where(eq(schema.planImports.id, importId));
+    return { pages, uploadId: current.uploadId };
   });
   await removeTiles(pages);
-  if (upload) {
-    const folder = upload.storageKey.slice(0, upload.storageKey.lastIndexOf("/"));
-    await storage()
-      .removePrefix("private", folder)
-      .catch(() => {});
-  }
+  // The PDF was sent for this import alone.
+  await discardUpload(uploadId).catch((error) =>
+    console.error("plan import: PDF of a cancelled import not removed", importId, error),
+  );
 }
 
 /** Removes pages that belong to no sheet, with their images. */
@@ -535,6 +733,6 @@ async function removeTiles(pages: { tileKey: string | null }[]) {
     if (tileKey)
       await storage()
         .removePrefix("public", tileKey)
-        .catch(() => {});
+        .catch((error) => console.error("plan import: tiles not removed", tileKey, error));
   }
 }

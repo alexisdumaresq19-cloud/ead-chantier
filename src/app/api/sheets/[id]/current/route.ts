@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
-import { projectToManage } from "@/server/access";
+import { projectToChange } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
@@ -11,7 +11,7 @@ import { sheetDetail, sheetRow } from "@/server/plans/queries";
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
   const sheet = await sheetRow(id);
-  await projectToManage(user, sheet.projectId);
+  await projectToChange(user, sheet.projectId);
   const { revisionId } = await body(request, z.object({ revisionId: z.string() }));
   const [revision] = await db
     .select({ id: schema.sheetRevisions.id })

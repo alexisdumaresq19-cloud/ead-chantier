@@ -9,7 +9,8 @@ import type {
 } from "@/shared/plans";
 
 import { api } from "../../lib/api";
-import { keys } from "../../lib/session";
+import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
+import { mayChangePlans } from "./logic";
 
 // The plans of a project as the screens read and change them. Every change
 // refreshes the whole project, so the list, the counts and the viewer follow.
@@ -28,6 +29,11 @@ export const planKeys = {
   search: (projectId: string, words: string) =>
     [...keys.project(projectId), "plan-search", words] as const,
 };
+
+/** Whether this person sees the controls that add and change plans, inside a project. */
+export function useCanChangePlans(): boolean {
+  return mayChangePlans(useCurrentProject(), useCurrentUser().role);
+}
 
 export const usePlans = (projectId: string) =>
   useQuery({

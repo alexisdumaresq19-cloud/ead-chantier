@@ -7,13 +7,18 @@ const NUMBER = /^[A-Z]{1,4}[-.]?\d{1,4}(?:[-.]\d{1,3})?[A-Z]?$/;
 const NOT_A_SHEET = /^(DR|MG|EB|PVC|CL|CG|PEHD|TBA|ESG|NQ|BNQ|CSA|ASTM|ISO|RS|RP|VA|PI|BF)[-.]?\d/;
 const NEAR_NUMBER = /\b(FEUILLE|FEUILLET|DESSIN|PLAN\s*N|SHEET|DWG|NUM[ÉE]RO)\b/i;
 const NEAR_TITLE = /\b(TITRE|TITLE)\b/i;
+/** A title block is a few hundred characters; a page's notes, a few thousand. */
+const MAX_TEXT = 200_000;
 
 export function suggestSheetName(
   text: string,
   pageIndex: number,
   filename: string,
 ): { number: string; title: string } {
+  // Linear in the text, and the text bounded: a PDF can put a million
+  // words on one line, and this runs on the server.
   const lines = text
+    .slice(0, MAX_TEXT)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
@@ -23,15 +28,18 @@ export function suggestSheetName(
     for (const word of line.split(/\s+/)) seen.set(word, (seen.get(word) ?? 0) + 1);
   }
 
+  const labelled = lines.map((line) => NEAR_NUMBER.test(line));
   let best: { number: string; score: number } | null = null;
   lines.forEach((line, i) => {
+    // The label is on this line or one of the two above.
+    const byLabel = labelled[i] || labelled[i - 1] || labelled[i - 2];
     for (const word of line.split(/\s+/)) {
       if (!NUMBER.test(word) || NOT_A_SHEET.test(word)) continue;
       let score = 0;
       // A sheet number stands alone, appears once, and sits by its label.
       if (line === word) score += 2;
       if (seen.get(word) === 1) score += 2;
-      if (lines.slice(Math.max(0, i - 2), i + 1).some((l) => NEAR_NUMBER.test(l))) score += 3;
+      if (byLabel) score += 3;
       if (/[-.]/.test(word)) score += 1;
       if (!best || score > best.score) best = { number: word, score };
     }

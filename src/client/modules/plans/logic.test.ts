@@ -15,6 +15,7 @@ import {
   highlightParts,
   indexSheets,
   keptPages,
+  mayChangePlans,
   revisionName,
   sheetsByNumber,
   sortPdfFiles,
@@ -265,5 +266,22 @@ describe("choosing files", () => {
 describe("plain text", () => {
   it("drops accents and case", () => {
     expect(plainText("Égout PLUVIAL à 0,5 %")).toBe("egout pluvial a 0,5 %");
+  });
+});
+
+describe("who sees the controls that change the plans", () => {
+  const open = { canManage: true, status: "actif" } as const;
+  const archived = { canManage: true, status: "archive" } as const;
+
+  it("shows them to those who manage an open project", () => {
+    expect(mayChangePlans(open, "contremaitre")).toBe(true);
+    expect(mayChangePlans(open, "admin")).toBe(true);
+    expect(mayChangePlans({ canManage: false, status: "actif" }, "travailleur")).toBe(false);
+  });
+
+  it("keeps them for the office alone once the project is archived", () => {
+    expect(mayChangePlans(archived, "admin")).toBe(true);
+    expect(mayChangePlans(archived, "contremaitre")).toBe(false);
+    expect(mayChangePlans({ canManage: false, status: "archive" }, "contremaitre")).toBe(false);
   });
 });

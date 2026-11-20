@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { after } from "next/server";
 import { z } from "zod";
 
-import { projectToManage } from "@/server/access";
+import { projectToChange, projectToManage } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, notFound, route } from "@/server/http";
@@ -13,7 +13,8 @@ import { dayInput } from "@/server/plans/input";
 
 export const maxDuration = 300;
 
-async function importToManage(request: NextRequest, id: string) {
+/** The import, if this person manages its project; for a change, the project must be open too. */
+async function importFor(request: NextRequest, id: string, change: boolean) {
   const user = await requireUser(request);
   const [current] = await db
     .select()
@@ -21,7 +22,7 @@ async function importToManage(request: NextRequest, id: string) {
     .where(eq(schema.planImports.id, id))
     .limit(1);
   if (!current) throw notFound("Import introuvable.");
-  await projectToManage(user, current.projectId);
+  await (change ? projectToChange : projectToManage)(user, current.projectId);
   return current;
 }
 
@@ -31,7 +32,7 @@ async function importToManage(request: NextRequest, id: string) {
  * and few workers are busy, it starts one more.
  */
 export const GET = route<{ id: string }>(async (request, { id }) => {
-  await importToManage(request, id);
+  await importFor(request, id, false);
   if (await needsWorker(id)) {
     after(() => runImportWorker(id).catch((error) => console.error("plan import worker", error)));
   }
@@ -60,7 +61,7 @@ const patch = z.object({
  * is a new sheet or a new revision follows from its number.
  */
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
-  const current = await importToManage(request, id);
+  const current = await importFor(request, id, true);
   if (current.status === "published") throw badRequest("Cet import est déjà publié.");
   const { pages, ...fields } = await body(request, patch);
 
@@ -89,7 +90,7 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
 });
 
 export const DELETE = route<{ id: string }>(async (request, { id }) => {
-  await importToManage(request, id);
+  await importFor(request, id, true);
   await cancelImport(id);
   return { ok: true };
 });

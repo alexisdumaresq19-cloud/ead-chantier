@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 
-import { projectFor, projectToManage } from "@/server/access";
+import { projectFor, projectToChange } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
@@ -17,10 +17,10 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
   return sheetDetail(sheet);
 });
 
-async function sheetToManage(request: NextRequest, id: string) {
+async function sheetToChange(request: NextRequest, id: string) {
   const user = await requireUser(request);
   const sheet = await sheetRow(id);
-  await projectToManage(user, sheet.projectId);
+  await projectToChange(user, sheet.projectId);
   return sheet;
 }
 
@@ -34,7 +34,7 @@ const patch = z
   .partial();
 
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
-  const sheet = await sheetToManage(request, id);
+  const sheet = await sheetToChange(request, id);
   const input = await body(request, patch);
   await db.transaction(async (tx) => {
     if (input.number !== undefined) {
@@ -65,7 +65,7 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
 
 /** Takes the sheet off the site: the list, the search and its own address. Its revisions are kept. */
 export const DELETE = route<{ id: string }>(async (request, { id }) => {
-  await sheetToManage(request, id);
+  await sheetToChange(request, id);
   await db.update(schema.sheets).set({ archivedAt: new Date() }).where(eq(schema.sheets.id, id));
   return { ok: true };
 });

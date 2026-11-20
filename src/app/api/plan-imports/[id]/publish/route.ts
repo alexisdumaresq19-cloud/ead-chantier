@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 
-import { projectToManage } from "@/server/access";
+import { projectToChange } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { notFound, route } from "@/server/http";
@@ -15,6 +15,6 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
     .where(eq(schema.planImports.id, id))
     .limit(1);
   if (!current) throw notFound("Import introuvable.");
-  await projectToManage(user, current.projectId);
+  await projectToChange(user, current.projectId);
   return publishImport(user, id);
 });

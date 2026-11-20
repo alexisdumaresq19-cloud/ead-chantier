@@ -73,6 +73,8 @@ export type PlanImport = {
   issuedOn: string | null;
   createdAt: string;
   pages: ImportPage[];
+  /** Trying again could help: what failed has not been tried enough yet. */
+  canRetry: boolean;
 };
 
 export type PlanSearchHit = {
