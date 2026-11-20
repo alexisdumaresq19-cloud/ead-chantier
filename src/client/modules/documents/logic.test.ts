@@ -5,6 +5,7 @@ import type { DocumentCategory, ProjectDocument } from "@/shared/documents";
 import {
   addDrafts,
   canChangeDocuments,
+  canManageDocument,
   formatAdded,
   groupDocuments,
   matchesSearch,
@@ -166,5 +167,25 @@ describe("addDrafts", () => {
       "Devis signé",
       "Permis",
     ]);
+  });
+});
+
+describe("canManageDocument", () => {
+  const visitor = { id: "demo", demo: true };
+  const foreman = { id: "julie", demo: false };
+  const theirs = doc("Devis", "contrat");
+  const mine = doc("Photo du ponceau", "autre");
+  const added = new Set([mine.id]);
+
+  it("lets the demonstration account manage only what this device sent for it", () => {
+    expect(canManageDocument(visitor, mine, added)).toBe(true);
+    expect(canManageDocument(visitor, theirs, added)).toBe(false);
+    // Nothing known (another device, a private window): nothing offered.
+    expect(canManageDocument(visitor, mine, new Set())).toBe(false);
+  });
+
+  it("changes nothing for anyone else", () => {
+    expect(canManageDocument(foreman, theirs, new Set())).toBe(true);
+    expect(canManageDocument({ id: "marc" }, theirs, added)).toBe(true);
   });
 });

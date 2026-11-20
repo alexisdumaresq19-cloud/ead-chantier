@@ -9,7 +9,7 @@ import {
   openedByLink,
   type NativeCall,
 } from "./nativeweb-support";
-import { call, contextAs, seed, type Role } from "./support";
+import { call, contextAs, post, seed, type Role } from "./support";
 
 // The pages inside the iPhone app (a Capacitor shell around the site), with
 // the shell's real bridge script and a fake native side: the app knows where
@@ -250,6 +250,50 @@ test("inside the app: the QR poster is shared, never printed", async ({ browser 
     url: expect.stringMatching(/\/j\/\w+/),
   });
   await context.close();
+});
+
+test("inside the app: a personal invitation goes to the share sheet; a browser keeps its own", async ({
+  browser,
+}) => {
+  for (const inApp of [true, false]) {
+    const context = await device(browser, "admin", inApp);
+    // The browser's own sharing, recorded: the app must not use it.
+    await context.addInitScript(() => {
+      const shared: unknown[] = [];
+      (window as { webShared?: unknown[] }).webShared = shared;
+      Object.defineProperty(Navigator.prototype, "share", {
+        configurable: true,
+        value: async (data: unknown) => void shared.push(data),
+      });
+    });
+    const person = await post<{ id: string }>(context.request, "/api/users", {
+      name: `Essai Partage ${test.info().project.name} ${inApp ? "app" : "site"}`,
+      role: "travailleur",
+      projectIds: [],
+    });
+    const page = await context.newPage();
+    await page.goto(`/equipe?personne=${person.id}`);
+    await page.getByRole("button", { name: "Créer un nouveau lien" }).click();
+    const sheet = page.getByRole("dialog", { name: /^Nouveau lien pour/ });
+    await expect(sheet.getByRole("button", { name: "Partager autrement" })).toBeVisible();
+    // A window ignores taps for a moment after it opens.
+    await page.waitForTimeout(450);
+    await sheet.getByRole("button", { name: "Partager autrement" }).click();
+    const webShared = () => page.evaluate(() => (window as { webShared?: unknown[] }).webShared);
+    if (inApp) {
+      const calls = await called(page, "Share", "share");
+      expect(find(calls, "Share", "share")[0].options).toMatchObject({
+        text: expect.stringMatching(/\/i\/\w+/),
+      });
+      expect(await webShared()).toEqual([]);
+    } else {
+      await expect
+        .poll(webShared)
+        .toEqual([{ title: expect.any(String), text: expect.stringMatching(/\/i\/\w+/) }]);
+    }
+    await call(context.request, "PATCH", `/api/users/${person.id}`, { active: false });
+    await context.close();
+  }
 });
 
 test("inside the app without the offline worker: the project says plainly what it cannot keep", async ({

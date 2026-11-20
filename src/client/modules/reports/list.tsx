@@ -6,6 +6,7 @@ import {
   Check,
   ChevronRight,
   ClipboardList,
+  Eye,
   Mic,
   NotebookPen,
   PencilLine,
@@ -15,6 +16,7 @@ import {
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 
+import { mayChangeAddedBy } from "@/shared/demo";
 import { isRealDay, type ReportSummary } from "@/shared/reports";
 
 import { useAssistant } from "../../lib/assistant";
@@ -36,9 +38,11 @@ import {
 } from "../../ui";
 import {
   dayQuery,
+  DEMO_REPORT_TEXT,
   membersQuery,
   reportsPath,
   useCanChangeReports,
+  useDayReport,
   useDrafts,
   useReports,
   useToday,
@@ -92,6 +96,16 @@ export function ReportListScreen() {
     return report ? `${base}/${report.id}` : `${base}/nouveau?jour=${day}`;
   };
   const todayReport = byDay.get(today);
+  // The list does not say who wrote a report; the day's own answer does. The
+  // demonstration account adds to its own report only: today's, written by
+  // someone of the team, is one it reads. Until the answer comes, it is
+  // taken for someone else's, so nothing is offered that would be refused.
+  const todayFull = useDayReport(project.id, today, canChange && Boolean(me.demo) && today !== "");
+  const todayAuthor = todayFull.data?.report?.authorId;
+  const readsToday =
+    todayReport !== undefined &&
+    Boolean(me.demo) &&
+    !(todayAuthor !== undefined && mayChangeAddedBy(me, todayAuthor));
   // Saved, it is added to through the day; only on this device, it is still to save.
   // Short, with the day under it: two lines at most on a 360 px phone.
   const todayLabel = todayReport
@@ -103,30 +117,50 @@ export function ReportListScreen() {
   const todayHref = todayReport
     ? `${base}/${todayReport.id}/modifier`
     : `${base}/nouveau?jour=${today}`;
-  const canDictate = useAssistant().data?.dictation === true && canChange;
+  const canDictate = useAssistant().data?.dictation === true && canChange && !readsToday;
 
   return (
     <Page title="Rapports">
       {canChange ? (
         <div className="grid gap-3 lg:grid-cols-[20rem_minmax(0,1fr)] lg:items-stretch lg:gap-4">
           <div className="flex gap-2.5">
-            <Link
-              href={todayHref}
-              className="bg-ead-dark hover:bg-ead-darker active:bg-ead-darker flex min-h-18 min-w-0 flex-1 items-center gap-3.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-colors"
-            >
-              <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
-                <NotebookPen className="size-6.5" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="font-display block text-[17px] leading-tight font-bold text-balance">
-                  {todayLabel}
+            {readsToday && todayReport ? (
+              <Link
+                href={`${base}/${todayReport.id}`}
+                className="border-line bg-surface hover:border-ead/60 active:bg-canvas flex min-h-18 min-w-0 flex-1 items-center gap-3.5 rounded-2xl border px-4 py-3 shadow-xs transition-colors"
+              >
+                <span className="bg-ead-tint text-ead-dark flex size-12 shrink-0 items-center justify-center rounded-xl">
+                  <Eye className="size-6.5" aria-hidden />
                 </span>
-                <span className="mt-0.5 block text-sm text-white/85">
-                  {capitalize(formatBriefDay(today))}
+                <span className="min-w-0 flex-1">
+                  <span className="font-display block text-[17px] leading-tight font-bold text-balance">
+                    Voir le rapport du jour
+                  </span>
+                  <span className="text-dim mt-0.5 block text-sm text-pretty">
+                    {DEMO_REPORT_TEXT}
+                  </span>
                 </span>
-              </span>
-              <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
-            </Link>
+                <ChevronRight className="text-dim size-5 shrink-0" aria-hidden />
+              </Link>
+            ) : (
+              <Link
+                href={todayHref}
+                className="bg-ead-dark hover:bg-ead-darker active:bg-ead-darker flex min-h-18 min-w-0 flex-1 items-center gap-3.5 rounded-2xl px-4 py-3 text-white shadow-sm transition-colors"
+              >
+                <span className="flex size-12 shrink-0 items-center justify-center rounded-xl bg-white/15">
+                  <NotebookPen className="size-6.5" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="font-display block text-[17px] leading-tight font-bold text-balance">
+                    {todayLabel}
+                  </span>
+                  <span className="mt-0.5 block text-sm text-white/85">
+                    {capitalize(formatBriefDay(today))}
+                  </span>
+                </span>
+                <ChevronRight className="size-5 shrink-0 text-white/85" aria-hidden />
+              </Link>
+            )}
             {canDictate ? (
               // Talking is the fastest way to write it: one tap and the recording starts.
               <Link

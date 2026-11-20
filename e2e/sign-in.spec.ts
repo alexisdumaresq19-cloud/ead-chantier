@@ -161,3 +161,29 @@ test("with account creation open, the first screen offers it, and the ways in on
   await office.request.delete("/api/company/code", { headers: { origin: seed.base } });
   await Promise.all([device.close(), office.close()]);
 });
+
+test("Mon compte names the ways back, before signing out or deleting the account", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ storageState: sessionOf("worker") });
+  const page = await context.newPage();
+  await page.goto("/moi");
+  const back =
+    "Pour revenir, il faudra un nouveau compte : le bureau vous envoie un lien ou un code à entrer avec votre cellulaire, ou vous scannez le code QR d'un chantier.";
+  await expect(page.getByText(back)).toBeVisible();
+  // Each window is closed unanswered: the sample session stays for the other tests.
+  for (const [button, said] of [
+    [
+      "Se déconnecter",
+      "Pour revenir, il faudra un nouveau lien du bureau, un code du bureau à entrer avec votre cellulaire, ou le code QR d'un chantier.",
+    ],
+    ["Supprimer mon compte", back],
+  ]) {
+    await page.getByRole("button", { name: button, exact: true }).click();
+    await expect(page.getByRole("dialog")).toContainText(said);
+    await page.waitForTimeout(450);
+    await page.getByRole("dialog").getByRole("button", { name: "Annuler" }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+  }
+  await context.close();
+});

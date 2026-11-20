@@ -7,6 +7,7 @@ import type {
   Plans,
   SheetDetail,
 } from "@/shared/plans";
+import { mayEditPlans } from "@/shared/demo";
 
 import { api } from "../../lib/api";
 import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
@@ -30,9 +31,13 @@ export const planKeys = {
     [...keys.project(projectId), "plan-search", words] as const,
 };
 
-/** Whether this person sees the controls that add and change plans, inside a project. */
+/**
+ * Whether this person sees the controls that add and change plans, inside a
+ * project. The demonstration account reads the plans and never changes them.
+ */
 export function useCanChangePlans(): boolean {
-  return mayChangePlans(useCurrentProject(), useCurrentUser().role);
+  const me = useCurrentUser();
+  return mayChangePlans(useCurrentProject(), me.role) && mayEditPlans(me);
 }
 
 export const usePlans = (projectId: string) =>

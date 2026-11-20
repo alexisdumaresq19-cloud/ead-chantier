@@ -15,6 +15,16 @@ import { DeviceList } from "./devices";
 import { Meta } from "./meta";
 import { LAST_OFFICE_TEXT, roleAndTitle, signOutFailure } from "./people";
 
+// Coming back after a deletion. The person's links and codes are gone with
+// the account (src/server/people/delete.ts): the office makes a new one and
+// sends its link or its code (src/shared/access.ts), or a site's QR code
+// makes one. The demonstration's number and code outlive its account: the
+// next sign-in makes a new demonstration account (src/server/access-code/demo.ts).
+const BACK_AFTER_DELETE =
+  "Pour revenir, il faudra un nouveau compte\u00a0: le bureau vous envoie un lien ou un code à entrer avec votre cellulaire, ou vous scannez le code QR d'un chantier.";
+const DEMO_BACK_AFTER_DELETE =
+  "Le même cellulaire et le même code ouvrent ensuite un nouveau compte de démonstration.";
+
 /**
  * Deletes the account, then lets go of this device. The server has already
  * signed every device out: if signing this one out fails on the way (the
@@ -49,7 +59,9 @@ export function AccountScreen() {
   const askToRemove = async () => {
     const ok = await confirmAction({
       title: "Supprimer votre compte?",
-      text: "C'est immédiat et définitif. Vos appareils sont déconnectés, et votre numéro, vos liens et vos accès aux chantiers sont effacés. Les rapports, les photos et les documents que vous avez ajoutés restent à l'entreprise, avec votre nom.",
+      text: me.demo
+        ? `C'est immédiat. Vos appareils sont déconnectés et ce compte est effacé. Ce qu'il a ajouté aux chantiers reste à l'entreprise. ${DEMO_BACK_AFTER_DELETE}`
+        : `C'est immédiat et définitif. Vos appareils sont déconnectés, et votre numéro, vos liens et vos accès aux chantiers sont effacés. Les rapports, les photos et les documents que vous avez ajoutés restent à l'entreprise, avec votre nom. ${BACK_AFTER_DELETE}`,
       confirmLabel: "Supprimer mon compte",
       danger: true,
     });
@@ -59,7 +71,9 @@ export function AccountScreen() {
   const askToLeave = async () => {
     const ok = await confirmAction({
       title: "Se déconnecter de cet appareil?",
-      text: "Pour revenir, il faudra un nouveau lien du bureau ou le code QR d'un chantier.",
+      text: me.demo
+        ? "Pour revenir, entrez de nouveau le même cellulaire et le même code."
+        : "Pour revenir, il faudra un nouveau lien du bureau, un code du bureau à entrer avec votre cellulaire, ou le code QR d'un chantier.",
       confirmLabel: "Se déconnecter",
       danger: true,
     });
@@ -116,9 +130,9 @@ export function AccountScreen() {
           ) : (
             <>
               <p className="text-dim text-[15px] text-pretty">
-                Vous n&apos;utilisez plus l&apos;application? Supprimez votre compte. Ce que vous
-                avez ajouté aux chantiers reste à l&apos;entreprise, avec votre nom. Pour revenir,
-                il faudra un nouveau compte.
+                {me.demo
+                  ? `Ce compte sert à essayer l'application. Ce qu'il a ajouté aux chantiers reste à l'entreprise. ${DEMO_BACK_AFTER_DELETE}`
+                  : `Vous n'utilisez plus l'application? Supprimez votre compte. Ce que vous avez ajouté aux chantiers reste à l'entreprise, avec votre nom. ${BACK_AFTER_DELETE}`}
               </p>
               <Button
                 variant="secondary"
