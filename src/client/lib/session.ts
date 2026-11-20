@@ -36,6 +36,9 @@ export function useMe() {
       }
     },
     staleTime: 60_000,
+    // Asked again at every opening of the app, however fresh the copy: a
+    // person deactivated meanwhile is sent to the welcome screen at once.
+    refetchOnMount: "always",
   });
 }
 

@@ -4,7 +4,9 @@ import { count, formatAgo, formatDay, formatSize, initials, todayKey } from "./f
 
 describe("format", () => {
   it("writes a calendar day without shifting it across time zones", () => {
-    expect(formatDay("2026-10-01")).toBe("1 octobre 2026");
+    expect(formatDay("2026-10-01")).toBe("1er octobre 2026");
+    expect(formatDay("2026-10-11")).toBe("11 octobre 2026");
+    expect(formatDay("2026-10-21")).toBe("21 octobre 2026");
   });
 
   it("gives today's date as a key", () => {
@@ -16,7 +18,7 @@ describe("format", () => {
     expect(formatAgo(new Date(2026, 9, 10, 7, 0), now)).toBe("aujourd'hui");
     expect(formatAgo(new Date(2026, 9, 9, 23, 0), now)).toBe("hier");
     expect(formatAgo(new Date(2026, 9, 7, 12, 0), now)).toBe("il y a 3 jours");
-    expect(formatAgo(new Date(2026, 8, 1, 12, 0), now)).toBe("1 septembre 2026");
+    expect(formatAgo(new Date(2026, 8, 1, 12, 0), now)).toBe("1er septembre 2026");
   });
 
   it("writes sizes in French units", () => {

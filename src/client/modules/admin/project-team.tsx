@@ -65,7 +65,7 @@ export function ProjectTeamScreen() {
   const office = isAdmin(me.role);
   // An archived project admits nobody new: it has no code to show.
   const open = project.status !== "archive";
-  const showsCode = project.canManage && open;
+  const showsCode = project.canChange && open;
   const [codeOpen, setCodeOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const members = useMembers(project.id, { watch: codeOpen });

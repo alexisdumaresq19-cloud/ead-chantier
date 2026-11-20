@@ -31,14 +31,30 @@ export const queryClient = new QueryClient({
 
 const KEY = "ead-query-cache";
 let pending: ReturnType<typeof setTimeout> | undefined;
+let latest: PersistedClient | undefined;
 
-/** Stores the cache in IndexedDB, at most once a second. */
+function saveNow() {
+  clearTimeout(pending);
+  pending = undefined;
+  if (latest) set(KEY, latest).catch(() => {});
+  latest = undefined;
+}
+
+// A phone put back in a pocket may never run the timer: what was just seen
+// is saved as the app goes out of sight.
+if (typeof document !== "undefined")
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) saveNow();
+  });
+
+/**
+ * Stores the cache in IndexedDB, at most once a second, and never later than
+ * a second after a change: a burst of changes does not push the save back.
+ */
 export const persister: Persister = {
   persistClient(client: PersistedClient) {
-    clearTimeout(pending);
-    pending = setTimeout(() => {
-      set(KEY, client).catch(() => {});
-    }, 1000);
+    latest = client;
+    pending ??= setTimeout(saveNow, 1000);
   },
   restoreClient: () => get<PersistedClient>(KEY),
   removeClient: () => del(KEY),
@@ -61,6 +77,8 @@ export const CACHE_MAX_AGE = MONTH;
 /** Forgets everything stored for the signed-in person (on sign-out). */
 export async function clearStoredData() {
   clearTimeout(pending);
+  pending = undefined;
+  latest = undefined;
   queryClient.clear();
   await del(KEY).catch(() => {});
 }

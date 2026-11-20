@@ -34,8 +34,9 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
     photoCount: await count(schema.photos, id),
     // Daily reports are for foremen and the office.
     reportCount: canManageProject(user.role) ? await count(schema.dailyReports, id) : 0,
+    canManage: canManageProject(user.role),
     // An archived project is read-only for everyone but the office.
-    canManage:
+    canChange:
       canManageProject(user.role) && (project.status !== "archive" || user.role === "admin"),
   } satisfies ProjectDetail;
 });

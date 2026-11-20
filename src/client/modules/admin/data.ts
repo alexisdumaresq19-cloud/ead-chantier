@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 
-import type { Device, Member, Person } from "@/shared/api";
+import type { Device, Person, TeamMember } from "@/shared/api";
 
 import { api } from "../../lib/api";
 import { queryClient } from "../../lib/query";
@@ -10,11 +10,7 @@ import { keys } from "../../lib/session";
 // What the people and project management screens fetch, and what to refresh
 // after a change.
 
-/**
- * A member as GET /api/projects/:id/members gives them: with, for someone
- * still to confirm, when they scanned the site's code.
- */
-export type TeamMember = Member & { scannedAt: string | null };
+export type { TeamMember } from "@/shared/api";
 
 export const adminKeys = {
   /** GET /api/users — everyone, for the office (`Person[]`). */

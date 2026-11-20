@@ -1,6 +1,6 @@
 import { REPORT_LIMITS } from "@/shared/reports";
 
-import { formatShortDay, formatTime, formatWeekday, todayKey } from "../../lib/format";
+import { formatShortDay, formatTime, formatWeekday, todayKey, withFirst } from "../../lib/format";
 
 // Hours, degrees and days, as a foreman types and reads them.
 
@@ -77,7 +77,7 @@ export const monthLabel = (day: string) => capitalize(monthFormat.format(atNoon(
 /** "jeu." */
 export const weekdayShort = (day: string) => weekdayFormat.format(atNoon(day));
 /** "jeudi 19 novembre 2026" */
-export const formatFullDay = (day: string) => fullFormat.format(atNoon(day));
+export const formatFullDay = (day: string) => withFirst(fullFormat.format(atNoon(day)));
 
 /** "aujourd'hui à 15 h 42", "hier à 16 h 05", then "le mardi 17 novembre". */
 export function formatWhen(value: string | Date, now = new Date()): string {

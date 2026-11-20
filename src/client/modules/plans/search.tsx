@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronRight, WifiOff } from "lucide-react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PlanSearchHit } from "@/shared/plans";
 
@@ -32,16 +32,39 @@ export function useSearchText(): [string, (text: string) => void] {
   const [text, setText] = useState(storedSearch);
   useEffect(() => {
     if (storedSearch() === text) return;
-    // Not on every key: browsers limit how often the history may be written.
-    const timer = window.setTimeout(() => {
+    const write = () => {
       try {
         window.history.replaceState({ ...window.history.state, [SEARCH_STATE]: text }, "");
       } catch {
         // The browser refused (too many writes): the search still works.
       }
-    }, 300);
+    };
+    // Not on every key: browsers limit how often the history may be written.
+    const timer = window.setTimeout(write, 300);
     return () => window.clearTimeout(timer);
   }, [text]);
+  // A result tapped within that delay must not lose the search: it is
+  // written as the tap lands, before the tap changes the address, so it goes
+  // to the list's own entry of the history.
+  const latest = useRef(text);
+  useEffect(() => {
+    latest.current = text;
+  });
+  useEffect(() => {
+    const writeNow = () => {
+      if (storedSearch() === latest.current) return;
+      try {
+        window.history.replaceState(
+          { ...window.history.state, [SEARCH_STATE]: latest.current },
+          "",
+        );
+      } catch {
+        // As above.
+      }
+    };
+    window.addEventListener("click", writeNow, true);
+    return () => window.removeEventListener("click", writeNow, true);
+  }, []);
   return [text, setText];
 }
 

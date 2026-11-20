@@ -132,7 +132,7 @@ describe("the office's list", () => {
     expect(lastSeenText(new Date(2026, 10, 18, 7, 0).toISOString(), now)).toBe("Vu hier");
     expect(lastSeenText(new Date(2026, 10, 16, 7, 0).toISOString(), now)).toBe("Vu il y a 3 jours");
     expect(lastSeenText(new Date(2026, 8, 1, 12, 0).toISOString(), now)).toBe(
-      "Vu le 1 septembre 2026",
+      "Vu le 1er septembre 2026",
     );
   });
 

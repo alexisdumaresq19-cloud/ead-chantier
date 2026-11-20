@@ -100,7 +100,7 @@ describe("days in words", () => {
   it("says today, yesterday, then the date", () => {
     expect(dayTitle("2026-10-08", "2026-10-08")).toBe("Aujourd'hui");
     expect(dayTitle("2026-10-07", "2026-10-08")).toBe("Hier");
-    expect(dayTitle("2026-10-01", "2026-10-08")).toBe("Jeudi 1 octobre");
+    expect(dayTitle("2026-10-01", "2026-10-08")).toBe("Jeudi 1er octobre");
     expect(dayTitle("2026-09-30", "2026-10-01")).toBe("Hier");
   });
 

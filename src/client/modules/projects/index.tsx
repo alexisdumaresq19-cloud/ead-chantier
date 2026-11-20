@@ -1,5 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  Archive,
   Camera,
   ChevronRight,
   CircleCheck,
@@ -204,17 +205,27 @@ export function ProjectHomeScreen() {
   const project = useCurrentProject();
   const base = `/projets/${project.id}`;
   const address = [project.address, project.city].filter(Boolean).join(", ");
+  const archived = project.status === "archive";
+  const office = isAdmin(useCurrentUser().role);
 
   return (
     <div className="animate-fade">
       {/* The black of the bar runs down into the project's card. */}
       <div className="bg-ink px-4 pt-2 pb-16 text-white sm:px-6 lg:bg-transparent lg:px-10 lg:pt-8 lg:pb-0">
         <div className="lg:bg-ink mx-auto max-w-6xl lg:rounded-3xl lg:px-8 lg:pt-8 lg:pb-20">
-          {project.number ? (
-            <p className="font-display text-ead text-xs font-bold tracking-wider uppercase">
-              Projet {project.number}
-            </p>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            {project.number ? (
+              <p className="font-display text-ead text-xs font-bold tracking-wider uppercase">
+                Projet {project.number}
+              </p>
+            ) : null}
+            {archived ? (
+              <span className="inline-flex items-center gap-1.5 rounded-md bg-white/15 px-2 py-0.5 text-xs font-semibold">
+                <Archive className="size-3.5" aria-hidden />
+                Projet archivé
+              </span>
+            ) : null}
+          </div>
           <h1 className="font-display mt-1 text-[26px] leading-tight font-bold tracking-tight text-balance lg:text-4xl">
             {project.name}
           </h1>
@@ -278,6 +289,20 @@ export function ProjectHomeScreen() {
           ) : null}
         </div>
 
+        {archived ? (
+          <p className="border-line bg-surface text-dim mt-5 rounded-2xl border px-4 py-3 text-[15px] leading-snug">
+            Ce projet est archivé&nbsp;: il se consulte, mais rien ne s&apos;y ajoute.
+            {office ? (
+              <>
+                {" "}
+                <Link href={`${base}/reglages`} className="text-ead-dark font-semibold underline">
+                  Le rouvrir dans les réglages
+                </Link>
+              </>
+            ) : null}
+          </p>
+        ) : null}
+
         <Today project={project} />
         <RecentPlans projectId={project.id} />
 
@@ -316,7 +341,8 @@ export function ProjectHomeScreen() {
 function Today({ project }: { project: ProjectDetail }) {
   const base = `/projets/${project.id}`;
   const today = useToday();
-  const writes = project.canManage && project.status !== "archive";
+  // The day's report is written by those who manage the project, while it is open.
+  const writes = project.canChange && project.status !== "archive";
   const day = useDayReport(project.id, today, writes && today !== "");
   const canDictate = useAssistant().data?.dictation === true;
   const report = day.data?.report ?? null;
@@ -504,7 +530,9 @@ function ModuleTile({
           <span
             className={cn(
               "font-display block truncate leading-tight font-bold",
-              main ? "text-xl lg:text-lg" : "text-[15px] sm:text-lg",
+              main
+                ? "text-xl lg:text-lg"
+                : "text-sm tracking-tight min-[380px]:text-[15px] sm:text-lg",
             )}
           >
             {label}

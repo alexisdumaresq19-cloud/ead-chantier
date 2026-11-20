@@ -21,12 +21,17 @@ const toDate = (value: string | Date) =>
     ? value
     : new Date(/^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T12:00:00` : value);
 
-/** "1 octobre 2026" */
-export const formatDay = (value: string | Date) => dayFormat.format(toDate(value));
-/** "1 oct." */
-export const formatShortDay = (value: string | Date) => shortDayFormat.format(toDate(value));
-/** "jeudi 1 octobre" */
-export const formatWeekday = (value: string | Date) => weekdayFormat.format(toDate(value));
+/** The first of the month is written "1er": "1 octobre" becomes "1er octobre". */
+export const withFirst = (text: string) => text.replace(/(^|\s)1(?=\s)/, "$11er");
+
+/** "2 octobre 2026", "1er octobre 2026" */
+export const formatDay = (value: string | Date) => withFirst(dayFormat.format(toDate(value)));
+/** "2 oct.", "1er oct." */
+export const formatShortDay = (value: string | Date) =>
+  withFirst(shortDayFormat.format(toDate(value)));
+/** "jeudi 1er octobre" */
+export const formatWeekday = (value: string | Date) =>
+  withFirst(weekdayFormat.format(toDate(value)));
 /** "14 h 05" */
 export const formatTime = (value: string | Date) => timeFormat.format(toDate(value));
 

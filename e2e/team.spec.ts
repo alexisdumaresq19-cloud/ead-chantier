@@ -272,10 +272,11 @@ test("the office creates, edits, archives and reopens a project", async ({ brows
   await confirm(page, "Archiver");
   await expect(page.getByText("Projet archivé").first()).toBeVisible();
 
-  // The foreman's management controls are gone, and the API refuses.
-  expect((await call(foreman.request, "GET", `/api/projects/${projectId}`)).body.canManage).toBe(
-    false,
-  );
+  // The foreman still manages the project (and reads its reports), but may
+  // no longer change it: the controls are gone, and the API refuses.
+  const archivedFor = (await call(foreman.request, "GET", `/api/projects/${projectId}`)).body;
+  expect(archivedFor.canManage).toBe(true);
+  expect(archivedFor.canChange).toBe(false);
   const desk = await foreman.newPage();
   await desk.goto(`/projets/${projectId}/equipe`);
   await expect(desk.getByRole("heading", { name: "Équipe du projet" })).toBeVisible();
@@ -299,7 +300,7 @@ test("the office creates, edits, archives and reopens a project", async ({ brows
   await page.getByRole("button", { name: "Rouvrir le projet" }).click();
   await confirm(page, "Rouvrir");
   await expect(page.getByText("Projet rouvert")).toBeVisible();
-  expect((await call(foreman.request, "GET", `/api/projects/${projectId}`)).body.canManage).toBe(
+  expect((await call(foreman.request, "GET", `/api/projects/${projectId}`)).body.canChange).toBe(
     true,
   );
   // On a device that has not seen the archived project, the code is back.

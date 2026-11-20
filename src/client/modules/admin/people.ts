@@ -118,7 +118,7 @@ export function accessEndText(scannedAt: string): string {
 export const titleOrRole = (person: { title: string | null; role: Role }) =>
   person.title?.trim() || ROLE_LABELS[person.role];
 
-/** "Vu hier", "Vu le 1 septembre 2026", "Jamais connecté". */
+/** "Vu hier", "Vu le 1er septembre 2026", "Jamais connecté". */
 export function lastSeenText(lastSeenAt: string | null, now = new Date()): string {
   if (!lastSeenAt) return "Jamais connecté";
   const ago = formatAgo(lastSeenAt, now);

@@ -39,7 +39,10 @@ The interface is in Québec French only.
   "Bureau"), `contremaitre`, `travailleur`. Daily reports are for foremen and
   the office only.
 - **Archived projects** are read-only for everyone but the office, and nobody
-  new joins them. A route that changes a project's content uses
+  new joins them. A project tells the screens two things: `canManage` (its
+  foreman or the office: reads what only they read, such as the reports,
+  archived or not) and `canChange` (`canManage` on a project that is open, or
+  the office): adding, editing and the QR code are offered on `canChange`. A route that changes a project's content uses
   `projectToChange` (instead of `projectToManage`) or, where any member may
   add (photos), `projectToAddTo`; a route that first finds a record and then
   its project calls `assertOpen(user, project)`. Reading stays on

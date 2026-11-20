@@ -26,8 +26,17 @@ export type ProjectDetail = ProjectSummary & {
   documentCount: number;
   photoCount: number;
   reportCount: number;
-  /** May add plans and documents, and invite workers. */
+  /**
+   * Manages the project (its foreman, or the office): reads what only they
+   * read, such as the daily reports. Says nothing of the project being open.
+   */
   canManage: boolean;
+  /**
+   * May change the project's content and let people in: `canManage`, on a
+   * project that is not archived (the office may, even then). Screens offer
+   * adding, editing and the QR code on this; the server decides again.
+   */
+  canChange: boolean;
 };
 
 export type Member = {
@@ -38,6 +47,12 @@ export type Member = {
   phone: string | null;
   /** Joined with the site's QR code; the office has not looked at them yet. */
   unreviewed: boolean;
+};
+
+/** A member as GET /api/projects/:id/members gives them. */
+export type TeamMember = Member & {
+  /** For someone still to confirm, when they scanned the site's code; null otherwise. */
+  scannedAt: string | null;
 };
 
 export type Person = Member & {

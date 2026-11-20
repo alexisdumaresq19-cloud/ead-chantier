@@ -16,7 +16,7 @@ const deviceIcon = (label: string | null) =>
       ? Tablet
       : Smartphone;
 
-/** "Utilisé aujourd'hui", "Utilisé le 1 septembre 2026". */
+/** "Utilisé aujourd'hui", "Utilisé le 1er septembre 2026". */
 function lastUse(device: Device): string {
   const ago = formatAgo(device.lastSeenAt);
   return /^\d/.test(ago) ? `Utilisé le ${ago}` : `Utilisé ${ago}`;
