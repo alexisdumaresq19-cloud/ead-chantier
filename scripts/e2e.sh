@@ -21,6 +21,11 @@ export APP_SECRET=e2e-secret-not-for-production
 # Production ignores a setup code shorter than 16 characters.
 export SETUP_CODE=e2e-setup-code-not-for-production
 export SEED_OUT=.data/e2e
+# The door of account creation, held as in production, with room for the
+# accounts the tests make (e2e/sign-up.spec.ts fills the rest itself).
+export SIGNUP_TRIES_PER_HOUR=5
+export SIGNUP_WRONG_CODES_PER_DAY=20
+export SIGNUP_ACCOUNTS_PER_DAY=40
 export BASE="http://localhost:$PORT"
 
 if curl -sf "$BASE/api/setup" >/dev/null; then

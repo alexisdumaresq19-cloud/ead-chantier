@@ -32,9 +32,21 @@ export const users = pgTable("users", {
   active: boolean("active").notNull().default(true),
   /** Joined with a project QR code and not yet looked at by the office. */
   unreviewed: boolean("unreviewed").notNull().default(false),
+  /**
+   * How the person made their own account, when they did: "company_code"
+   * (the company's code, at /inscription). Null for an account the office
+   * made, or one made at a site's QR code (createdBy is then the code's author).
+   */
+  joinedWith: text("joined_with").$type<"company_code">(),
   createdBy: text("created_by"),
   createdAt: createdAt(),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+  /**
+   * When the person deleted their account. The row stays only for someone
+   * whose name is on the company's records (reports, photos, documents,
+   * plans): it keeps the name, nothing else, and never signs in again.
+   */
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
 });
 
 /** One per signed-in device. The cookie holds the token; only its hash is kept. */
@@ -76,6 +88,38 @@ export const invites = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex("invites_token_hash").on(t.tokenHash)],
+);
+
+/**
+ * The app's own settings, one row per setting, changed by the office: who
+ * changed it last and when. "company_code": the code that lets a newcomer
+ * make their own account (null while account creation is closed).
+ */
+export const appSettings = pgTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedBy: text("updated_by"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * One row per attempt to make an account with the company code that was
+ * refused (a wrong code, a number already in use), or that made an account.
+ * It is what the door's ceilings are counted from (src/server/signup/door.ts),
+ * kept two days. The address is kept as a keyed digest, the code never.
+ */
+export const signupAttempts = pgTable(
+  "signup_attempts",
+  {
+    id: id(),
+    addressHash: text("address_hash").notNull(),
+    outcome: text("outcome").$type<"wrong_code" | "phone_taken" | "created">().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("signup_attempts_address").on(t.addressHash, t.createdAt),
+    index("signup_attempts_outcome").on(t.outcome, t.createdAt),
+  ],
 );
 
 // --- Projects ---------------------------------------------------------------

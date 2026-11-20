@@ -1,7 +1,6 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link2, QrCode } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
-import { Redirect, useParams } from "wouter";
+import { useState, type FormEvent } from "react";
+import { useParams } from "wouter";
 
 import type { InvitePreview } from "@/shared/api";
 
@@ -9,80 +8,14 @@ import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { enterApp, signOut, useMe } from "../../lib/session";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
-
-/** What a name needs before it is sent: the server asks for two letters at least. */
-const NAME_MISSING = "Inscrivez votre prénom et votre nom.";
-const nameMissing = (name: string) => name.trim().length < 2;
-
-/** Puts the cursor in the field that needs something, with its message under it. */
-function focusField(event: FormEvent<HTMLFormElement>, name: string) {
-  const field = event.currentTarget.elements.namedItem(name);
-  if (field instanceof HTMLElement) field.focus();
-}
+import { focusField, Heading, NAME_MISSING, nameMissing } from "./parts";
 
 // The screens seen before signing in. Nobody has a password: a person comes
-// in with the personal link the office sent, or with a site's QR code.
+// in with the personal link the office sent, with a site's QR code, or makes
+// their own account with the company's code (signup.tsx).
 
-function Heading({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <>
-      <h1 className="font-display text-2xl leading-tight font-bold tracking-tight text-balance">
-        {title}
-      </h1>
-      {children ? <div className="text-dim mt-2 text-[15px] text-pretty">{children}</div> : null}
-    </>
-  );
-}
-
-export function WelcomeScreen() {
-  const me = useMe();
-  const setup = useQuery({
-    queryKey: ["setup"],
-    queryFn: () => api<{ needed: boolean }>("/api/setup"),
-    meta: { persist: false },
-  });
-  if (me.data) return <Redirect to="/" replace />;
-
-  return (
-    <PublicLayout>
-      <Heading title="Bienvenue">
-        Les plans, les documents, les photos et les rapports de vos chantiers, au même endroit.
-      </Heading>
-      <ul className="mt-6 space-y-4">
-        <Way icon={<QrCode aria-hidden />} title="Au chantier">
-          Scannez le code QR de votre contremaître avec l&apos;appareil photo de votre téléphone.
-        </Way>
-        <Way icon={<Link2 aria-hidden />} title="Par lien personnel">
-          Ouvrez le lien que le bureau vous a envoyé par texto ou par courriel.
-        </Way>
-      </ul>
-      <p className="border-line text-dim mt-6 border-t pt-4 text-sm">
-        Nouveau téléphone ou lien expiré? Demandez un nouveau lien au bureau.
-      </p>
-      {setup.data?.needed ? (
-        <div className="mt-5">
-          <ButtonLink href="/demarrer" variant="secondary" block>
-            Première utilisation&nbsp;: configurer l&apos;application
-          </ButtonLink>
-        </div>
-      ) : null}
-    </PublicLayout>
-  );
-}
-
-function Way({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
-  return (
-    <li className="flex gap-3.5">
-      <span className="bg-ead-tint text-ead-dark flex size-11 shrink-0 items-center justify-center rounded-xl [&_svg]:size-6">
-        {icon}
-      </span>
-      <div>
-        <p className="font-semibold">{title}</p>
-        <p className="text-dim mt-0.5 text-sm text-pretty">{children}</p>
-      </div>
-    </li>
-  );
-}
+export { SignUpScreen } from "./signup";
+export { WaysInScreen, WelcomeScreen } from "./welcome";
 
 /** Creates the office's first account, once, with the code set at installation. */
 export function SetupScreen() {

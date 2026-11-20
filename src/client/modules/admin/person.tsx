@@ -30,7 +30,10 @@ import {
   lastSeenText,
   roleAndTitle,
   telHref,
+  sameNameAs,
+  sameNameText,
   UNREVIEWED_RULE,
+  whenText,
 } from "./people";
 import { focusName, nameProblem, personBody, PersonFields, type PersonForm } from "./person-fields";
 import { ShownError } from "./shown-error";
@@ -45,7 +48,14 @@ export function PersonView({ id }: { id: string }) {
   const projects = useProjects();
   const person = people.data?.find((candidate) => candidate.id === id);
 
-  if (person) return <PersonPage person={person} projects={projects.data ?? []} />;
+  if (person)
+    return (
+      <PersonPage
+        person={person}
+        projects={projects.data ?? []}
+        twin={sameNameAs(person, people.data ?? [])}
+      />
+    );
   if (people.data) {
     return (
       <Page title="Personne introuvable" back={BACK}>
@@ -87,7 +97,16 @@ const sameForm = (a: PersonForm, b: PersonForm) =>
     (a.projectIds.length === b.projectIds.length &&
       a.projectIds.every((projectId) => b.projectIds.includes(projectId))));
 
-function PersonPage({ person, projects }: { person: Person; projects: ProjectSummary[] }) {
+function PersonPage({
+  person,
+  projects,
+  twin,
+}: {
+  person: Person;
+  projects: ProjectSummary[];
+  /** Someone else in the team with the same name. */
+  twin: Person | undefined;
+}) {
   const me = useCurrentUser();
   const [form, setForm] = useState(() => formOf(person));
   const [link, setLink] = useState<InviteLink | null>(null);
@@ -202,10 +221,20 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
             <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
             <span>
               <strong className="font-semibold">
-                {first} a utilisé le code QR d&apos;un chantier pour entrer.
+                {person.joinedWith === "company_code"
+                  ? `${first} a créé son compte avec le code d'entreprise, ${whenText(person.createdAt)}.`
+                  : `${first} a utilisé le code QR d'un chantier pour entrer.`}
               </strong>{" "}
-              Vous connaissez cette personne? Confirmez-la. Sinon, désactivez son accès.{" "}
+              {person.joinedWith === "company_code" && person.projectIds.length === 0
+                ? "Vous connaissez cette personne? Confirmez-la, puis cochez ses projets plus bas. Sinon, désactivez son accès."
+                : "Vous connaissez cette personne? Confirmez-la. Sinon, désactivez son accès."}{" "}
               {UNREVIEWED_RULE}
+              {twin ? (
+                <strong className="mt-2 block font-semibold">
+                  {sameNameText(twin)} Assurez-vous que c&apos;est une autre personne avant de
+                  confirmer.
+                </strong>
+              ) : null}
             </span>
           </p>
           <Button

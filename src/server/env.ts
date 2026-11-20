@@ -61,6 +61,47 @@ export function setupCodeAdvice(code: string | undefined, officeExists: boolean)
   return null;
 }
 
+/**
+ * How hard the door of account creation is held (src/server/signup/door.ts).
+ * The code is eight digits: these are what make guessing it hopeless.
+ */
+export type SignupLimits = {
+  /** Refused tries from one network address in an hour. */
+  triesPerHour: number;
+  /** Wrong codes from everyone in a day, against the code in force; then creation pauses. */
+  wrongCodesPerDay: number;
+  /**
+   * Accounts made in a day with the code in force, by everyone: against a
+   * flood of accounts from someone who saw the poster. Above a whole crew
+   * signing up on its first day; a new code starts a new count.
+   */
+  accountsPerDay: number;
+};
+
+export const SIGNUP_LIMITS: SignupLimits = {
+  triesPerHour: 5,
+  wrongCodesPerDay: 40,
+  accountsPerDay: 100,
+};
+
+/**
+ * The ceilings from the settings (a test server sets its own), each a whole
+ * number from 1 to 10 000; anything else keeps the default.
+ */
+export function signupLimitsFrom(settings: Settings): SignupLimits {
+  const read = (name: string, fallback: number) => {
+    const value = Number(settings[name]);
+    return Number.isInteger(value) && value >= 1 && value <= 10_000 ? value : fallback;
+  };
+  return {
+    triesPerHour: read("SIGNUP_TRIES_PER_HOUR", SIGNUP_LIMITS.triesPerHour),
+    wrongCodesPerDay: read("SIGNUP_WRONG_CODES_PER_DAY", SIGNUP_LIMITS.wrongCodesPerDay),
+    accountsPerDay: read("SIGNUP_ACCOUNTS_PER_DAY", SIGNUP_LIMITS.accountsPerDay),
+  };
+}
+
+let signupLimits: SignupLimits | undefined;
+
 export const env = {
   dev,
   get databaseUrl() {
@@ -96,5 +137,9 @@ export const env = {
     const code = process.env.SETUP_CODE;
     if (dev) return code ?? "dev";
     return code && code.length >= SETUP_CODE_MIN_LENGTH ? code : undefined;
+  },
+  /** Read once: every request of a server holds the same door. */
+  get signupLimits(): SignupLimits {
+    return (signupLimits ??= signupLimitsFrom(process.env));
   },
 };

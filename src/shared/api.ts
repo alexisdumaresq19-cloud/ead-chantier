@@ -5,7 +5,20 @@ import type { Role } from "./roles";
 
 export type ApiError = { error: { code: string; message: string } };
 
-export type Me = { id: string; name: string; role: Role; title: string | null };
+export type Me = {
+  id: string;
+  name: string;
+  role: Role;
+  title: string | null;
+  /**
+   * Nobody has confirmed the person yet: their access ends by itself after a
+   * few days. Missing from what a device stored before it was sent.
+   */
+  unreviewed?: boolean;
+};
+
+/** How someone made their own account: "company_code", the company's code. */
+export type JoinedWith = "company_code";
 
 export type ProjectSummary = {
   id: string;
@@ -45,8 +58,13 @@ export type Member = {
   role: Role;
   title: string | null;
   phone: string | null;
-  /** Joined with the site's QR code; the office has not looked at them yet. */
+  /** Came in by a site's QR code or the company's code; nobody has confirmed them yet. */
   unreviewed: boolean;
+  /**
+   * Made their own account with the company's code; null when the office or
+   * a site's QR code made it. (Not yet sent by every route: missing means null.)
+   */
+  joinedWith?: JoinedWith | null;
 };
 
 /** A member as GET /api/projects/:id/members gives them. */

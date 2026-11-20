@@ -1,8 +1,8 @@
-import type { Person } from "@/shared/api";
+import type { JoinedWith, Person } from "@/shared/api";
 import { ROLE_LABELS, type Role } from "@/shared/roles";
 
 import { ApiFailure, errorMessage } from "../../lib/api";
-import { formatAgo, formatTime, formatWeekday } from "../../lib/format";
+import { formatAgo, formatDay, formatTime, formatWeekday, todayKey } from "../../lib/format";
 
 // Words and links about people: phone numbers as written in Québec, what an
 // invitation says, how the office's list is sorted and searched. No React
@@ -88,19 +88,97 @@ export const siteCodeText = (expiresAt: string) =>
 
 // --- People to confirm ------------------------------------------------------
 
-/** How long someone who came in by a site's QR code stays in without a confirmation (UNREVIEWED_SESSION_DAYS on the server). */
+/**
+ * How long someone who came in by themself (a site's QR code, the company's
+ * code) stays in without a confirmation (UNREVIEWED_SESSION_DAYS on the server).
+ */
 const UNREVIEWED_DAYS = 7;
 
-/** What happens to someone who came in by a site's QR code, said where they are to confirm. */
-export const UNREVIEWED_RULE = `Sans confirmation, l'accès prend fin ${UNREVIEWED_DAYS} jours après le scan du code.`;
+/** What happens to someone nobody has confirmed yet, said where they are to confirm. */
+export const UNREVIEWED_RULE = `Sans confirmation, l'accès prend fin ${UNREVIEWED_DAYS} jours après la création du compte.`;
+
+/** "aujourd'hui à 7 h 30", "hier à 16 h 05", "il y a 3 jours", "le 2 novembre 2026". */
+export function whenText(at: string, now = new Date()): string {
+  const ago = formatAgo(at, now);
+  if (/^\d/.test(ago)) return `le ${ago}`;
+  return ago === "aujourd'hui" || ago === "hier" ? `${ago} à ${formatTime(at)}` : ago;
+}
 
 /** "Code scanné aujourd'hui à 7 h 30", "Code scanné il y a 3 jours". */
-export function scannedText(scannedAt: string, now = new Date()): string {
-  const ago = formatAgo(scannedAt, now);
-  if (/^\d/.test(ago)) return `Code scanné le ${ago}`;
-  return ago === "aujourd'hui" || ago === "hier"
-    ? `Code scanné ${ago} à ${formatTime(scannedAt)}`
-    : `Code scanné ${ago}`;
+export const scannedText = (scannedAt: string, now = new Date()) =>
+  `Code scanné ${whenText(scannedAt, now)}`;
+
+/** How someone nobody has confirmed came in. */
+export const joinedWithText = (joinedWith: JoinedWith | null | undefined) =>
+  joinedWith === "company_code"
+    ? "Compte créé avec le code d'entreprise"
+    : "Entré avec le code QR d'un chantier";
+
+/**
+ * Why the people listed are to confirm: each came in by themself, with a
+ * site's QR code or with the company's code.
+ */
+export function toConfirmText(people: { joinedWith?: JoinedWith | null }[]): string {
+  const ways = new Set(people.map((person) => person.joinedWith ?? "site_code"));
+  const one = people.length === 1;
+  if (ways.size > 1)
+    return "Ces personnes sont entrées par elles-mêmes, avec le code QR d'un chantier ou le code d'entreprise. Ouvrez une fiche pour confirmer la personne ou couper son accès.";
+  if (ways.has("company_code"))
+    return one
+      ? "Cette personne a créé son compte avec le code d'entreprise. Ouvrez sa fiche pour la confirmer et l'ajouter à ses chantiers, ou couper son accès."
+      : "Ces personnes ont créé leur compte avec le code d'entreprise. Ouvrez une fiche pour confirmer la personne et l'ajouter à ses chantiers, ou couper son accès.";
+  return one
+    ? "Cette personne est entrée avec le code QR d'un chantier. Ouvrez sa fiche pour la confirmer ou couper son accès."
+    : "Ces personnes sont entrées avec le code QR d'un chantier. Ouvrez une fiche pour confirmer la personne ou couper son accès.";
+}
+
+/**
+ * Someone else, active, with the same name as a newcomer to confirm, or
+ * undefined. A stranger holding the company's code could take the name of
+ * someone the office knows; the office is told before confirming.
+ */
+export function sameNameAs<T extends { id: string; name: string; active: boolean }>(
+  person: T,
+  people: T[],
+): T | undefined {
+  const name = plain(person.name).replace(/\s+/g, " ").trim();
+  return people.find(
+    (other) =>
+      other.id !== person.id &&
+      other.active &&
+      plain(other.name).replace(/\s+/g, " ").trim() === name,
+  );
+}
+
+/** "Même nom que Camille Roy (Bureau), déjà dans l'équipe." */
+export const sameNameText = (other: { name: string; role: Role }) =>
+  `Même nom que ${other.name} (${ROLE_LABELS[other.role]}), déjà dans l'équipe.`;
+
+// --- The company code -------------------------------------------------------
+
+/** "jusqu'à 14 h 30", "jusqu'à demain 9 h 05", "jusqu'au 2 décembre 2026 9 h 05". */
+export function untilText(until: string, now = new Date()): string {
+  const days = Math.round(
+    (new Date(todayKey(new Date(until))).getTime() - new Date(todayKey(now)).getTime()) /
+      86_400_000,
+  );
+  const time = formatTime(until);
+  if (days <= 0) return `jusqu'à ${time}`;
+  return days === 1 ? `jusqu'à demain ${time}` : `jusqu'au ${formatDay(until)} ${time}`;
+}
+
+/** Why account creation is paused for everyone, and how the office reopens it. */
+export function pauseText(
+  pause: { reason: "wrong_codes" | "accounts"; until: string },
+  now = new Date(),
+): { title: string; text: string } {
+  return {
+    title: `En pause ${untilText(pause.until, now)}`,
+    text:
+      pause.reason === "wrong_codes"
+        ? "Trop de codes erronés ont été essayés aujourd'hui. Changez le code pour rouvrir tout de suite\u00a0: l'ancien cessera de fonctionner."
+        : "Le nombre de comptes permis par jour est atteint. Changez le code pour rouvrir tout de suite\u00a0: l'ancien cessera de fonctionner.",
+  };
 }
 
 /** "Accès jusqu'au jeudi 26 novembre": when the device of someone not confirmed is signed out. */
@@ -184,9 +262,16 @@ export function matchesPerson(
 
 // --- Signing out ------------------------------------------------------------
 
+/**
+ * Why the last active office account is not offered deletion, and what to do
+ * instead (the server's deletionRefusal says the same if asked anyway).
+ */
+export const LAST_OFFICE_TEXT =
+  "Vous êtes la seule personne active au bureau\u00a0: votre compte ne peut pas être supprimé. Donnez d'abord l'accès du bureau à une autre personne (Équipe), puis revenez ici.";
+
 /** Why signing out did not happen: the person is still signed in on this device. */
 export function signOutFailure(error: unknown): string {
   return error instanceof ApiFailure && error.offline
-    ? "Pas de réseau : vous êtes encore connecté sur cet appareil. Réessayez quand la connexion revient."
+    ? "Pas de réseau\u00a0: vous êtes encore connecté sur cet appareil. Réessayez quand la connexion revient."
     : `${errorMessage(error)} Vous êtes encore connecté sur cet appareil.`;
 }

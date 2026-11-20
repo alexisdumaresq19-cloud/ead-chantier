@@ -17,7 +17,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "wouter";
 
 import type { ProjectDetail, ProjectSummary } from "@/shared/api";
@@ -29,7 +29,7 @@ import { useAssistant } from "../../lib/assistant";
 import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
 import { projectsOpenedAt, recentSheetIds } from "../../lib/recents";
-import { useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
+import { keys, useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
 import { planPaths, usePlans, warmSheet } from "../plans/data";
 import { TakePhotoButton } from "../photos/take";
 import { PlanThumb } from "../plans/parts";
@@ -94,22 +94,19 @@ export function ProjectsScreen() {
           const sorted = lastOpenedFirst(all);
           const active = sorted.filter((project) => project.status === "actif");
           const archived = sorted.filter((project) => project.status === "archive");
+          // Someone the office has not put on a site yet, confirmed or not.
+          if (all.length === 0 && !admin)
+            return <WelcomeAboard name={me.name} confirmed={!me.unreviewed} />;
           if (all.length === 0) {
             return (
               <EmptyState
                 icon={LayoutGrid}
                 title="Aucun projet pour l'instant"
-                text={
-                  admin
-                    ? "Créez votre premier projet, puis ajoutez-y les plans."
-                    : "Votre contremaître ou le bureau doit vous ajouter à un projet. Au chantier, scannez son code QR."
-                }
+                text="Créez votre premier projet, puis ajoutez-y les plans."
                 action={
-                  admin ? (
-                    <ButtonLink href="/projets/nouveau" size="lg">
-                      <Plus aria-hidden /> Créer un projet
-                    </ButtonLink>
-                  ) : undefined
+                  <ButtonLink href="/projets/nouveau" size="lg">
+                    <Plus aria-hidden /> Créer un projet
+                  </ButtonLink>
                 }
               />
             );
@@ -136,7 +133,7 @@ export function ProjectsScreen() {
               ) : (
                 <p className="text-dim py-10 text-center">
                   {search
-                    ? `Aucun projet ne correspond à « ${search} ».`
+                    ? `Aucun projet ne correspond à «\u00a0${search}\u00a0».`
                     : "Aucun projet en cours."}
                 </p>
               )}
@@ -170,6 +167,80 @@ export function ProjectsScreen() {
         }}
       </QueryState>
     </Page>
+  );
+}
+
+/** How often the list is asked again while a newcomer waits for their sites. */
+const WAITING_REFRESH_MS = 30_000;
+
+/**
+ * The list of someone on no project yet: a welcome, what happens next, and
+ * the list asking again on its own until the sites appear (also as soon as
+ * the app comes back to the front). The office may confirm the person before
+ * it adds their sites: the wait goes on, with one step done.
+ */
+function WelcomeAboard({ name, confirmed }: { name: string; confirmed: boolean }) {
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    // The person is asked again too: once confirmed, the steps say so.
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void queryClient.invalidateQueries({ queryKey: keys.projects, exact: true });
+      void queryClient.invalidateQueries({ queryKey: keys.me, exact: true });
+    }, WAITING_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [queryClient]);
+  const first = name.trim().split(/\s+/)[0];
+  const steps: { icon: LucideIcon; title: string; text: string; done?: boolean }[] = [
+    {
+      icon: CircleCheck,
+      title: confirmed ? "Votre compte est confirmé" : "Votre compte est créé",
+      text: "Vous êtes connecté sur cet appareil.",
+      done: true,
+    },
+    {
+      icon: Users,
+      title: "Le bureau vous ajoute à vos chantiers",
+      text: confirmed
+        ? "Ou votre contremaître, au chantier."
+        : "Il confirme aussi votre compte, d'ici 7\u00a0jours. Sans confirmation, l'accès prend fin.",
+    },
+    {
+      icon: LayoutGrid,
+      title: "Vos chantiers s'affichent ici",
+      text: "D'eux-mêmes, avec leurs plans, leurs documents et leurs photos.",
+    },
+  ];
+  return (
+    <div className="border-line bg-surface max-w-xl rounded-2xl border p-5 shadow-xs sm:p-7">
+      <h2 className="font-display text-2xl leading-tight font-bold tracking-tight">
+        Bienvenue, {first}!
+      </h2>
+      <p className="text-dim mt-1.5 text-[15px] text-pretty">
+        Il ne reste plus qu&apos;à attendre le bureau. Rien d&apos;autre à faire de votre côté.
+      </p>
+      <ol className="mt-6 space-y-5">
+        {steps.map(({ icon: Icon, title, text, done }) => (
+          <li key={title} className="flex gap-3.5">
+            <span
+              className={cn(
+                "flex size-11 shrink-0 items-center justify-center rounded-xl",
+                done ? "bg-good-tint text-good" : "bg-ead-tint text-ead-dark",
+              )}
+            >
+              <Icon className="size-6" aria-hidden />
+            </span>
+            <div className="min-w-0 pt-0.5">
+              <p className="font-semibold">{title}</p>
+              <p className="text-dim mt-0.5 text-sm text-pretty">{text}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <p className="border-line text-dim mt-6 border-t pt-4 text-sm text-pretty">
+        Au chantier, vous pouvez aussi scanner le code QR de votre contremaître.
+      </p>
+    </div>
   );
 }
 

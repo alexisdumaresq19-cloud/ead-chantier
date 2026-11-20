@@ -53,3 +53,20 @@ export async function call<T = any>( // eslint-disable-line @typescript-eslint/n
   const body = await response.json().catch(() => null);
   return { status: response.status(), body, headers: response.headers() };
 }
+
+/**
+ * A clean device (nobody signed in) on a network address of its own: the
+ * door of account creation counts tries per address, and a test must not
+ * spend another's.
+ */
+export function deviceAt(
+  browser: Browser,
+  address: string,
+  options: Parameters<Browser["newContext"]>[0] = {},
+) {
+  return browser.newContext({
+    ...options,
+    baseURL: seed.base,
+    extraHTTPHeaders: { ...options.extraHTTPHeaders, "x-forwarded-for": address },
+  });
+}

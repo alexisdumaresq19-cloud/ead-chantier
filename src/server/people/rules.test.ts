@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  deletionRefusal,
   looksLikeEmail,
   newPerson,
   officeLockout,
@@ -155,5 +156,16 @@ describe("reviewRefusal", () => {
       status: 409,
       message: "Cette personne est déjà confirmée.",
     });
+  });
+});
+
+describe("deletionRefusal", () => {
+  it("lets anyone but the last active office account go", () => {
+    expect(deletionRefusal({ role: "travailleur", active: true }, 0)).toBeNull();
+    expect(deletionRefusal({ role: "contremaitre", active: true }, 0)).toBeNull();
+    expect(deletionRefusal({ role: "admin", active: true }, 1)).toBeNull();
+    expect(deletionRefusal({ role: "admin", active: true }, 0)).toMatch(
+      /seule personne active au bureau/,
+    );
   });
 });
