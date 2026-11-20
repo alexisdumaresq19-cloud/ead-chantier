@@ -2,75 +2,80 @@
 
 Tout ce qu'il faut coller ou téléverser dans App Store Connect (appstoreconnect.apple.com) pour l'application iPhone «&nbsp;EAD&nbsp;», dans l'ordre où les écrans se présentent.
 
-| Fichier                  | Ce qu'il contient                                                       |
-| ------------------------ | ----------------------------------------------------------------------- |
-| `listing.fr-CA.md`       | Les textes de la fiche, en français, prêts à coller, avec leur longueur |
-| `screenshots/6.9/`       | Les 6 captures d'écran pour iPhone 6,9 po (1320 × 2868)                 |
-| `screenshots/6.3/`       | Les mêmes captures pour iPhone 6,3 po (1206 × 2622)                     |
-| `review-notes.en.md`     | Les informations pour la personne d'Apple qui vérifie l'app, en anglais |
-| `unlisted-request.en.md` | Les réponses au formulaire de distribution non répertoriée, en anglais  |
-| `sample-photos/`         | Les photos de chantier des captures, avec leurs sources                 |
+| Fichier                  | Ce qu'il contient                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------- |
+| `listing.fr-CA.md`       | Les textes de la fiche, en français, prêts à coller, avec leur longueur             |
+| `screenshots/6.3/`       | Les 6 captures d'écran pour iPhone 6,3 po (1206 × 2622), la taille qu'Apple exige   |
+| `screenshots/6.9/`       | Les mêmes captures pour iPhone 6,9 po (1320 × 2868), en plus si la page les accepte |
+| `review-notes.en.md`     | Les informations pour la personne d'Apple qui vérifie l'app, en anglais             |
+| `unlisted-request.en.md` | Les réponses au formulaire de distribution non répertoriée, en anglais              |
+| `sample-photos/`         | Les photos de chantier des captures, avec leurs sources                             |
+
+Les libellés d'App Store Connect sont donnés en français, avec l'anglais entre parenthèses&nbsp;: Apple ne publie pas d'aide en français pour App Store Connect, et la page peut s'afficher dans l'une ou l'autre langue.
 
 ## Avant de commencer
 
-- L'app pour iPhone seulement&nbsp;: dans Xcode, la cible «&nbsp;App&nbsp;» doit viser l'iPhone seul (Targeted Device Family = iPhone). Si elle accepte aussi l'iPad, App Store Connect exige des captures pour iPad, qui n'existent pas, et il faut envoyer un nouveau build. Vérifiez-le avant l'archive.
-- Les phrases d'autorisation&nbsp;: dans le fichier Info.plist de l'app, il faut une phrase pour la caméra et une pour le microphone (par exemple «&nbsp;Pour prendre les photos du chantier.&nbsp;» et «&nbsp;Pour dicter le rapport journalier.&nbsp;»). Sans elles, l'app se ferme dès qu'on prend une photo ou qu'on dicte, et Apple la refuse. Vérifiez-les avant l'archive.
-- Le chiffrement&nbsp;: Info.plist dit aussi que l'app n'utilise pas d'autre chiffrement que celui d'iOS (clé ITSAppUsesNonExemptEncryption à NO). Alors App Store Connect ne pose pas la question à chaque build.
+Le projet règle déjà ce que l'app doit déclarer à Apple&nbsp;: l'iPhone seul, sans iPad (`TARGETED_DEVICE_FAMILY = 1` dans `ios/App/App.xcodeproj/project.pbxproj`), les phrases qui demandent l'appareil photo, le micro et l'ajout aux photos, et la déclaration que l'app n'utilise que le chiffrement d'iOS (`ITSAppUsesNonExemptEncryption`)&nbsp;; ces deux derniers points sont dans `ios/App/App/Info.plist`. Rien à vérifier de ce côté.
+
 - Le compte de démonstration&nbsp;: dans l'application, connecté comme bureau, ouvrez **Équipe**, carte **Compte de démonstration**. Créez-le et choisissez les projets qu'il voit. Choisissez un projet qui peut être montré à Apple, avec des plans, des photos et au moins un rapport. Le compte doit en être le **contremaître**&nbsp;: les rapports et la dictée sont réservés aux contremaîtres et au bureau, et Apple doit pouvoir essayer le microphone. Connectez-vous une fois avec ce compte sur un téléphone et vérifiez que l'onglet **Rapports** et «&nbsp;Dicter le rapport du jour&nbsp;» paraissent. Notez le numéro de cellulaire et le code affichés&nbsp;: ce sont l'identifiant et le mot de passe à donner à Apple. <!-- verify at integration: the demo account's role on its projects -->
-- Le build&nbsp;: l'app doit avoir été envoyée depuis Xcode (Product, puis Archive, puis Distribute App). Elle apparaît dans App Store Connect après quelques minutes.
+- Le build&nbsp;: Claude Code l'envoie avec `scripts/ios-release.sh` (guide `docs/ios/MAC.md`, étape 4.7). Il paraît dans l'onglet **TestFlight** quand Apple a fini de le traiter, et un courriel d'Apple le signale.
 - Les pages d'aide et de confidentialité (https://ead-chantier.vercel.app/soutien et /confidentialite) doivent s'ouvrir&nbsp;: Apple les visite.
 
 ## 1. Créer l'app
 
-**Apps**, bouton **+**, **Nouvelle app**.
+Déjà fait à l'étape 4.6, point 3, du guide `docs/ios/MAC.md`&nbsp;: si l'app EAD est dans **Apps**, passez à l'étape 2. Pour mémoire, les valeurs données à **Apps**, bouton **+**, **Nouvelle app** (New App)&nbsp;:
 
-- Plateforme&nbsp;: iOS
-- Nom&nbsp;: `listing.fr-CA.md`, section «&nbsp;Nom de l'app&nbsp;» (et les deux noms de rechange si «&nbsp;EAD&nbsp;» est pris)
-- Langue principale&nbsp;: Français (Canada)
+- Plateforme (Platforms)&nbsp;: **iOS**
+- Nom (Name)&nbsp;: `EAD`
+- Langue principale (Primary Language)&nbsp;: **Français (Canada)**
 - Identifiant de lot (Bundle ID)&nbsp;: `ca.allendumaresq.ead`
-- UGS (SKU)&nbsp;: un code à usage interne, par exemple `EAD-IPHONE`
-- Accès des utilisateurs&nbsp;: Accès complet
+- SKU&nbsp;: `ead-ios`
+- Accès des utilisateurs (User Access)&nbsp;: **Accès complet** (Full Access)
+
+Si «&nbsp;EAD&nbsp;» était pris, la fiche porte un des noms de rechange de `listing.fr-CA.md`, section «&nbsp;Nom de l'app&nbsp;». Le SKU ne peut plus changer une fois l'app créée.
 
 ## 2. Informations sur l'app
 
-Menu de gauche, **Informations sur l'app**.
+Menu de gauche, **Informations sur l'app** (App Information).
 
-- Sous-titre&nbsp;: `listing.fr-CA.md`, «&nbsp;Sous-titre&nbsp;»
-- Catégories&nbsp;: `listing.fr-CA.md`, «&nbsp;Catégories&nbsp;»
-- Droits sur le contenu&nbsp;: l'app ne montre aucun contenu d'un tiers. Répondez non.
-- Cote d'âge&nbsp;: bouton **Définir** ou **Modifier**, puis les réponses de `listing.fr-CA.md`, «&nbsp;Cote d'âge&nbsp;». Le résultat doit être 4+.
+- Sous-titre (Subtitle)&nbsp;: `listing.fr-CA.md`, «&nbsp;Sous-titre&nbsp;»
+- Catégories (Category)&nbsp;: `listing.fr-CA.md`, «&nbsp;Catégories&nbsp;»
+- Droits sur le contenu (Content Rights)&nbsp;: l'app ne montre aucun contenu d'un tiers. Répondez non.
+- Cote d'âge (Age Ratings)&nbsp;: bouton **Set Up Age Ratings** (Définir la cote d'âge), ou **Edit** (Modifier) en haut de la page s'il a déjà été rempli, puis les réponses de `listing.fr-CA.md`, «&nbsp;Cote d'âge&nbsp;». Le résultat doit être 4+.
 
 ## 3. Confidentialité de l'app
 
-Menu de gauche, **Confidentialité de l'app**.
+Menu de gauche, **Confidentialité de l'app** (App Privacy).
 
-- URL de la politique de confidentialité&nbsp;: `listing.fr-CA.md`, «&nbsp;Adresses&nbsp;»
-- Questionnaire sur les données (**Commencer**)&nbsp;: `listing.fr-CA.md`, «&nbsp;Confidentialité de l'app&nbsp;». Publiez les réponses à la fin.
+- URL de la politique de confidentialité (Privacy Policy URL)&nbsp;: `listing.fr-CA.md`, «&nbsp;Adresses&nbsp;»
+- Questionnaire sur les données (**Commencer**, Get Started)&nbsp;: `listing.fr-CA.md`, «&nbsp;Confidentialité de l'app&nbsp;». Publiez les réponses à la fin (**Publier**, Publish).
 
 ## 4. Tarifs et disponibilité
 
-- Prix&nbsp;: gratuit
-- Disponibilité&nbsp;: au moins le Canada
-- Distribution&nbsp;: laissez «&nbsp;Publique&nbsp;». Quand Apple accepte la demande de distribution non répertoriée (étape 6), il change lui-même ce choix pour **App non répertoriée** (Unlisted App)&nbsp;: l'app ne paraît alors dans aucune recherche ni liste, et seul le lien direct permet de l'installer. Ce choix vaut aussi pour les versions suivantes.
+Menu de gauche, **Tarifs et disponibilité** (Pricing and Availability).
+
+- Prix (Price)&nbsp;: gratuit
+- Disponibilité (Availability)&nbsp;: au moins le Canada
+- Distribution (App Distribution Methods)&nbsp;: laissez «&nbsp;Publique&nbsp;» (Public). Quand Apple accepte la demande de distribution non répertoriée (étape 6), il change lui-même ce choix pour **App non répertoriée** (Unlisted App)&nbsp;: l'app ne paraît alors dans aucune recherche ni liste, et seul le lien direct permet de l'installer. Ce choix vaut aussi pour les versions suivantes.
 
 ## 5. La version 1.0
 
-Menu de gauche, **App iOS**, version **1.0**.
+Menu de gauche, **App iOS** (iOS App), version **1.0**.
 
-- Aperçus et captures d'écran, **iPhone 6,9 po**&nbsp;: glissez les fichiers de `screenshots/6.9/` dans l'ordre de leur numéro (1 à 6). Apple les réduit lui-même pour les autres iPhone. Si la page offre aussi la taille 6,3 po, glissez ceux de `screenshots/6.3/`.
-- Texte promotionnel, Description, Mots-clés&nbsp;: `listing.fr-CA.md`, sections du même nom
-- URL d'assistance&nbsp;: `listing.fr-CA.md`, «&nbsp;Adresses&nbsp;» (l'URL marketing reste vide)
-- Droits d'auteur&nbsp;: `listing.fr-CA.md`, «&nbsp;Droits d'auteur&nbsp;»
-- Nouveautés&nbsp;: `listing.fr-CA.md`, «&nbsp;Nouveautés&nbsp;», si le champ est affiché
-- Build&nbsp;: bouton **+** à côté de «&nbsp;Build&nbsp;», choisissez celui envoyé depuis Xcode. Si App Store Connect pose des questions sur le chiffrement&nbsp;: l'app n'utilise que le chiffrement standard d'iOS (HTTPS). Choisissez la réponse qui dit qu'elle n'utilise aucun des algorithmes nommés («&nbsp;None of the algorithms mentioned above&nbsp;» en anglais).
-- Informations pour la vérification de l'app&nbsp;: `review-notes.en.md`. Cochez «&nbsp;Connexion requise&nbsp;», puis le numéro de cellulaire du compte de démonstration comme nom d'utilisateur et son code comme mot de passe. Vos coordonnées. Les notes&nbsp;: tout le texte de la section «&nbsp;Notes&nbsp;».
-- Publication de la version&nbsp;: «&nbsp;Publier manuellement cette version&nbsp;». Ne la publiez qu'une fois la demande de l'étape 6 acceptée&nbsp;: sinon l'app paraîtrait d'abord à tout le monde dans l'App Store.
+- Aperçus et captures d'écran (Previews and Screenshots)&nbsp;: glissez d'abord les 6 fichiers de `screenshots/6.3/` dans la case de l'iPhone 6,3 po (iPhone with Dynamic Island, medium display), dans l'ordre de leur numéro (1 à 6)&nbsp;: c'est la taille qu'Apple exige. Si la page offre aussi la case 6,9 po (large display), glissez-y ceux de `screenshots/6.9/`. À partir d'avril 2027, Apple exige aussi des captures iPhone Duo (1398 × 2034 et 2007 × 2853) pour une app compilée avec le SDK d'iOS 27.1 ou plus récent (Xcode 27.1 et suivants)&nbsp;: si la soumission a lieu après cette date et que la page les demande, demandez-les à Claude Code.
+- Texte promotionnel (Promotional Text), Description, Mots-clés (Keywords)&nbsp;: `listing.fr-CA.md`, sections du même nom
+- URL d'assistance (Support URL)&nbsp;: `listing.fr-CA.md`, «&nbsp;Adresses&nbsp;» (l'URL marketing reste vide)
+- Droits d'auteur (Copyright)&nbsp;: `listing.fr-CA.md`, «&nbsp;Droits d'auteur&nbsp;»
+- Nouveautés (What's New in This Version)&nbsp;: ce champ n'existe pas pour la première version&nbsp;; le texte de `listing.fr-CA.md` sert à la suivante.
+- Build&nbsp;: bouton **+** à côté de «&nbsp;Build&nbsp;», choisissez celui envoyé par `scripts/ios-release.sh` (son numéro est la date et l'heure, par exemple `20261120.1945`). Si App Store Connect ne le propose pas parce que la version de la fiche (1.0) n'est pas celle du build (1.0.0), écrivez `1.0.0` dans le champ de version en haut de la page, puis recommencez. Si App Store Connect pose des questions sur le chiffrement&nbsp;: l'app n'utilise que le chiffrement standard d'iOS (HTTPS). Choisissez la réponse qui dit qu'elle n'utilise aucun des algorithmes nommés («&nbsp;None of the algorithms mentioned above&nbsp;»).
+- Informations pour la vérification de l'app (App Review Information)&nbsp;: `review-notes.en.md`. Cochez «&nbsp;Connexion requise&nbsp;» (Sign-in required), puis le numéro de cellulaire du compte de démonstration comme nom d'utilisateur (User name) et son code comme mot de passe (Password). Vos coordonnées (Contact Information), le téléphone au format international avec le +. Les notes (Notes)&nbsp;: tout le texte de la section «&nbsp;Notes&nbsp;».
+- Publication de la version (Version Release)&nbsp;: «&nbsp;Publier manuellement cette version&nbsp;» (Manually release this version). Ne la publiez qu'une fois la demande de l'étape 6 acceptée&nbsp;: sinon l'app paraîtrait d'abord à tout le monde dans l'App Store.
 
-Puis **Ajouter pour vérification**, et **Soumettre à la vérification de l'app**.
+Puis **Ajouter pour vérification** (Add for Review), et **Soumettre pour vérification** (Submit for Review) dans le panneau qui s'ouvre (Draft Submissions).
 
 ## 6. La demande de distribution non répertoriée
 
-Une fois la version 1.0 soumise (étape 5)&nbsp;: Apple refuse la demande d'une app qui n'a pas encore été soumise à la vérification. Formulaire&nbsp;: developer.apple.com/contact/request/unlisted-app/ (expliqué à developer.apple.com/support/unlisted-app-distribution), connecté comme titulaire du compte. Le formulaire demande le numéro Apple de l'app (App Store Connect, **Informations sur l'app**, «&nbsp;Identifiant Apple&nbsp;»). Les réponses sont dans `unlisted-request.en.md`&nbsp;; remplacez le nombre d'employés et les coordonnées entre crochets. Les notes pour Apple (`review-notes.en.md`) disent déjà que l'app sera non répertoriée, comme Apple le demande.
+Une fois la version 1.0 soumise (étape 5)&nbsp;: Apple refuse la demande d'une app qui n'a pas encore été soumise à la vérification. Formulaire&nbsp;: developer.apple.com/contact/request/unlisted-app/ (expliqué à developer.apple.com/support/unlisted-app-distribution), connecté comme titulaire du compte. Le formulaire demande le numéro Apple de l'app (App Store Connect, **Informations sur l'app**, «&nbsp;Identifiant Apple&nbsp;», Apple ID). Les réponses sont dans `unlisted-request.en.md`&nbsp;; remplacez ce qui est entre chevrons (`<…>`)&nbsp;: le nombre d'employés, les coordonnées et l'identifiant Apple de l'app. Les notes pour Apple (`review-notes.en.md`) disent déjà que l'app sera non répertoriée, comme Apple le demande.
 
 ## Refaire les captures d'écran
 

@@ -32,6 +32,10 @@
   <body>
     <img src="__EAD_LOGO__" width="752" height="560" alt="Les Entreprises Allen Dumaresq" />
     <script>
+      // This page draws the same logo as the launch screen: it can go.
+      try {
+        window.Capacitor?.nativePromise?.("SplashScreen", "hide", {}).catch(() => {});
+      } catch {}
       location.replace("__EAD_SITE__/");
     </script>
   </body>

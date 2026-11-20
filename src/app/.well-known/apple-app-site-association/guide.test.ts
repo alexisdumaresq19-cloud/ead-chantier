@@ -77,4 +77,26 @@ describe("the guide for the Mac", () => {
       expect(shot[1]).toMatch(/^ios\/App\/build\//);
     }
   });
+
+  it("gives the app record the same values as the App Store sheet", () => {
+    const store = read("store/README.md");
+    const section = store.slice(store.indexOf("## 1. "), store.indexOf("## 2. "));
+    const values = [...section.matchAll(/^- (.+)$/gm)].map((m) => m[1]);
+    expect(values.length).toBeGreaterThan(5);
+    const record = step("4.6");
+    for (const value of values) expect(record).toContain(`   - ${value}\n`);
+    const skus = [store, guide].flatMap((text) =>
+      [...text.matchAll(/SKU&nbsp;: `([^`]+)`/g)].map((m) => m[1]),
+    );
+    expect(new Set(skus)).toEqual(new Set(["ead-ios"]));
+  });
+
+  it("says how long the launch logo can stay, and the shell's pages hide it", () => {
+    const config = read("capacitor.config.ts");
+    const ms = Number(/launchShowDuration: (\d+),/.exec(config)![1]);
+    expect(read("docs/ios/README.md")).toContain(`at most ${ms / 1000} seconds`);
+    for (const page of ["ios-shell/index.html", "ios-shell/offline.html"]) {
+      expect(read(page), page).toContain('nativePromise?.("SplashScreen", "hide"');
+    }
+  });
 });

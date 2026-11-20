@@ -14,11 +14,11 @@ The owner reads both in the app, signed in as the office: **Équipe** (the team 
 
 ## Contact information
 
-- First name, last name, phone number, email: the person at EAD who answers Apple during the review (filled in by the owner; never committed here).
+- First name, last name, phone number, email: the person at EAD who answers Apple during the review (filled in by the owner; never committed here). The phone number goes in international format with the plus sign, for example +1 418 …; the field does not take digits alone.
 
 ## Notes
 
-Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,715 characters of the 4,000 allowed, comments excluded; recount after any change).
+Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,722 bytes of the 4,000 bytes allowed, comments excluded; recount after any change).
 
 EAD is the private field app of Les Entreprises Allen Dumaresq, a civil-engineering contractor in Quebec, Canada. The office, the foremen and the site workers of the company use it to open construction plans on site, read project documents, take site photos and write daily reports. The interface is in Canadian French only.
 
