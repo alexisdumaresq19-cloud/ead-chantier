@@ -10,9 +10,9 @@ export const GET = route(async (request) => {
   if (!user) throw unauthorized();
   const me: Me = { id: user.id, name: user.name, role: user.role, title: user.title };
   const response = NextResponse.json(me);
-  // Each visit pushes the cookie's end date back, so a device in regular use
-  // never has to sign in again.
+  // The cookie follows the session: pushed back with it on a device in
+  // regular use, never beyond it (a QR-code session keeps its few days).
   const token = request.cookies.get(SESSION_COOKIE)?.value;
-  if (token) setSessionCookie(response, token, new Date(Date.now() + 400 * 86_400_000));
+  if (token) setSessionCookie(response, token, user.sessionExpiresAt);
   return response;
 });

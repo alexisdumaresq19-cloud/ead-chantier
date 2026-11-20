@@ -5,7 +5,7 @@ import { Redirect, useParams } from "wouter";
 
 import type { InvitePreview } from "@/shared/api";
 
-import { api, errorMessage } from "../../lib/api";
+import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { enterApp, signOut, useMe } from "../../lib/session";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
@@ -180,14 +180,31 @@ export function InviteScreen() {
     );
   }
   if (invite.isError) {
+    const failure = invite.error instanceof ApiFailure ? invite.error : null;
+    // A link the server refused stays refused: trying again is only offered
+    // when the answer did not come (no network, a server error).
+    const dead = failure !== null && failure.status === 410;
+    const title = failure?.offline
+      ? "Pas de réseau"
+      : failure?.code === "invite_full"
+        ? "Ce code QR est complet"
+        : dead
+          ? "Ce lien ne fonctionne plus"
+          : "Ce lien n'a pas pu s'ouvrir";
     return (
       <PublicLayout>
-        <Heading title="Ce lien ne fonctionne plus">{errorMessage(invite.error)}</Heading>
+        <Heading title={title}>
+          {failure?.offline
+            ? "Ce lien a besoin du réseau pour s'ouvrir. Réessayez quand la connexion revient."
+            : errorMessage(invite.error)}
+        </Heading>
         <div className="mt-6 flex flex-col gap-2">
-          <Button variant="secondary" block onClick={() => invite.refetch()}>
-            Réessayer
-          </Button>
-          <ButtonLink href="/" variant="ghost" block>
+          {dead ? null : (
+            <Button size="lg" block loading={invite.isFetching} onClick={() => invite.refetch()}>
+              Réessayer
+            </Button>
+          )}
+          <ButtonLink href="/" variant={dead ? "primary" : "ghost"} size="lg" block>
             Ouvrir l&apos;application
           </ButtonLink>
         </div>

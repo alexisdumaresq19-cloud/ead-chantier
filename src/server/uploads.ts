@@ -22,7 +22,8 @@ import {
 // compared what storage holds with the announcement. The link writes once:
 // what was compared cannot be replaced afterwards. And because an announced
 // file may never be sent, confirmed or even wanted, each person has a small
-// allowance of unfinished uploads, and those left unfinished are removed.
+// allowance of unfinished uploads and a daily one per kind, and the uploads
+// nobody can use any more are removed (sweepAbandonedUploads).
 //
 // A link cannot be taken back, and it writes again once the file it wrote is
 // deleted. So an upload's file ("u/<id>/…") is deleted only here, by code
@@ -109,19 +110,27 @@ export const BUCKET_RULES: BucketRules = {
 
 /**
  * How many unfinished uploads one person may have at a time, and how much
- * they may announce in all. A phone sending the photos of a day in a row
- * stays far below; a script announcing files without end stops here.
+ * they may announce in all: those whose link can still write (see
+ * ABANDONED_AFTER). A phone sending the photos of a day in a row stays far
+ * below; a script announcing files without end stops here.
  */
 export const MAX_PENDING_UPLOADS = 30;
 export const MAX_PENDING_BYTES = 2048 * MB;
+
 /**
- * What one person may send in any 24 hours, finished or not (the office
- * excepted, which loads whole projects). Confirmed files stay in storage, so
- * without this the allowance above would only slow a script down. Chosen to
- * be out of reach of a day's work: a foreman's plans, a few hundred photos.
+ * What one person may announce in any 24 hours, per kind, whatever became of
+ * it: confirmed files stay in storage, so the allowance above alone would
+ * only slow a script down. Each is several times a heavy day's work.
  */
-export const MAX_DAILY_UPLOADS = 500;
-export const MAX_DAILY_BYTES = 5 * 1024 * MB;
+export const DAILY_LIMITS: Record<UploadKind, { count: number; bytes: number }> = {
+  // A busy site takes a few dozen photos a day, a few MB each.
+  photo: { count: 300, bytes: 3 * 1024 * MB },
+  // Documents arrive a few at a time: a contract, a set of specifications.
+  document: { count: 100, bytes: 4 * 1024 * MB },
+  // A plan set is a handful of large PDFs, sent again at each revision.
+  plan: { count: 30, bytes: 6 * 1024 * MB },
+};
+
 /** How long an upload link works: fixed by Supabase, and the development folder follows. */
 const LINK_LIFETIME = 2 * HOUR;
 /**
@@ -132,7 +141,12 @@ const LINK_LIFETIME = 2 * HOUR;
  * against its sender, and the clean-up removes its file and its row.
  */
 const ABANDONED_AFTER = LINK_LIFETIME + HOUR;
-/** Abandoned uploads removed per request, so that no request pays for a long clean-up. */
+/**
+ * When a confirmed upload that nothing has used is removed: a day leaves a
+ * phone that lost its signal after sending the time to come back and use it.
+ */
+const UNUSED_AFTER = 24 * HOUR;
+/** Uploads removed per request, so that no request pays for a long clean-up. */
 const SWEEP_BATCH = 10;
 
 const seconds = (duration: number) => Math.round(duration / 1000);
@@ -149,12 +163,14 @@ export function exceedsAllowance(pending: Usage, size: number): boolean {
   return pending.count >= MAX_PENDING_UPLOADS || pending.bytes + size > MAX_PENDING_BYTES;
 }
 
-/** Whether one more upload of this size would exceed what a person may send in a day. */
-export function exceedsDailyAllowance(day: Usage, size: number): boolean {
-  return day.count >= MAX_DAILY_UPLOADS || day.bytes + size > MAX_DAILY_BYTES;
+/** Whether one more upload of this kind and size would exceed what a person may send in a day. */
+export function exceedsDailyAllowance(kind: UploadKind, day: Usage, size: number): boolean {
+  const limit = DAILY_LIMITS[kind];
+  return day.count >= limit.count || day.bytes + size > limit.bytes;
 }
 
-const tooMany = (code: string, message: string) => new HttpError(429, code, message);
+/** The one refusal of the allowance: the app waits instead of trying again in a loop. */
+const tooMany = (message: string) => new HttpError(429, "too_many_uploads", message);
 
 type Announcement = {
   projectId: string;
@@ -196,27 +212,28 @@ export async function beginUpload(
       raw`select pg_advisory_xact_lock(hashtext('ead:uploads'), hashtext(${user.id}))`,
     );
     const live = raw`${schema.uploads.status} = 'pending' and ${newerThan(ABANDONED_AFTER)}`;
+    const sameKind = raw`${schema.uploads.kind} = ${input.kind}`;
     const [used] = await tx
       .select({
         pending: raw<number>`(count(*) filter (where ${live}))::int`,
         pendingBytes: raw<number>`coalesce(sum(${schema.uploads.size}) filter (where ${live}), 0)::float8`,
-        day: raw<number>`count(*)::int`,
-        dayBytes: raw<number>`coalesce(sum(${schema.uploads.size}), 0)::float8`,
+        day: raw<number>`(count(*) filter (where ${sameKind}))::int`,
+        dayBytes: raw<number>`coalesce(sum(${schema.uploads.size}) filter (where ${sameKind}), 0)::float8`,
       })
       .from(schema.uploads)
       .where(and(eq(schema.uploads.createdBy, user.id), newerThan(24 * HOUR)));
     if (exceedsAllowance({ count: used.pending, bytes: used.pendingBytes }, input.size))
       throw tooMany(
-        "too_many_uploads",
         "Trop d'envois n'ont pas abouti. Réessayez plus tard\u00a0: ils s'effacent après trois heures.",
       );
+    // The office is left out: it loads whole projects at once, and it is the
+    // one that lets people in, so the limit would protect nothing from it.
     if (
       user.role !== "admin" &&
-      exceedsDailyAllowance({ count: used.day, bytes: used.dayBytes }, input.size)
+      exceedsDailyAllowance(input.kind, { count: used.day, bytes: used.dayBytes }, input.size)
     )
       throw tooMany(
-        "daily_upload_limit",
-        "La limite d'envois pour une journée est atteinte. Réessayez demain, ou demandez au bureau de s'en charger.",
+        "Vous avez atteint la limite d'envois pour une journée. Réessayez demain, ou demandez au bureau.",
       );
     const [row] = await tx
       .insert(schema.uploads)
@@ -302,21 +319,6 @@ export function uploadProblem(
 const NOT_ARRIVED = "Le fichier n'est pas arrivé. Réessayez.";
 const TOO_LATE = "Cet envoi a trop tardé. Recommencez-le.";
 
-/** Marks an upload complete, unless it has been given up or finished meanwhile. */
-function markComplete(id: string, executor: Pick<typeof db, "update"> = db) {
-  return executor
-    .update(schema.uploads)
-    .set({ status: "complete" })
-    .where(
-      and(
-        eq(schema.uploads.id, id),
-        eq(schema.uploads.status, "pending"),
-        newerThan(ABANDONED_AFTER),
-      ),
-    )
-    .returning();
-}
-
 /**
  * Checks that the announced file, and nothing else, arrived, and marks the
  * upload complete. A file that differs in size or type is deleted from
@@ -324,57 +326,48 @@ function markComplete(id: string, executor: Pick<typeof db, "update"> = db) {
  * until the clean-up: the link cannot be taken back and can write again now
  * that the file is gone, so the row goes on counting against the sender and
  * the clean-up removes whatever the link has stored since.
+ *
+ * Confirmations of one upload take turns (the row is locked from the look at
+ * the row to the deletion or the update). Deleting frees the link to write
+ * again: a deletion decided on an earlier look could otherwise remove the
+ * right file, sent and confirmed in the meantime, and leave a confirmed
+ * upload whose link takes any file. A refusal is thrown once the transaction
+ * is over, so that what it removed stays removed.
  */
 export async function completeUpload(user: SessionUser, uploadId: string): Promise<Upload> {
-  const mine = and(eq(schema.uploads.id, uploadId), eq(schema.uploads.createdBy, user.id));
-  const [upload] = await db.select().from(schema.uploads).where(mine).limit(1);
-  if (!upload) throw notFound("Téléversement introuvable.");
-  if (upload.status === "complete") return upload;
-  const stored = await storage().stat("private", upload.storageKey);
-  if (!stored) throw badRequest(NOT_ARRIVED);
-  const problem = uploadProblem(upload, stored);
-  if (problem) {
-    const outcome = await removeWrongFile(upload.id, problem);
-    if (typeof outcome === "string") throw badRequest(outcome);
-    return outcome;
-  }
-  // The announced file is there, and stays: a link writes once, and a file
-  // is only deleted after a look that found it wrong (removeWrongFile).
-  const [done] = await markComplete(upload.id);
-  if (done) return done;
-  // Finished by another confirmation in the meantime, or given up.
-  const [now] = await db.select().from(schema.uploads).where(mine).limit(1);
-  if (now?.status === "complete") return now;
-  throw badRequest(TOO_LATE);
-}
-
-/**
- * Deletes a file that is not the announced one; returns the sentence for the
- * sender, or the upload if it turns out to be complete.
- *
- * Deleting frees the link to write again, so a deletion decided on an old
- * look could remove the right file, sent and confirmed since, and leave a
- * confirmed upload whose link is open. Confirmations of one upload therefore
- * take turns here (the row is locked), and each looks at storage again
- * before deleting anything. One that finds the row taken leaves the deleting
- * to the confirmation that holds it.
- */
-async function removeWrongFile(uploadId: string, seen: string): Promise<Upload | string> {
-  return db.transaction(async (tx) => {
-    const [upload] = await tx
-      .select()
+  const outcome = await db.transaction(async (tx): Promise<Upload | HttpError> => {
+    const [found] = await tx
+      .select({ upload: schema.uploads, late: raw<boolean>`${notNewerThan(ABANDONED_AFTER)}` })
       .from(schema.uploads)
-      .where(eq(schema.uploads.id, uploadId))
-      .for("update", { skipLocked: true });
-    if (!upload) return seen;
+      .where(and(eq(schema.uploads.id, uploadId), eq(schema.uploads.createdBy, user.id)))
+      .for("update");
+    if (!found) return notFound("Téléversement introuvable.");
+    const { upload, late } = found;
     if (upload.status === "complete") return upload;
+    if (late) {
+      // Its link is dead: nothing can arrive any more, so all of it goes.
+      await storage().removePrefix("private", `u/${upload.id}`);
+      await tx.delete(schema.uploads).where(eq(schema.uploads.id, upload.id));
+      return badRequest(TOO_LATE);
+    }
     const stored = await storage().stat("private", upload.storageKey);
-    if (!stored) return NOT_ARRIVED;
+    if (!stored) return badRequest(NOT_ARRIVED);
     const problem = uploadProblem(upload, stored);
-    if (!problem) return (await markComplete(upload.id, tx))[0] ?? TOO_LATE;
-    await storage().removePrefix("private", `u/${upload.id}`);
-    return problem;
+    if (problem) {
+      await storage().removePrefix("private", `u/${upload.id}`);
+      return badRequest(problem);
+    }
+    // The announced file is there, and stays: the link writes once, and only
+    // a confirmation holding this lock deletes a file it found wrong.
+    const [done] = await tx
+      .update(schema.uploads)
+      .set({ status: "complete" })
+      .where(eq(schema.uploads.id, upload.id))
+      .returning();
+    return done;
   });
+  if (outcome instanceof HttpError) throw outcome;
+  return outcome;
 }
 
 /**
@@ -411,36 +404,56 @@ export async function discardUpload(uploadId: string): Promise<void> {
 }
 
 /**
- * Removes uploads given up unfinished (see ABANDONED_AFTER): their files,
- * then their rows. Called on the way by beginUpload, a few at a time: the
- * caller's own first, then anyone's, in no fixed order so that one upload
- * storage refuses to delete does not hold up the others. Their links have
- * expired and completeUpload refuses them, so nothing can be using them.
+ * Uploads the clean-up removes, files and rows: those left unfinished past
+ * their time (see ABANDONED_AFTER), whose links have expired and which
+ * completeUpload refuses, and those confirmed more than a day ago that
+ * nothing refers to (no plan import, no document; a photo removes its own
+ * upload when it is made).
+ */
+const removable = () => raw`(
+  (${schema.uploads.status} = 'pending' and ${notNewerThan(ABANDONED_AFTER)})
+  or (${schema.uploads.status} = 'complete' and ${notNewerThan(UNUSED_AFTER)}
+    and not exists (select 1 from ${schema.planImports}
+      where ${schema.planImports.uploadId} = ${schema.uploads.id})
+    and not exists (select 1 from ${schema.documents}
+      where ${schema.documents.uploadId} = ${schema.uploads.id}))
+)`;
+
+/**
+ * Removes a few uploads nobody can use any more (see removable). Called on
+ * the way by beginUpload: the caller's own first, then anyone's, oldest
+ * first. Each is removed in its own transaction, row locked, so a module
+ * that is taking it meanwhile is never left without it, and one that storage
+ * refuses to delete is kept for later without stopping the others.
  */
 export async function sweepAbandonedUploads(first?: string): Promise<number> {
-  const abandoned = await db
+  const candidates = await db
     .select({ id: schema.uploads.id })
     .from(schema.uploads)
-    .where(and(eq(schema.uploads.status, "pending"), notNewerThan(ABANDONED_AFTER)))
-    .orderBy(raw`(${schema.uploads.createdBy} = ${first ?? ""}) desc nulls last`, raw`random()`)
+    .where(removable())
+    .orderBy(
+      raw`(${schema.uploads.createdBy} = ${first ?? ""}) desc nulls last`,
+      schema.uploads.createdAt,
+    )
     .limit(SWEEP_BATCH);
   let removed = 0;
-  for (const { id } of abandoned) {
+  for (const { id } of candidates) {
     try {
-      await storage().removePrefix("private", `u/${id}`);
-      const gone = await db
-        .delete(schema.uploads)
-        .where(
-          and(
-            eq(schema.uploads.id, id),
-            eq(schema.uploads.status, "pending"),
-            notNewerThan(ABANDONED_AFTER),
-          ),
-        )
-        .returning({ id: schema.uploads.id });
-      removed += gone.length;
+      removed += await db.transaction(async (tx) => {
+        // Looked at again under the lock; one being taken right now is skipped.
+        const [upload] = await tx
+          .select({ id: schema.uploads.id })
+          .from(schema.uploads)
+          .where(and(eq(schema.uploads.id, id), removable()))
+          .for("update", { skipLocked: true });
+        if (!upload) return 0;
+        // The file first: if storage refuses, the row stays to try again.
+        await storage().removePrefix("private", `u/${id}`);
+        await tx.delete(schema.uploads).where(eq(schema.uploads.id, id));
+        return 1;
+      });
     } catch (error) {
-      console.error(`uploads: could not remove the abandoned upload ${id}`, error);
+      console.error(`uploads: could not remove the upload ${id}`, error);
     }
   }
   return removed;
