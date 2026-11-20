@@ -21,8 +21,8 @@ describe("the plugins' check", () => {
     expect(await askPlugins()).toEqual([
       { name: "App", state: "answers", detail: "1.0 (7)" },
       { name: "Share", state: "answers", detail: "partage possible" },
-      { name: "Filesystem", state: "answers", detail: "granted" },
-      { name: "FileViewer", state: "answers", detail: "OS-PLUG-FLVW-0006" },
+      { name: "Filesystem", state: "answers", detail: "autorisé" },
+      { name: "FileViewer", state: "answers" },
       { name: "SplashScreen", state: "missing" },
     ]);
     // Nothing was opened: the viewer was given an empty path.

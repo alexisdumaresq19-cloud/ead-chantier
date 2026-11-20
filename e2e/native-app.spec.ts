@@ -1,6 +1,14 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
-import { asNativeApp, CACHES, emitNative, nativeCalls, type NativeCall } from "./nativeweb-support";
+import {
+  answerNative,
+  asNativeApp,
+  CACHES,
+  emitNative,
+  nativeCalls,
+  openedByLink,
+  type NativeCall,
+} from "./nativeweb-support";
 import { call, contextAs, seed, type Role } from "./support";
 
 // The pages inside the iPhone app (a Capacitor shell around the site), with
@@ -69,8 +77,9 @@ test("inside the app: it knows, hides the launch screen and offers no install ca
   // The launch screen goes once the page has drawn; the links that open the app are heard.
   const calls = await called(page, "SplashScreen", "hide");
   expect(find(calls, "App", "addListener")[0]?.options).toEqual({ eventName: "appUrlOpen" });
-  await called(page, "App", "getLaunchUrl");
   await expect(page.getByText("Se déconnecter")).toBeVisible();
+  // The shell's "launch address" is only the last link received: never asked.
+  expect(find(await nativeCalls(page), "App", "getLaunchUrl")).toEqual([]);
   await expect(page.getByRole("heading", { name: "Installer l'application" })).toHaveCount(0);
   await context.close();
 });
@@ -96,6 +105,8 @@ test("inside the app: the report's PDF opens in the viewer and goes to the share
     // No download, no tab: a button that does nothing in the app is not offered.
     await expect(sheet.getByRole("link")).toHaveCount(0);
     await expect(sheet.getByText("Télécharger")).toHaveCount(0);
+    // A window ignores taps for a moment after it opens (a double tap must not answer it).
+    await page.waitForTimeout(450);
     await sheet.getByRole("button", { name: "Ouvrir" }).click();
   } else {
     // A computer-wide screen (an iPad): the header's PDF opens it straight.
@@ -172,6 +183,53 @@ test("inside the app: a link that opens it takes it to that screen", async ({ br
   await context.close();
 });
 
+test("inside the app: the link it was opened with is followed once, never after a reload", async ({
+  browser,
+}) => {
+  const context = await device(browser, "foreman", true);
+  const documents = `/projets/${seed.projectId}/documents`;
+  await openedByLink(context, `https://ead-chantier.vercel.app${documents}`);
+  const page = await context.newPage();
+  await page.goto("/");
+  await expect(page).toHaveURL(documents);
+  await expect(page.getByRole("heading", { name: "Documents", level: 1 })).toBeVisible();
+
+  // A full load, as entering the app after an invitation, an update or signing out does.
+  await page.goto("/moi");
+  await expect(page.getByRole("heading", { name: "Mon compte", exact: true })).toBeVisible();
+  await called(page, "App", "addListener");
+  await page.waitForTimeout(500);
+  await expect(page).toHaveURL("/moi");
+  await page.reload();
+  await called(page, "App", "addListener");
+  await page.waitForTimeout(500);
+  await expect(page).toHaveURL("/moi");
+  await context.close();
+});
+
+test("inside the app: a photo goes to the share sheet, and a refused sheet says so", async ({
+  browser,
+}) => {
+  const context = await device(browser, "foreman", true);
+  const photos = (
+    await call<{ id: string }[]>(context.request, "GET", `/api/projects/${seed.projectId}/photos`)
+  ).body;
+  const page = await context.newPage();
+  await page.goto(`/projets/${seed.projectId}/photos?photo=${photos[0].id}`);
+  const viewer = page.getByRole("dialog", { name: "Photo en grand" });
+  await expect(viewer.getByRole("button", { name: "Télécharger" })).toHaveCount(0);
+  await answerNative(page, "Share.share", {
+    error: { message: "Can't share while sharing is in progress" },
+  });
+  await viewer.getByRole("button", { name: "Partager" }).click();
+  const share = find(await called(page, "Share", "share"), "Share", "share")[0];
+  expect(share.options.files).toEqual([expect.stringMatching(/^file:\/\/.*\.jpg$/)]);
+  // The image was in hand: the message is about the sheet, never the network.
+  await expect(page.getByText("Le partage n'a pas abouti. Réessayez.")).toBeVisible();
+  await expect(page.getByText(/Vérifiez le réseau/)).toHaveCount(0);
+  await context.close();
+});
+
 test("inside the app: the QR poster is shared, never printed", async ({ browser }) => {
   const context = await device(browser, "admin", true);
   const page = await context.newPage();
@@ -211,12 +269,15 @@ test("inside the app without the offline worker: the project says plainly what i
   // The diagnostic says it too, with the plugins that answer.
   await page.goto("/diagnostic");
   await expect(page.locator('[data-diagnostic="Dans l\'app iPhone"]')).toHaveText("Oui");
-  await expect(page.locator('[data-diagnostic="Mode hors ligne (service worker)"]')).toHaveText(
+  await expect(page.locator('[data-diagnostic="Mode hors ligne"]')).toHaveText(
     "Non disponible ici",
   );
   const modules = page.locator('[data-diagnostic="Modules de l\'app"]');
   for (const name of ["App", "Share", "Filesystem", "FileViewer", "SplashScreen"])
     await expect(modules).toContainText(`${name}\u00a0: répond`);
+  // In the person's words, never the plugin's.
+  await expect(modules).toContainText("Filesystem\u00a0: répond (autorisé)");
+  await expect(modules).not.toContainText("granted");
   await context.close();
 });
 

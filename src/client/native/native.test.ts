@@ -185,17 +185,31 @@ describe("in the iPhone app", () => {
       },
     });
     vi.stubGlobal("addEventListener", () => {});
+    // The shell's "launch address" is the last link the process received,
+    // kept for as long as it lives: following it would undo every reload.
     const { bridge } = await page({
-      answers: { "App.getLaunchUrl": () => ({ url: "https://ead-chantier.vercel.app/i/premier" }) },
+      answers: {
+        "App.getLaunchUrl": () => ({ url: "https://ead-chantier.vercel.app/i/deja-pris" }),
+      },
     });
     const { followAppLinks } = await import("./links");
     await followAppLinks();
     await settle();
-    expect(history).toEqual(["/i/premier"]);
+    expect(history).toEqual([]);
+    expect(bridge.calls()).toEqual([]);
 
+    // A cold start's link comes the same way as the later ones: as an event.
+    bridge.emit("App", "appUrlOpen", { url: "https://ead-chantier.vercel.app/i/premier" });
     bridge.emit("App", "appUrlOpen", { url: "https://ead-chantier.vercel.app/j/code-du-site" });
     bridge.emit("App", "appUrlOpen", { url: "https://exemple.com/j/autre" });
     await settle();
     expect(history).toEqual(["/i/premier", "/j/code-du-site"]);
+  });
+
+  it("fetches the share sheet's and the viewer's code ahead of the first tap", async () => {
+    const { warmPlugins } = await import("./start");
+    const [share, viewer] = (await warmPlugins()) as PromiseSettledResult<unknown>[];
+    expect(share).toMatchObject({ status: "fulfilled", value: { Share: expect.anything() } });
+    expect(viewer).toMatchObject({ status: "fulfilled", value: { FileViewer: expect.anything() } });
   });
 });

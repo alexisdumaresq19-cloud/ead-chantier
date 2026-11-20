@@ -677,8 +677,13 @@ function useSharing(photo: Photo | undefined, displayed: boolean) {
       const blob = held.current?.id === photo.id ? held.current.blob : await fetchImage(photo.url);
       const file = new File([blob], name, { type: "image/jpeg" });
       if (isNativeApp()) {
-        const { shareFile } = await import("../../native/files");
-        await shareFile(file, { text: photo.caption ?? undefined });
+        // The image is in hand: what fails from here is the sheet, never the network.
+        try {
+          const { shareFile } = await import("../../native/files");
+          await shareFile(file, { text: photo.caption ?? undefined });
+        } catch {
+          toast.error("Le partage n'a pas abouti. Réessayez.");
+        }
         return;
       }
       if (native && navigator.canShare?.({ files: [file] })) {

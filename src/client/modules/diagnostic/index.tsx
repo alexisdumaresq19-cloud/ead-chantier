@@ -49,6 +49,16 @@ async function storageState(): Promise<Pick<Facts, "persisted" | "estimate">> {
   return { persisted, estimate };
 }
 
+function webShare(): Facts["webShare"] {
+  if (typeof navigator.share !== "function") return "none";
+  try {
+    const file = new File([""], "essai.pdf", { type: "application/pdf" });
+    return navigator.canShare?.({ files: [file] }) ? "files" : "links";
+  } catch {
+    return "links";
+  }
+}
+
 /** The safe-area insets, read from an element that takes them as padding. */
 function readInsets(probe: HTMLElement | null): Insets {
   if (!probe) return { top: 0, right: 0, bottom: 0, left: 0 };
@@ -84,6 +94,7 @@ async function gather(probe: HTMLElement | null): Promise<Facts> {
     insets: readInsets(probe),
     online: navigator.onLine,
     cookies: navigator.cookieEnabled,
+    webShare: webShare(),
   };
 }
 

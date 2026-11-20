@@ -15,6 +15,7 @@ const browser: Facts = {
   insets: { top: 59, right: 0, bottom: 34, left: 0 },
   online: true,
   cookies: true,
+  webShare: "files",
 };
 
 const value = (facts: Facts, label: string) => rows(facts).find((row) => row.label === label);
@@ -25,10 +26,14 @@ describe("the diagnostic", () => {
     expect(value(browser, "Plateforme")?.value).toBe("Navigateur");
     expect(value(browser, "Version de l'app")).toBeUndefined();
     expect(value(browser, "Modules de l'app")).toBeUndefined();
-    expect(value(browser, "Mode hors ligne (service worker)")).toMatchObject({
+    expect(value(browser, "Mode hors ligne")).toMatchObject({
       value: "Actif sur cette page",
       tone: "good",
     });
+    expect(value(browser, "Partage par la page")?.value).toBe("Fichiers et liens");
+    expect(value({ ...browser, webShare: "none" }, "Partage par la page")?.value).toBe(
+      "Non disponible",
+    );
     expect(value(browser, "Espace utilisé")?.value).toBe("5\u00a0Mo sur 2\u00a0Go");
     expect(value(browser, "Marges de l'écran")?.value).toBe(
       "haut 59 · droite 0 · bas 34 · gauche 0 px",
@@ -50,7 +55,7 @@ describe("the diagnostic", () => {
     expect(value(app, "Dans l'app iPhone")).toMatchObject({ value: "Oui", tone: "good" });
     expect(value(app, "Plateforme")?.value).toBe("iOS");
     expect(value(app, "Version de l'app")?.value).toBe("1.0 (7)");
-    expect(value(app, "Mode hors ligne (service worker)")).toMatchObject({
+    expect(value(app, "Mode hors ligne")).toMatchObject({
       value: "Non disponible ici",
       tone: "bad",
     });

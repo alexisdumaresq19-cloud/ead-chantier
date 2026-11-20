@@ -25,14 +25,19 @@ export function cacheName(name: string): string {
   return clean.slice(0, 120 - extension.length).trimEnd() + extension;
 }
 
+/** Bytes encoded at a time: a multiple of 3, so the pieces of base64 join up. */
+const SLICE = 3 * 0x4000;
+
 /** The file's bytes as base64, the only form the bridge carries. */
 export async function toBase64(blob: Blob): Promise<string> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  let text = "";
-  // In slices: one call with every byte as an argument overflows the stack.
-  for (let start = 0; start < bytes.length; start += 0x8000)
-    text += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
-  return btoa(text);
+  const pieces: string[] = [];
+  // Slice by slice: a 25 MB document never also exists as one string of
+  // its raw bytes, and one call with every byte as an argument would
+  // overflow the stack.
+  for (let start = 0; start < bytes.length; start += SLICE)
+    pieces.push(btoa(String.fromCharCode(...bytes.subarray(start, start + SLICE))));
+  return pieces.join("");
 }
 
 let written = 0;

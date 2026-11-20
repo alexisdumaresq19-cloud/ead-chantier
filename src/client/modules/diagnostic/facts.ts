@@ -23,6 +23,8 @@ export type Facts = {
   insets: Insets;
   online: boolean;
   cookies: boolean;
+  /** What the page's own sharing (navigator.share) takes here. */
+  webShare: "files" | "links" | "none";
 };
 
 export type Row = { label: string; value: string; tone?: "good" | "bad" };
@@ -34,6 +36,14 @@ const workerText: Record<Facts["worker"], string> = {
   waiting: "Installé, en attente du prochain lancement",
   none: "Aucun",
   unsupported: "Non disponible ici",
+};
+
+// Inside the app a file is shared either way: through the page's sharing
+// when it takes files, else through the shell's.
+const webShareText: Record<Facts["webShare"], string> = {
+  files: "Fichiers et liens",
+  links: "Liens seulement",
+  none: "Non disponible",
 };
 
 const pluginText: Record<PluginAnswer["state"], string> = {
@@ -74,7 +84,7 @@ export function rows(facts: Facts): Row[] {
     });
   list.push(
     {
-      label: "Mode hors ligne (service worker)",
+      label: "Mode hors ligne",
       value: workerText[facts.worker],
       tone:
         facts.worker === "controls" ? "good" : facts.worker === "unsupported" ? "bad" : undefined,
@@ -105,6 +115,10 @@ export function rows(facts: Facts): Row[] {
           : undefined,
     });
   list.push(
+    {
+      label: "Partage par la page",
+      value: webShareText[facts.webShare],
+    },
     {
       label: "Réseau",
       value: facts.online ? "En ligne" : "Hors ligne",

@@ -67,7 +67,33 @@ export type NativeCall = {
 const FAKE_NATIVE_SIDE = `(function (caches) {
   var calls = [];
   var answers = {};
+  // What the native process keeps across page loads, as the shell does:
+  // events waiting for a first listener (retainUntilConsumed) and the last
+  // link received (ApplicationDelegateProxy.lastURL, never cleared).
+  var PROCESS = "__native_process";
+  function load() {
+    try {
+      return JSON.parse(sessionStorage.getItem(PROCESS) || "null") || { retained: {}, lastURL: null };
+    } catch (error) {
+      return { retained: {}, lastURL: null };
+    }
+  }
+  function save(state) {
+    try {
+      sessionStorage.setItem(PROCESS, JSON.stringify(state));
+    } catch (error) {}
+  }
+  function deliver(call, data) {
+    window.Capacitor.fromNative({
+      callbackId: call.callbackId, pluginId: call.pluginId, methodName: "addListener",
+      save: true, success: true, data: data,
+    });
+  }
   var defaults = {
+    "App.getLaunchUrl": function () {
+      var url = load().lastURL;
+      return url ? { url: url } : {};
+    },
     "Filesystem.writeFile": function (options) {
       return { uri: caches + String(options.path).split("/").map(encodeURIComponent).join("/") };
     },
@@ -79,7 +105,20 @@ const FAKE_NATIVE_SIDE = `(function (caches) {
   };
   function respond(call) {
     if (call.pluginId === "Console" || call.callbackId === "-1") return;
-    if (call.methodName === "addListener" || call.methodName === "removeListener") return;
+    if (call.methodName === "addListener") {
+      // The first listener gets what waited for one (CAPPlugin.m addListener).
+      var state = load();
+      var key = call.pluginId + "." + call.options.eventName;
+      var waiting = state.retained[key] || [];
+      if (waiting.length === 0) return;
+      delete state.retained[key];
+      save(state);
+      setTimeout(function () {
+        waiting.forEach(function (data) { deliver(call, data); });
+      }, 10);
+      return;
+    }
+    if (call.methodName === "removeListener") return;
     var key = call.pluginId + "." + call.methodName;
     var answer = answers[key] || { data: defaults[key] ? defaults[key](call.options) : {} };
     setTimeout(function () {
@@ -108,13 +147,15 @@ const FAKE_NATIVE_SIDE = `(function (caches) {
     calls: calls,
     answers: answers,
     emit: function (pluginId, eventName, data) {
+      if (pluginId === "App" && eventName === "appUrlOpen") {
+        var state = load();
+        state.lastURL = data.url;
+        save(state);
+      }
       calls.forEach(function (call) {
         if (call.pluginId === pluginId && call.methodName === "addListener" &&
             call.options.eventName === eventName)
-          window.Capacitor.fromNative({
-            callbackId: call.callbackId, pluginId: pluginId, methodName: "addListener",
-            save: true, success: true, data: data,
-          });
+          deliver(call, data);
       });
     },
   };
@@ -183,4 +224,25 @@ export const emitNative = (page: Page, pluginId: string, eventName: string, data
     ([plugin, event, payload]) =>
       (window as unknown as NativeWindow).__native.emit(plugin as string, event as string, payload),
     [pluginId, eventName, data] as const,
+  );
+
+/**
+ * The app is opened by a link (a cold start): the shell keeps the link for
+ * the page's first listener and answers it to App.getLaunchUrl from then
+ * on, for as long as the process lives, reloads included.
+ */
+export const openedByLink = (context: BrowserContext, url: string) =>
+  context.addInitScript(
+    ({ key, link }) => {
+      try {
+        if (sessionStorage.getItem(key) === null)
+          sessionStorage.setItem(
+            key,
+            JSON.stringify({ retained: { "App.appUrlOpen": [{ url: link }] }, lastURL: link }),
+          );
+      } catch {
+        // A blank page before the first one: no storage of its own.
+      }
+    },
+    { key: "__native_process", link: url },
   );

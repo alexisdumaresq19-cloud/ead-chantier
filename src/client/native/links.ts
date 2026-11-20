@@ -46,26 +46,19 @@ export function goToLink(link: string) {
 
 let started = false;
 
-/** Listens for the links that open the app, and follows the one it was opened with. */
+/**
+ * Listens for the links that open the app. The shell keeps a link that
+ * arrived before anyone listened (a cold start) and hands it to the first
+ * listener, once; every later tap arrives the same way.
+ *
+ * The launch address (App.getLaunchUrl) is never asked for: the shell
+ * answers it with the last link the process received, for as long as it
+ * lives, so every reload (signing in, an update, signing out) would send
+ * the person back to an invitation already used.
+ */
 export async function followAppLinks() {
   if (started) return;
   started = true;
   const { App: app } = await appPlugin();
-  // The shell keeps a link that arrived before anyone listened and hands it
-  // to the first listener; asking for the launch address covers the rest.
-  // At a cold start the same link comes both ways; later, a link tapped
-  // again is followed again.
-  let last = { url: "", at: 0 };
-  const follow = (url: string | undefined) => {
-    if (!url || (url === last.url && Date.now() - last.at < 3000)) return;
-    last = { url, at: Date.now() };
-    goToLink(url);
-  };
-  await app.addListener("appUrlOpen", (event) => follow(event.url));
-  try {
-    const launch = await app.getLaunchUrl();
-    follow(launch?.url);
-  } catch {
-    // Opened from its icon.
-  }
+  await app.addListener("appUrlOpen", (event) => goToLink(event.url));
 }

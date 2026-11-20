@@ -60,7 +60,12 @@ function whenIdle(task: () => void) {
  * Without a network it changes nothing and tries again when it returns.
  */
 async function makeReadyForOffline() {
-  const screens = await preloadScreens();
+  // In the app, the share sheet's and the viewer's code too: the worker
+  // keeps only what went through it.
+  const native = isNativeApp()
+    ? import("../native/start").then((start) => start.warmPlugins())
+    : undefined;
+  const [screens] = await Promise.all([preloadScreens(), native]);
   const complete = screens.every((screen) => screen.status === "fulfilled");
   const stored = complete && (await serverVersion().then(storeShell, () => false));
   if (!stored) window.addEventListener("online", () => whenIdle(makeReadyForOffline), ONCE);

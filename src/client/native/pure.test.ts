@@ -79,7 +79,8 @@ describe("files", () => {
   });
 
   it("carries any bytes, a large file included", async () => {
-    const bytes = new Uint8Array(200_000).map((_, index) => index % 256);
+    // Not a multiple of the slices: the last piece carries the padding.
+    const bytes = new Uint8Array(200_001).map((_, index) => (index * 7) % 256);
     const base64 = await toBase64(new Blob([bytes]));
     expect(Buffer.from(base64, "base64").equals(Buffer.from(bytes))).toBe(true);
   });
