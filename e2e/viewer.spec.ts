@@ -635,3 +635,35 @@ test("without a network a listed sheet opens from the device; an unknown one say
   await sharp(page);
   await context.close();
 });
+
+test("the counter opens the whole set: any sheet is one search and one tap away", async ({
+  browser,
+}) => {
+  const context = await signedIn(browser, "worker");
+  const page = await context.newPage();
+  const plans = await livePlans(context);
+  const from = plans.sheets.find((one) => one.number === "C-101")!;
+  const to = plans.sheets.find((one) => one.number === "C-301")!;
+
+  await page.goto(`${SHEET_PATH}/${from.id}`);
+  await sharp(page);
+  await counter(page).click();
+  const picker = page.getByRole("dialog");
+  await expect(picker.getByRole("heading", { name: "Choisir une feuille" })).toBeVisible();
+  // The sheet on screen is marked in the list.
+  await expect(picker.locator('[aria-current="true"]')).toContainText("C-101");
+
+  await picker.getByPlaceholder("Numéro ou titre").fill("c3");
+  const found = picker.getByRole("button", { name: /C-301/ });
+  await expect(found).toBeVisible();
+  await expect(picker.getByRole("button", { name: /C-101/ })).toHaveCount(0);
+  await found.click();
+
+  await expect(picker).toBeHidden();
+  await expect(page).toHaveURL(`${SHEET_PATH}/${to.id}`);
+  await sharp(page);
+  // Sheets take each other's place: back leaves the viewer in one step.
+  await page.getByRole("button", { name: "Retour aux plans" }).click();
+  await expect(page).toHaveURL(LIST_PATH);
+  await context.close();
+});

@@ -24,9 +24,26 @@ async function gatewayToken(): Promise<string | null> {
   }
 }
 
-/** Whether the AI service can be reached from here. */
+// When the service turns this deployment away (no payment method on the
+// account, access withdrawn), the screens stop offering what depends on it
+// for a while instead of failing at every try. Kept in memory: each server
+// instance learns it at its first refusal.
+const REFUSAL_HOLD = 10 * 60 * 1000;
+let refusedUntil = 0;
+
+/** To be called when the AI service answers that this account may not use it (401, 402, 403). */
+export function noteAiRefused() {
+  refusedUntil = Date.now() + REFUSAL_HOLD;
+}
+
+/** Whether a failure's HTTP status means "this account may not use the service". */
+export const isAiRefusal = (status: number | undefined) =>
+  status === 401 || status === 402 || status === 403;
+
+/** Whether the AI service can be used from here. */
 export async function aiAvailable(): Promise<boolean> {
-  return aiIsFake() || (await gatewayToken()) !== null;
+  if (aiIsFake()) return true;
+  return Date.now() >= refusedUntil && (await gatewayToken()) !== null;
 }
 
 /** A Claude client, or null where no AI service is configured. */

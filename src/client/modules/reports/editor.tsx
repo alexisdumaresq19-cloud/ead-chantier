@@ -646,7 +646,8 @@ function Editor({
         </div>
       </form>
 
-      {canDictate ? (
+      {/* An open window stays, whatever becomes of the service: it holds what was said. */}
+      {canDictate || dictating !== "closed" ? (
         <DictationSheet
           open={dictating !== "closed"}
           onClose={() => setDictating("closed")}

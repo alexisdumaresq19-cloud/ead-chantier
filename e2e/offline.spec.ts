@@ -243,11 +243,18 @@ test("a kept project opens whole without a network, every sheet and every zoom",
   await expect(page.getByRole("heading", { name: "Projet gardé sur cet appareil" })).toBeVisible({
     timeout: 90_000,
   });
-  await expect(page.getByText(`${seed.sheetIds.length} feuilles ·`)).toBeVisible();
+  // Counted now: another spec may have archived or added a sheet since the seed.
+  const live = await call<{ sheets: unknown[] }>(
+    context.request,
+    "GET",
+    `/api/projects/${seed.projectId}/plans`,
+  );
+  const sheetCount = live.body.sheets.length;
+  await expect(page.getByText(`${sheetCount} feuilles ·`)).toBeVisible();
   await readyForOffline(page, [["projects", seed.projectId, "plans"]]);
   const cached = await cachedUrls(page);
   // Kept on purpose, never filed with what was merely seen.
-  expect(cached[KEPT].length).toBeGreaterThan(seed.sheetIds.length * 10);
+  expect(cached[KEPT].length).toBeGreaterThan(sheetCount * 10);
   expect(cached[SEEN] ?? []).toEqual([]);
 
   await goOffline(page);

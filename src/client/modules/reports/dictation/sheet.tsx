@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Check,
   CircleHelp,
@@ -97,6 +97,7 @@ export function DictationSheet({
   startRecording: boolean;
 }) {
   const online = useOnline();
+  const client = useQueryClient();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [writing, setWriting] = useState(() => !canRecord());
   const [aloud, setAloud] = useState(wantsAnswersAloud);
@@ -142,12 +143,16 @@ export function DictationSheet({
       if (job.text !== undefined) setText("");
       if (aloud) speak(spokenAnswer(result));
     },
-    onError: (error, job) =>
+    onError: (error, job) => {
       setFailed({
         job,
         message: errorMessage(error),
         offline: error instanceof ApiFailure && error.offline,
-      }),
+      });
+      // The service is out: the screens ask again whether to offer the dictation.
+      if (error instanceof ApiFailure && error.code === "assistant_unavailable")
+        void client.invalidateQueries({ queryKey: ["assistant"] });
+    },
   });
 
   const recorder = useRecorder({

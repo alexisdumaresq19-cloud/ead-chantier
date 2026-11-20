@@ -60,6 +60,16 @@ The interface is in Québec French only.
   Uploads go straight to storage: `beginUpload` → the browser PUTs the file →
   `completeUpload`, then the module's own endpoint takes the upload with
   `takeUpload()` (`src/server/uploads.ts`).
+- **AI (dictating a report)**: through Vercel AI Gateway, with no key to
+  manage: on Vercel the deployment signs in by itself (`src/server/ai/gateway.ts`).
+  Claude is called with the official Anthropic SDK pointed at the gateway;
+  the recording is turned into text with the `ai` package. The model never
+  rewrites a report: it returns a small patch that the server merges
+  (`src/server/dictation/patch.ts`), so nothing already written is lost, and
+  nothing is saved by a dictation. Every call is counted against a per-person
+  allowance first (`countDictation`, 429 `too_many_dictations`). `AI_FAKE=1`
+  (set by the end-to-end tests) answers with fixed rules and calls nothing.
+  A screen offers the dictation only when `GET /api/assistant` says so.
 - **Shapes shared by both sides** are in `src/shared` (one file per module).
 
 ## The browser side (`src/client`)

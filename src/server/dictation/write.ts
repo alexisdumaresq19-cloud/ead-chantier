@@ -4,7 +4,14 @@ import { transcribe } from "ai";
 
 import type { ReportContent } from "@/shared/reports";
 
-import { aiIsFake, claude, CLAUDE_MODEL, TRANSCRIPTION_MODEL } from "../ai/gateway";
+import {
+  aiIsFake,
+  claude,
+  CLAUDE_MODEL,
+  isAiRefusal,
+  noteAiRefused,
+  TRANSCRIPTION_MODEL,
+} from "../ai/gateway";
 import { HttpError } from "../http";
 import { dictationPatch, type DictationPatch, type KnownPerson } from "./patch";
 
@@ -110,6 +117,7 @@ export async function transcribeDictation(
     return result.text.trim();
   } catch (error) {
     console.error("dictation: transcription failed", error);
+    if (isAiRefusal(statusOf(error))) noteAiRefused();
     throw unavailable();
   }
 }
@@ -136,10 +144,19 @@ export async function readDictation(input: DictationInput): Promise<DictationPat
   } catch (error) {
     if (error instanceof Anthropic.APIError) {
       console.error(`dictation: the AI service answered ${error.status}`, error.message);
+      if (isAiRefusal(error.status)) noteAiRefused();
       throw unavailable();
     }
     throw error;
   }
+}
+
+/** The HTTP status carried by a failure of the transcription call, if any. */
+function statusOf(error: unknown): number | undefined {
+  if (typeof error !== "object" || error === null) return undefined;
+  const { statusCode, cause } = error as { statusCode?: unknown; cause?: unknown };
+  if (typeof statusCode === "number") return statusCode;
+  return cause === undefined ? undefined : statusOf(cause);
 }
 
 /** When the text cannot be sorted into the report's parts, none of it is lost: it goes to the work done. */

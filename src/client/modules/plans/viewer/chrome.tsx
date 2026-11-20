@@ -2,6 +2,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronsUpDown,
   History,
   Maximize,
   Minus,
@@ -156,6 +157,7 @@ export function Controls({
   zoom,
   onPrevious,
   onNext,
+  onPickSheet,
   onZoomIn,
   onZoomOut,
   onFit,
@@ -168,6 +170,8 @@ export function Controls({
   zoom: ZoomRoom | null;
   onPrevious: () => void;
   onNext: () => void;
+  /** Opens the list of all the sheets, to jump to any of them. */
+  onPickSheet: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onFit: () => void;
@@ -196,16 +200,20 @@ export function Controls({
             <ChevronLeft className="size-6!" aria-hidden />
           </BarButton>
           {at ? (
-            <p
-              aria-label={`Feuille ${at.index} de ${at.total}`}
+            <button
+              type="button"
+              onClick={onPickSheet}
+              aria-label={`Feuille ${at.index} de ${at.total}, choisir une feuille`}
+              title="Choisir une feuille"
               className={cn(
-                "font-display min-w-12 text-center font-bold whitespace-nowrap tabular-nums",
+                "font-display flex h-11 min-w-14 cursor-pointer items-center justify-center gap-1 rounded-xl bg-white/10 text-center font-bold whitespace-nowrap tabular-nums transition-colors hover:bg-white/20 active:bg-white/20",
                 // A set of a hundred sheets and more still fits a 360 px phone.
-                at.total > 99 ? "px-0.5 text-[13px] sm:text-[15px]" : "px-1 text-[15px]",
+                at.total > 99 ? "px-2 text-[13px] sm:text-[15px]" : "px-2.5 text-[15px]",
               )}
             >
               {at.index} / {at.total}
-            </p>
+              <ChevronsUpDown className="size-4 text-white/60" aria-hidden />
+            </button>
           ) : null}
           <BarButton label="Feuille suivante" disabled={!view.nextId} onClick={onNext}>
             <ChevronRight className="size-6!" aria-hidden />

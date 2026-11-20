@@ -32,6 +32,7 @@ import type { Margins } from "./viewer/geometry";
 import { keyCommand } from "./viewer/keys";
 import { failureOf } from "./viewer/network";
 import { preloadRevision } from "./viewer/preload";
+import { SheetPicker } from "./viewer/picker";
 import { RevisionsSheet } from "./viewer/revisions";
 import { neighbourRevisions, resolveSheetView } from "./viewer/sheet-view";
 import { useWakeLock } from "./viewer/use-wake-lock";
@@ -96,6 +97,7 @@ export function SheetViewerScreen() {
   const [quarterTurns, setQuarterTurns] = useState(0);
   const [zoomRoom, setZoomRoom] = useState<ZoomRoom>({ in: true, out: false });
   const [revisionsOpen, setRevisionsOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [tileReport, setTileReport] = useState<{ of: string; state: TileState } | null>(null);
   const tiles: TileState = shown && tileReport?.of === shown.id ? tileReport.state : "loading";
   // Without a plan to look at there is nothing for the bars to get out of the
@@ -385,6 +387,7 @@ export function SheetViewerScreen() {
           zoom={shown ? zoomRoom : null}
           onPrevious={() => openSheet(view.previousId)}
           onNext={() => openSheet(view.nextId)}
+          onPickSheet={() => setPickerOpen(true)}
           onZoomIn={() => canvasRef.current?.zoomIn()}
           onZoomOut={() => canvasRef.current?.zoomOut()}
           onFit={() => canvasRef.current?.fit()}
@@ -400,6 +403,16 @@ export function SheetViewerScreen() {
           onPick={openRevision}
         />
       ) : null}
+      <SheetPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        plans={plans.data}
+        currentId={sheetId}
+        onPick={(id) => {
+          setPickerOpen(false);
+          openSheet(id);
+        }}
+      />
     </div>
   );
 }
