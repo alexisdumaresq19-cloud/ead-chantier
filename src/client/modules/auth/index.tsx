@@ -11,9 +11,11 @@ import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 import { focusField, Heading, NAME_MISSING, nameMissing } from "./parts";
 
 // The screens seen before signing in. Nobody has a password: a person comes
-// in with the personal link the office sent, with a site's QR code, or makes
-// their own account with the company's code (signup.tsx).
+// in with the personal link the office sent (or its code, typed: code.tsx),
+// with a site's QR code, or makes their own account with the company's code
+// (signup.tsx).
 
+export { AccessCodeScreen } from "./code";
 export { SignUpScreen } from "./signup";
 export { WaysInScreen, WelcomeScreen } from "./welcome";
 

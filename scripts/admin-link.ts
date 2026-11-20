@@ -75,9 +75,10 @@ async function main(): Promise<number> {
   }
 
   const [person] = matches;
-  const token = await createPersonalInvite(person.id, person.id);
+  const { token, code } = await createPersonalInvite(person.id, person.id);
   console.log(
     `\nLien personnel de ${person.name} :\n\n  ${origin}/i/${token}\n\n` +
+      `Ou, dans l'application, avec son cellulaire et le code ${code.slice(0, 4)} ${code.slice(4)}.\n` +
       "Il sert une seule fois, pendant 14 jours, et remplace les liens déjà envoyés à cette personne.\n" +
       "À ouvrir sur l'appareil à connecter. Ne le transmettez qu'à elle.",
   );

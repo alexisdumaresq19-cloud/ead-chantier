@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { codeFromText } from "@/shared/access";
 import type { Person } from "@/shared/api";
 
 import { ApiFailure } from "../../lib/api";
@@ -93,6 +94,15 @@ describe("sending an invitation", () => {
     expect(text).toContain("\nhttps://exemple.ca/i/abc\n");
     expect(text).toContain("Il sert une seule fois, pendant 14 jours.");
     expect(inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 1)).toContain("jusqu'à demain.");
+  });
+
+  it("ends the invitation with its code, and how to type it in the app", () => {
+    const text = inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14, "48271936");
+    expect(text).toContain(
+      "J'ai déjà un compte, puis Avec un code du bureau. Votre code\u00a0: 4827\u00a01936\n",
+    );
+    expect(text).toMatch(/\nLe lien et le code servent une seule fois, pendant 14 jours\.$/);
+    expect(codeFromText(text)).toBe("48271936");
   });
 
   it("counts the days a link has left", () => {

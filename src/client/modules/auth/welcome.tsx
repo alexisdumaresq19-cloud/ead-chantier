@@ -1,8 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, Link2, QrCode } from "lucide-react";
+import { ChevronLeft, ChevronRight, KeyRound, Link2, QrCode } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, Redirect } from "wouter";
 
+import { ACCESS_CODE_PATH } from "@/shared/access";
 import { SIGNUP_PATH, type SignupStatus } from "@/shared/signup";
 
 import { api } from "../../lib/api";
@@ -126,10 +127,28 @@ function WaysIn({ back }: { back?: boolean }) {
       ) : null}
       <Heading title={back ? "J'ai déjà un compte" : "Bienvenue"}>
         {back
-          ? "Entrez sur cet appareil d'une de ces deux façons."
+          ? "Entrez sur cet appareil d'une de ces trois façons."
           : "Les plans, les documents, les photos et les rapports de vos chantiers, au même endroit."}
       </Heading>
       <ul className="mt-6 space-y-4">
+        {/* First: the one way that works everywhere, in the iPhone app too. */}
+        <li>
+          <Link
+            href={ACCESS_CODE_PATH}
+            className="border-line hover:bg-canvas active:bg-canvas -mx-2 flex items-center gap-3.5 rounded-2xl border px-2 py-2.5 transition-colors"
+          >
+            <span className="bg-ead-dark flex size-11 shrink-0 items-center justify-center rounded-xl text-white [&_svg]:size-6">
+              <KeyRound aria-hidden />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-semibold">Avec un code du bureau</span>
+              <span className="text-dim mt-0.5 block text-sm text-pretty">
+                Votre cellulaire et le code reçu du bureau.
+              </span>
+            </span>
+            <ChevronRight className="text-dim size-5 shrink-0" aria-hidden />
+          </Link>
+        </li>
         <Way icon={<QrCode aria-hidden />} title="Au chantier">
           Scannez le code QR de votre contremaître avec l&apos;appareil photo de votre téléphone.
         </Way>

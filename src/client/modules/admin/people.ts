@@ -1,3 +1,4 @@
+import { formatAccessCode } from "@/shared/access";
 import type { JoinedWith, Person } from "@/shared/api";
 import { ROLE_LABELS, type Role } from "@/shared/roles";
 
@@ -72,10 +73,17 @@ export function daysLeft(expiresAt: string, now: Date): number {
 
 export const INVITE_SUBJECT = "Votre accès à EAD Chantier";
 
-/** What the office sends with a personal link, by text message or by email. */
-export function inviteMessage(name: string, url: string, days: number): string {
+/**
+ * What the office sends with a personal link, by text message or by email,
+ * with its code when it has one: in the iPhone app the link would open
+ * Safari, so the code is typed there instead (the code screen finds it in
+ * the whole message pasted).
+ */
+export function inviteMessage(name: string, url: string, days: number, code?: string): string {
   const length = days > 1 ? `pendant ${days} jours` : "jusqu'à demain";
-  return `Bonjour ${firstName(name)}, voici votre lien personnel pour ouvrir EAD Chantier sur votre téléphone.\n${url}\nIl sert une seule fois, ${length}.`;
+  const hello = `Bonjour ${firstName(name)}, voici votre lien personnel pour ouvrir EAD Chantier sur votre téléphone.\n${url}\n`;
+  if (!code) return `${hello}Il sert une seule fois, ${length}.`;
+  return `${hello}Dans l'application EAD, touchez J'ai déjà un compte, puis Avec un code du bureau. Votre code\u00a0: ${formatAccessCode(code)}\nLe lien et le code servent une seule fois, ${length}.`;
 }
 
 /** How long a site's QR code works (PROJECT_INVITE_DAYS on the server). */

@@ -5,14 +5,16 @@ import type { NextRequest, NextResponse } from "next/server";
 
 import { canManageProject } from "@/shared/roles";
 
+import { accessCodeDigest, newAccessCode } from "./access-code/code";
 import { db, schema } from "./db/client";
 import { env } from "./env";
 import { forbidden, unauthorized } from "./http";
 import { hashToken, newId, newToken } from "./ids";
 
 // Sign-in without passwords. A device holds a session cookie it got by
-// opening a personal invitation link or a project's QR code; the office can
-// end any session. Only hashes of tokens are stored.
+// opening a personal invitation link or a project's QR code, or by typing a
+// cell number and a code from the office (src/server/access-code); the office
+// can end any session. Only hashes of tokens and codes are stored.
 
 export const SESSION_COOKIE = "ead_session";
 export const SESSION_DAYS = 400; // the longest a browser keeps a cookie
@@ -77,7 +79,9 @@ export async function currentUser(request: NextRequest): Promise<SessionUser | n
   // A deleted account never signs in again, whatever reactivates it.
   if (!row || !row.user.active || row.user.deletedAt) return null;
 
-  const renewal = sessionRenewal(row.session, row.user.unreviewed, new Date());
+  // The demonstration account's day is never pushed back either: whoever
+  // holds its code signs in again, for another day.
+  const renewal = sessionRenewal(row.session, row.user.unreviewed || row.user.demo, new Date());
   if (renewal) {
     await db.update(schema.sessions).set(renewal).where(eq(schema.sessions.id, row.session.id));
     await db
@@ -209,10 +213,15 @@ const PROJECT_INVITE_DAYS = 7;
 export const PROJECT_INVITE_MAX_USES = 40;
 
 /**
- * A link for one person. Each new link replaces the person's earlier ones, and
- * it works once: opening it signs that device in.
+ * A link for one person, and the code that does the same when typed (with
+ * the person's cell number, in the app where a link cannot be opened). Each
+ * new link replaces the person's earlier ones, and it works once: opening
+ * the link or typing the code signs that device in and uses up both.
  */
-export async function createPersonalInvite(userId: string, createdBy: string): Promise<string> {
+export async function createPersonalInvite(
+  userId: string,
+  createdBy: string,
+): Promise<{ token: string; code: string }> {
   await db
     .update(schema.invites)
     .set({ revokedAt: new Date() })
@@ -223,17 +232,20 @@ export async function createPersonalInvite(userId: string, createdBy: string): P
         isNull(schema.invites.revokedAt),
       ),
     );
+  const id = newId();
   const token = newToken();
+  const code = newAccessCode();
   await db.insert(schema.invites).values({
-    id: newId(),
+    id,
     tokenHash: hashToken(token),
+    codeHash: accessCodeDigest(id, code),
     kind: "personal",
     userId,
     expiresAt: new Date(Date.now() + PERSONAL_INVITE_DAYS * DAY),
     maxUses: 1,
     createdBy,
   });
-  return token;
+  return { token, code };
 }
 
 /**

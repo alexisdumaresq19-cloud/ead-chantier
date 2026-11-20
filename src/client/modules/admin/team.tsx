@@ -298,6 +298,7 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
                 <ShieldAlert aria-hidden /> À confirmer
               </Badge>
             ) : null}
+            {person.demo ? <Badge tone="blue">Démonstration</Badge> : null}
             {person.active ? null : <Badge>Accès désactivé</Badge>}
           </span>
           {/* Someone to confirm: how and when they came in, before anything else. */}
@@ -343,18 +344,22 @@ function AddPersonSheet({
   const [form, setForm] = useState<PersonForm>(NEW_PERSON);
   const [checked, setChecked] = useState(false);
   // The link lives here only: closing the window lets go of it for good.
-  const [invited, setInvited] = useState<{ person: PersonForm; link: InviteLink } | null>(null);
+  const [invited, setInvited] = useState<{
+    id: string;
+    person: PersonForm;
+    link: InviteLink;
+  } | null>(null);
   const create = useMutation({
     mutationFn: () =>
       api<{ id: string; invite: InviteLink }>("/api/users", {
         method: "POST",
         body: personBody(form),
       }),
-    onSuccess: ({ invite }) => {
+    onSuccess: ({ id, invite }) => {
       // The window keeps its scroll from one step to the next: the link must
       // not open half hidden where the bottom of the form was.
       document.getElementById(formId)?.scrollIntoView({ block: "start" });
-      setInvited({ person: form, link: invite });
+      setInvited({ id, person: form, link: invite });
       return refreshPeople();
     },
   });
@@ -377,13 +382,13 @@ function AddPersonSheet({
   };
 
   if (invited) {
-    const { person, link } = invited;
+    const { id, person, link } = invited;
     return (
       <Sheet
         open={open}
         onClose={close}
         title={`${firstName(person.name)} peut entrer`}
-        description="Envoyez-lui son lien personnel maintenant. Il ne s'affichera plus ensuite."
+        description="Envoyez-lui son lien et son code maintenant. Ils ne s'afficheront plus ensuite."
         footer={
           <>
             <Button variant="secondary" onClick={startOver}>
@@ -396,6 +401,7 @@ function AddPersonSheet({
         <InviteLinkPanel
           link={link}
           person={{
+            id,
             name: person.name,
             phone: person.phone.trim() || null,
             email: person.email.trim() || null,
@@ -409,7 +415,7 @@ function AddPersonSheet({
       open={open}
       onClose={close}
       title="Ajouter une personne"
-      description="Vous recevrez ensuite son lien personnel, à lui envoyer par texto ou par courriel."
+      description="Vous recevrez ensuite son lien personnel et son code, à lui envoyer par texto ou par courriel."
       footer={
         <>
           <Button variant="secondary" onClick={close}>

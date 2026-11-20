@@ -4,6 +4,7 @@ import { projectToChange, projectToManage } from "@/server/access";
 import { createProjectInvite, requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { forbidden, originOf, route } from "@/server/http";
+import { DEMO_REFUSED } from "@/server/people/links";
 import type { InviteLink } from "@/shared/api";
 
 /**
@@ -40,6 +41,8 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
   const project = await projectToChange(user, id);
+  // A visitor shown the app lets nobody in.
+  if (user.demo) throw forbidden(DEMO_REFUSED);
   if (project.status === "archive")
     throw forbidden("Ce projet est archivé : personne de nouveau n'y entre.");
   const { token, expiresAt } = await createProjectInvite(id, user.id);
