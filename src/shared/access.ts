@@ -11,9 +11,13 @@ export const formatAccessCode = formatCompanyCode;
 /** The screen where the number and the code are typed. */
 export const ACCESS_CODE_PATH = "/bienvenue/code";
 
-/** Where the code is typed, said the way the screens name it. */
+/**
+ * Where the code is typed, said the way the screens name it. "J'ai déjà un
+ * compte" shows only while account creation is open; "Avec un code du
+ * bureau" always does.
+ */
 export const ACCESS_CODE_HOW =
-  "Dans l'application\u00a0: J'ai déjà un compte, puis Avec un code du bureau.";
+  "Dans l'application, touchez J'ai déjà un compte si ce bouton est là, puis Avec un code du bureau.";
 
 /** How long a device stays signed in on the demonstration account. */
 export const DEMO_SESSION_DAYS = 1;
@@ -21,17 +25,22 @@ export const DEMO_SESSION_DAYS = 1;
 /** The name the demonstration account goes by on every list. */
 export const DEMO_NAME = "Compte de démonstration";
 
+// A link in a pasted text (with its scheme, or an /i/… or /j/… path): its
+// token is random letters and digits, and may hold anything.
+const LINK = /\S*:\/\/\S+|\S*\/[ij]\/\S+/g;
+const withoutLinks = (text: string) => text.replace(LINK, " ");
+
 // Two groups of four, standing alone: never digits inside a link's token.
 const GROUPED = /(?<![\p{L}\p{N}_/-])(\d{4})[ \u00a0.-]?(\d{4})(?![\p{L}\p{N}_])/gu;
 
 /**
  * The code in what was typed or pasted. Typed (digits, spaces, dashes):
- * its digits. A text (the office's whole message, whose link holds digits
- * of its own): the two groups of four that follow the word "code", else the
- * last two groups of four standing alone (the message ends with the code),
- * else nothing.
+ * its digits. A text (the office's whole message, its link left out): the
+ * two groups of four that follow the word "code", else the last two groups
+ * of four standing alone, else nothing.
  */
-export function codeFromText(text: string): string {
+export function codeFromText(pasted: string): string {
+  const text = withoutLinks(pasted);
   if (!/\p{L}/u.test(text)) return codeDigits(text).slice(0, ACCESS_CODE_LENGTH);
   const afterWord = /code[^\d]{0,12}(\d{4})[ \u00a0.-]?(\d{4})(?!\d)/i.exec(text);
   if (afterWord) return afterWord[1] + afterWord[2];
@@ -52,7 +61,8 @@ const PHONE = /(?<!\d)(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}(?!\d)/
  * message, or just one of the two): "418 555-0123" and the eight digits,
  * each null when it is not there.
  */
-export function readMessage(text: string): { phone: string | null; code: string | null } {
+export function readMessage(pasted: string): { phone: string | null; code: string | null } {
+  const text = withoutLinks(pasted);
   const found = PHONE.exec(text);
   const phone = found ? canadianPhone(found[0]) : null;
   // The number's digits are not the code's.
@@ -93,6 +103,23 @@ export type DemoAccess = {
 };
 
 export type DemoAccessState = { access: DemoAccess | null };
+
+/**
+ * What the office pastes in App Store Connect, where Apple asks how its
+ * reviewer signs in: a user name (the cell number), a password (the code)
+ * and notes. Apple's reviewers read English: the notes say the way in both
+ * ways, with the buttons named as the screens name them.
+ */
+export function appleReviewText(access: { phone: string; code: string }): string {
+  return [
+    `Nom d'utilisateur / User name\u00a0: ${access.phone}`,
+    `Mot de passe / Password\u00a0: ${access.code}`,
+    "",
+    `${ACCESS_CODE_HOW} Entrez le cellulaire et le code. Pour supprimer le compte\u00a0: Mon compte, Supprimer mon compte. Le même numéro et le même code font ensuite un nouveau compte de démonstration.`,
+    "",
+    'In the app, tap "J\'ai déjà un compte" if that button is shown, then "Avec un code du bureau", and enter the user name (a cell number) and the password (a code). To delete the account: Mon compte, Supprimer mon compte. Signing in again with the same number and code makes a new demo account.',
+  ].join("\n");
+}
 
 /** PATCH /api/company/demo. */
 export type DemoAccessChange = { projectIds?: string[]; newCode?: true };

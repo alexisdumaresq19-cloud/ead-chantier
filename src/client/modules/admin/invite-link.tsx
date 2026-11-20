@@ -85,7 +85,7 @@ export function InviteLinkPanel({
   // A number added here is the one the texts and the code go with.
   const [phone, setPhone] = useState(person.phone);
   const days = daysLeft(link.expiresAt, now);
-  const message = inviteMessage(person.name, link.url, days, link.code);
+  const message = inviteMessage(person.name, link.url, days, link.code, phone);
   // The way that matches what the office knows about the person comes first.
   const main = phone ? "sms" : person.email ? "mail" : "none";
 
@@ -106,6 +106,7 @@ export function InviteLinkPanel({
         <p className="text-dim text-sm text-pretty">
           <span className="text-text block text-[15px] font-semibold">Sur place?</span>
           {`Faites scanner ce code avec l'appareil photo du téléphone de ${firstName(person.name)}.`}
+          {link.code ? " Pour l'application iPhone, donnez plutôt le code ci\u2011dessous." : null}
         </p>
       </div>
       {link.code ? (
@@ -197,7 +198,9 @@ function TypedCode({
       </div>
       {person.phone ? (
         <p className="text-dim mt-2.5 text-sm text-pretty">
-          {ACCESS_CODE_HOW} À taper avec son cellulaire, le {formatPhone(person.phone)}.
+          {ACCESS_CODE_HOW} À taper avec son cellulaire, le{" "}
+          {/* The number is read as one piece: it never breaks across lines. */}
+          <span className="whitespace-nowrap">{formatPhone(person.phone)}</span>.
         </p>
       ) : (
         <AddPhone person={person} onAdded={onPhoneAdded} />

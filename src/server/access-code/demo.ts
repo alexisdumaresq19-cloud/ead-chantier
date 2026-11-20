@@ -8,7 +8,7 @@ import { HttpError } from "../http";
 import { newId } from "../ids";
 import { deleteOwnAccount } from "../people/delete";
 import { newAccessCode } from "./code";
-import { holdAccessDoor } from "./door";
+import { countDemoRemake, holdDemo } from "./door";
 
 // The demonstration access: a cell number from the range kept for fiction and
 // a code, that let someone outside the team (Apple's reviewer, a client the
@@ -53,9 +53,9 @@ async function write(tx: Executor, value: Stored, userId: string, now: Date) {
 }
 
 /**
- * The first number of 418 555-0100 to 418 555-0199 that no active account
- * has. That range is kept for fiction: no one can own it, and no text
- * message sent to it reaches anybody.
+ * The first number of 418 555-0100 to 418 555-0199 that no account has,
+ * switched off or not (one may be switched back on). That range is kept for
+ * fiction: no one can own it, and no text message sent to it reaches anybody.
  */
 async function fictionalNumber(tx: Executor): Promise<string> {
   const taken = new Set(
@@ -63,7 +63,7 @@ async function fictionalNumber(tx: Executor): Promise<string> {
       await tx
         .select({ phone: schema.users.phone })
         .from(schema.users)
-        .where(and(eq(schema.users.active, true), isNull(schema.users.deletedAt)))
+        .where(isNull(schema.users.deletedAt))
     ).map((user) => phoneKey(user.phone)),
   );
   for (let line = 100; line <= 199; line++) {
@@ -71,6 +71,18 @@ async function fictionalNumber(tx: Executor): Promise<string> {
     if (!taken.has(phoneKey(phone))) return phone;
   }
   throw new HttpError(409, "no_fictional_number", "Aucun numéro de démonstration n'est libre.");
+}
+
+/** Said when the office gives a person the number the demonstration uses. */
+export const DEMO_PHONE_TAKEN =
+  "Ce numéro est celui de l'accès de démonstration. Entrez le cellulaire de la personne.";
+
+/** Whether this number, however typed, is the demonstration's. */
+export async function isDemoPhone(phone: string | null | undefined, executor: Executor = db) {
+  const key = phoneKey(phone);
+  if (!key) return false;
+  const setting = await readDemoAccess(executor);
+  return setting !== null && phoneKey(setting.phone) === key;
 }
 
 /** The projects of the list that still exist. */
@@ -105,15 +117,7 @@ async function setProjects(tx: Executor, userId: string, projectIds: string[]) {
       .onConflictDoNothing();
 }
 
-/**
- * The demonstration account, made if there is none (the last visitor deleted
- * it): a foreman, so that it shows the whole app, daily reports included;
- * the routes that touch the team refuse it (users.demo). Called with the
- * door held, so two visitors at once never make two accounts.
- */
-export async function demoAccount(tx: Executor, setting: DemoSetting): Promise<string> {
-  const [found] = await demoAccounts(tx).limit(1);
-  if (found) return found.id;
+async function makeDemoAccount(tx: Executor, setting: DemoSetting): Promise<string> {
   const id = newId();
   await tx.insert(schema.users).values({
     id,
@@ -127,19 +131,33 @@ export async function demoAccount(tx: Executor, setting: DemoSetting): Promise<s
   return id;
 }
 
+/**
+ * The demonstration account for a visitor's sign-in, made again if there is
+ * none (the last visitor deleted it), a few times a day at most: a foreman,
+ * so that it shows the whole app, daily reports included; the routes that
+ * touch the team, or what others wrote, refuse it (users.demo). Called with
+ * holdDemo held, so two visitors at once never make two accounts.
+ */
+export async function demoAccount(tx: Executor, setting: DemoSetting, now: Date): Promise<string> {
+  const [found] = await demoAccounts(tx).limit(1);
+  if (found) return found.id;
+  await countDemoRemake(tx, now);
+  return makeDemoAccount(tx, setting);
+}
+
 const noProject = () => new HttpError(400, "no_project", "Cochez au moins un projet à montrer.");
 
 /** Makes the access: a number, a code and its account, on these projects. */
 export async function createDemoAccess(officeId: string, projectIds: string[], now = new Date()) {
   await db.transaction(async (tx) => {
-    await holdAccessDoor(tx);
+    await holdDemo(tx);
     if (await readDemoAccess(tx))
       throw new HttpError(409, "demo_exists", "L'accès de démonstration existe déjà.");
     const shown = await existing(tx, projectIds);
     if (!shown.length) throw noProject();
     const value = { phone: await fictionalNumber(tx), code: newAccessCode(), projectIds: shown };
     await write(tx, value, officeId, now);
-    await demoAccount(tx, { ...value, changedAt: now, changedBy: officeId });
+    await makeDemoAccount(tx, { ...value, changedAt: now, changedBy: officeId });
   });
 }
 
@@ -153,7 +171,7 @@ export async function changeDemoAccess(
   now = new Date(),
 ) {
   await db.transaction(async (tx) => {
-    await holdAccessDoor(tx);
+    await holdDemo(tx);
     const setting = await readDemoAccess(tx);
     if (!setting) throw new HttpError(404, "not_found", "Il n'y a pas d'accès de démonstration.");
     const projectIds = change.projectIds ? await existing(tx, change.projectIds) : null;
@@ -178,7 +196,7 @@ export async function changeDemoAccess(
  */
 export async function removeDemoAccess() {
   await db.transaction(async (tx) => {
-    await holdAccessDoor(tx);
+    await holdDemo(tx);
     await tx.delete(settings).where(eq(settings.key, KEY));
   });
   // No visitor gets in any more: the accounts left can go, one by one.

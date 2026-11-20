@@ -45,8 +45,9 @@ process.env.DATABASE_URL = databaseUrl;
 
 const { sql } = await import("../db/client");
 const { signInWithCode } = await import("./sign-in");
-const { createDemoAccess, changeDemoAccess, readDemoAccess, removeDemoAccess } =
+const { createDemoAccess, changeDemoAccess, isDemoPhone, readDemoAccess, removeDemoAccess } =
   await import("./demo");
+const { DEMO_REMAKES_PER_DAY } = await import("./door");
 const { createPersonalInvite, currentUser, consumeInvite, findInvite } = await import("../auth");
 const { endAccess } = await import("../people/links");
 const { deleteOwnAccount } = await import("../people/delete");
@@ -253,6 +254,39 @@ describe.skipIf(!ready)("with a database", () => {
     ).toBe("accepted");
   });
 
+  it("never lets one network shut a number by itself", async () => {
+    const roomy = { ...fast, limits: { triesPerHour: 100, wrongPerNumber: 4 } };
+    // One address hammers Julie's number: it is held back for that number
+    // once it has filled its part (half of four, here), and only it.
+    const answers: string[] = [];
+    for (let i = 0; i < 12; i++)
+      answers.push(
+        await answer(
+          signInWithCode(from("192.0.2.50"), { phone: "418 555-0142", code: "11112222" }, roomy),
+        ),
+      );
+    expect(answers.filter((a) => a === "400 wrong_access_code")).toHaveLength(2);
+    expect(answers.slice(2).every((a) => a === "429 too_many_tries")).toBe(true);
+    // Its other numbers are not held.
+    expect(
+      await answer(
+        signInWithCode(from("192.0.2.50"), { phone: "418 555-0143", code: "11112222" }, roomy),
+      ),
+    ).toBe("400 wrong_access_code");
+    // Julie, from her own phone, still gets in with her code.
+    const { code } = await createPersonalInvite("julie", "office");
+    await sql`update signup_attempts set created_at = created_at - interval '1 minute'`;
+    for (let i = 0; i < 6; i++)
+      await signInWithCode(
+        from("192.0.2.50"),
+        { phone: "418 555-0142", code: "11112222" },
+        roomy,
+      ).catch(() => null);
+    expect(
+      await answer(signInWithCode(from("192.0.2.60"), { phone: "418 555-0142", code }, roomy)),
+    ).toBe("accepted");
+  });
+
   it("never pauses account creation, and account creation never shuts it", async () => {
     const signupLimits = { triesPerHour: 2, wrongCodesPerDay: 3, accountsPerDay: 10 };
     const company = await newCompanyCodeBy("office", at(-HOUR));
@@ -355,6 +389,77 @@ describe.skipIf(!ready)("with a database", () => {
       expect((await demoRows()).filter((row) => row.active)).toHaveLength(1);
     });
 
+    it("is never shut by wrong codes on its number: the right one always gets in", async () => {
+      await createDemoAccess("office", ["p1"]);
+      const setting = (await readDemoAccess())!;
+      // Wrong codes from many networks, more than any number would take.
+      const answers = await Promise.all(
+        Array.from({ length: limits.wrongPerNumber * 5 }, (_, i) =>
+          answer(
+            signInWithCode(
+              from(`10.9.${i >> 8}.${i & 255}`),
+              { phone: setting.phone, code: other(setting.code) },
+              fast,
+            ),
+          ),
+        ),
+      );
+      expect(answers.every((a) => a === "400 wrong_access_code")).toBe(true);
+      // Each network is still held to its own handful.
+      for (let i = 0; i < limits.triesPerHour; i++)
+        await signInWithCode(
+          from("10.9.9.9"),
+          { phone: setting.phone, code: other(setting.code) },
+          fast,
+        ).catch(() => null);
+      expect(
+        await answer(
+          signInWithCode(from("10.9.9.9"), { phone: setting.phone, code: setting.code }, fast),
+        ),
+      ).toBe("429 too_many_tries");
+      // Apple's reviewer, from a network of its own, gets in.
+      expect(
+        await answer(
+          signInWithCode(from("17.0.0.1"), { phone: setting.phone, code: setting.code }, fast),
+        ),
+      ).toBe("accepted");
+    });
+
+    it("is made again a few times a day at most, and its number is no one else's", async () => {
+      await createDemoAccess("office", ["p1"]);
+      const setting = (await readDemoAccess())!;
+      const typed = { phone: setting.phone, code: setting.code };
+      // Deleted and come back: each time a new account, until the day's bound.
+      for (let i = 0; i < DEMO_REMAKES_PER_DAY; i++) {
+        const [account] = await demoRows();
+        await deleteOwnAccount(account.id);
+        await signInWithCode(from(`203.0.115.${i}`), typed, fast);
+      }
+      const [last] = await demoRows();
+      await deleteOwnAccount(last.id);
+      const refused = await signInWithCode(from("203.0.115.99"), typed, fast).catch((e) => e);
+      expect([refused.status, refused.code]).toEqual([429, "too_many_demos"]);
+      expect(refused.message).toMatch(/^Le compte de démonstration a été supprimé et refait /);
+      expect(await demoRows()).toHaveLength(0);
+
+      // Nobody of the team is given that number, however typed.
+      expect(await isDemoPhone("1 (418) 555-0100")).toBe(true);
+      expect(await isDemoPhone("418 555-0101")).toBe(false);
+      expect(
+        await answer(
+          createAccountWithCode(
+            from("192.0.2.30"),
+            {
+              name: "Luc Roy",
+              phone: "418-555-0100",
+              code: await newCompanyCodeBy("office", at(-HOUR)),
+            },
+            { now: start, limits: { triesPerHour: 5, wrongCodesPerDay: 5, accountsPerDay: 5 } },
+          ),
+        ),
+      ).toBe("409 phone_taken");
+    });
+
     it("makes one account for visitors who come at the same moment", async () => {
       await createDemoAccess("office", ["p1"]);
       const setting = (await readDemoAccess())!;
@@ -405,10 +510,12 @@ describe.skipIf(!ready)("with a database", () => {
       ).toBe("400 wrong_access_code");
     });
 
-    it("takes a number no one active has", async () => {
+    it("takes a number no account has, switched off or not", async () => {
       await sql`insert into users (id, name, phone) values ('taken', 'Luc Roy', '418-555-0100')`;
+      await sql`insert into users (id, name, phone, active)
+                values ('off', 'Léa Roy', '4185550101', false)`;
       await createDemoAccess("office", ["p1"]);
-      expect((await readDemoAccess())!.phone).toBe("418 555-0101");
+      expect((await readDemoAccess())!.phone).toBe("418 555-0102");
     });
   });
 });

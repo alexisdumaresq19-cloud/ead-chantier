@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { codeFromText, phoneKey, readMessage, typedCode } from "./access";
+import { appleReviewText, codeFromText, phoneKey, readMessage, typedCode } from "./access";
 
 describe("the code in what was typed or pasted", () => {
   it("keeps the digits of a code typed, in two groups of four", () => {
@@ -19,6 +19,11 @@ describe("the code in what was typed or pasted", () => {
     expect(codeFromText(message)).toBe("48271936");
     expect(readMessage(message)).toEqual({ phone: null, code: "48271936" });
     expect(codeFromText("https://ead-chantier.vercel.app/i/Ab12345678cD")).toBe("");
+    // Even a token that happens to read "code" and eight digits.
+    expect(
+      codeFromText("https://ead-chantier.vercel.app/i/xcode99887766y\nVotre code\u00a0: 4827 1936"),
+    ).toBe("48271936");
+    expect(codeFromText("ead-chantier.vercel.app/i/code99887766")).toBe("");
   });
 
   it("tells the number from the code in one pasted text", () => {
@@ -36,5 +41,14 @@ describe("the code in what was typed or pasted", () => {
     expect(phoneKey("(418) 555-0142")).toBe("4185550142");
     expect(phoneKey("555-0142")).toBeNull();
     expect(phoneKey(null)).toBeNull();
+  });
+
+  it("gives Apple the number as user name and the code as password", () => {
+    const text = appleReviewText({ phone: "418 555-0100", code: "85741227" });
+    expect(text.split("\n").slice(0, 2)).toEqual([
+      "Nom d'utilisateur / User name\u00a0: 418 555-0100",
+      "Mot de passe / Password\u00a0: 85741227",
+    ]);
+    expect(text).toContain('"Avec un code du bureau"');
   });
 });

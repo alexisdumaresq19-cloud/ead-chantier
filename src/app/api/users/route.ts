@@ -1,5 +1,6 @@
 import { asc, gt, inArray, isNull, sql as raw } from "drizzle-orm";
 
+import { DEMO_PHONE_TAKEN, isDemoPhone } from "@/server/access-code/demo";
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
@@ -59,6 +60,7 @@ export const POST = route(async (request) => {
   const data = await body(request, newPerson);
   const problem = personProblem(data);
   if (problem) throw badRequest(problem);
+  if (await isDemoPhone(data.phone)) throw badRequest(DEMO_PHONE_TAKEN, "demo_phone");
   const id = newId();
   // The person and their projects are saved together, or not at all.
   await db.transaction(async (tx) => {

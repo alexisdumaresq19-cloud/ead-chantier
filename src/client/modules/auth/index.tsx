@@ -6,6 +6,7 @@ import type { InvitePreview } from "@/shared/api";
 
 import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { enterApp, signOut, useMe } from "../../lib/session";
+import { isNativeApp } from "../../native";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 import { focusField, Heading, NAME_MISSING, nameMissing } from "./parts";
@@ -98,6 +99,13 @@ export function SetupScreen() {
     </PublicLayout>
   );
 }
+
+/**
+ * An iPhone's browser, outside the app: where a link tapped in Messages
+ * opens, even when the app is installed. Signing in here would use up the
+ * code that the app needs.
+ */
+const onIphoneBrowser = () => !isNativeApp() && /iPhone|iPod/.test(navigator.userAgent);
 
 /** What a personal link (/i/…) or a site QR code (/j/…) opens. */
 export function InviteScreen() {
@@ -243,6 +251,14 @@ export function InviteScreen() {
             Le lien sert une seule fois. Ne le partagez pas.
           </p>
         </form>
+        {onIphoneBrowser() ? (
+          <p className="border-line text-dim mt-6 border-t pt-4 text-sm text-pretty">
+            <span className="text-text font-semibold">
+              L&apos;application EAD est sur cet iPhone?
+            </span>{" "}
+            Tapez plutôt votre code dans l&apos;application&nbsp;: ce lien l&apos;utiliserait.
+          </p>
+        ) : null}
       </PublicLayout>
     );
   }

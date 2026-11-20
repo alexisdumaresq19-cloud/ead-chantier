@@ -2,6 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { projectToChange } from "@/server/access";
+import { refuseDemoOnPlans } from "@/server/access-code/rules";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, route } from "@/server/http";
@@ -10,6 +11,7 @@ import { sheetDetail, sheetRow } from "@/server/plans/queries";
 /** Chooses which revision the site sees, to go back to an earlier one. */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
+  refuseDemoOnPlans(user);
   const sheet = await sheetRow(id);
   await projectToChange(user, sheet.projectId);
   const { revisionId } = await body(request, z.object({ revisionId: z.string() }));

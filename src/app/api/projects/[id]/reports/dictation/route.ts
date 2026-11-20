@@ -103,7 +103,7 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   }
 
   // From here on the request costs money: it counts against the person's allowance.
-  await countDictation(user.id);
+  await countDictation(user.id, user.demo);
   if (recorded) {
     heard = await transcribeDictation(
       new Uint8Array(await recorded.arrayBuffer()),

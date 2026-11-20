@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import {
   ACCESS_CODE_HOW,
+  appleReviewText,
   DEMO_SESSION_DAYS,
   formatAccessCode,
   type DemoAccess,
@@ -136,7 +137,8 @@ export function DemoAccessCard({ className }: { className?: string }) {
       <p className="text-dim mt-3 max-w-prose text-[15px] text-pretty">
         Pour montrer l&apos;application à une personne hors de l&apos;équipe, par exemple
         l&apos;équipe d&apos;Apple qui vérifie l&apos;application. Le visiteur voit les projets
-        choisis comme un contremaître, sans rien pouvoir changer à l&apos;équipe.
+        choisis comme un contremaître. Il peut y ajouter des photos, des documents et des rapports.
+        Il ne change rien à l&apos;équipe, ni aux plans, ni à ce que d&apos;autres ont ajouté.
       </p>
 
       {demo.isPending ? (
@@ -160,6 +162,16 @@ export function DemoAccessCard({ className }: { className?: string }) {
             {ACCESS_CODE_HOW} Chaque connexion dure {DEMO_SESSION_DAYS}&nbsp;jour. Ce numéro
             n&apos;appartient à personne&nbsp;: il est réservé aux exemples.
           </p>
+          <div className="border-line mt-3 rounded-2xl border p-3.5">
+            <p className="text-sm text-pretty">
+              <span className="font-semibold">Pour Apple</span>, dans App Store Connect, aux
+              informations de connexion pour la vérification&nbsp;: le cellulaire va comme nom
+              d&apos;utilisateur, le code comme mot de passe, et le chemin dans les notes.
+            </p>
+            <CopyButton text={appleReviewText(access)} done="Copié pour Apple" className="mt-2.5">
+              Copier pour Apple
+            </CopyButton>
+          </div>
           <div className="mt-4">
             <p className="text-sm font-semibold">Projets montrés</p>
             <ul className="mt-1 space-y-0.5 text-[15px]">
@@ -267,6 +279,36 @@ function Value({
   );
 }
 
+/** Copies a text made for pasting elsewhere, and says so. */
+function CopyButton({
+  text,
+  done,
+  className,
+  children,
+}: {
+  text: string;
+  done: string;
+  className?: string;
+  children: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      toast.success(done);
+    } catch {
+      toast("Copiez-le à la main\u00a0: la copie n'est pas permise ici.");
+    }
+  };
+  return (
+    <Button variant="secondary" onClick={copy} className={className}>
+      {copied ? <Check aria-hidden /> : <Copy aria-hidden />}
+      {copied ? "Copié" : children}
+    </Button>
+  );
+}
+
 /** The projects the visitor sees, to tick: for a new access, or to change them. */
 function ProjectsSheet({
   open,
@@ -296,7 +338,7 @@ function ProjectsSheet({
       onClose={onClose}
       title={creating ? "Créer l'accès de démonstration" : "Projets montrés"}
       description={
-        "Choisissez des projets d'exemple, ou des projets que vous acceptez de montrer\u00a0: le visiteur en verra les plans, les documents, les photos et les rapports."
+        "Choisissez de préférence des projets d'exemple. Le visiteur en verra les plans, les documents, les photos et les rapports, et pourra y ajouter les siens."
       }
       footer={
         <>

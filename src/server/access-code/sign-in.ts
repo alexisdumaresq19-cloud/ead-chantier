@@ -18,12 +18,14 @@ import { db, schema } from "../db/client";
 import { badRequest, HttpError } from "../http";
 import { addressOf } from "../signup/door";
 import { isInviteCode, sameCode } from "./code";
-import { demoAccount, readDemoAccess } from "./demo";
+import { demoAccount, readDemoAccess, type DemoSetting } from "./demo";
 import {
   accessCounts,
   accessLimits,
   accessRefusal,
-  holdAccessDoor,
+  holdDemo,
+  holdNetwork,
+  holdNumber,
   networkKey,
   noteWrongTry,
   numberKey,
@@ -133,9 +135,15 @@ export async function signInWithCode(
   const shut = accessRefusal(
     await accessCounts({ network: keys.network, number: null }, null, limits, now),
     limits,
+    keys.network,
   );
   if (shut) throw tooManyTries(shut, now);
   const me = await currentUser(request);
+  // Which turn to wait for: the demonstration's, or this number's. Read
+  // again once it is held, as the office may be changing it.
+  const demoBefore = await readDemoAccess();
+  const demoTyped = (setting: DemoSetting | null): setting is DemoSetting =>
+    setting !== null && phoneKey(setting.phone) === typed.phone;
 
   // A wrong try is noted, and the note kept: the transaction hands the
   // refusal back instead of throwing it, which would undo the note.
@@ -144,19 +152,31 @@ export async function signInWithCode(
     | { wrong: true }
     | { refused: HttpError };
   const outcome = await db.transaction(async (tx): Promise<Outcome> => {
-    await holdAccessDoor(tx);
+    await holdNetwork(tx, keys.network);
+    const demoFirst = demoTyped(demoBefore);
+    if (demoFirst) await holdDemo(tx);
+    let demo = await readDemoAccess(tx);
+    if (!demoFirst && demoTyped(demo)) {
+      await holdDemo(tx);
+      demo = await readDemoAccess(tx);
+    }
+    const isDemoNumber = demoTyped(demo);
+    if (!isDemoNumber) await holdNumber(tx, keys.number);
     const people = await holders(tx, typed.phone, now);
-    const demo = await readDemoAccess(tx);
-    const isDemoNumber = demo !== null && phoneKey(demo.phone) === typed.phone;
     // The number's count restarts with its newest code: the office's new
     // code is the way out for someone whose number was shut.
-    const newest = [
-      ...people.map((row) => row.invite?.createdAt),
-      isDemoNumber ? demo.changedAt : undefined,
-    ].reduce<Date | null>((last, at) => (at && (!last || at > last) ? at : last), null);
+    const newest = people
+      .map((row) => row.invite?.createdAt)
+      .reduce<Date | null>((last, at) => (at && (!last || at > last) ? at : last), null);
     // The door is asked before the code is looked at: once it is shut, the
-    // right code gets the same refusal as any other.
-    const refusal = accessRefusal(await accessCounts(keys, newest, limits, now, tx), limits);
+    // right code gets the same refusal as any other. The demonstration's
+    // number is counted by network only (see door.ts).
+    const counted = { network: keys.network, number: isDemoNumber ? null : keys.number };
+    const refusal = accessRefusal(
+      await accessCounts(counted, newest, limits, now, tx),
+      limits,
+      keys.network,
+    );
     if (refusal) return { refused: tooManyTries(refusal, now) };
 
     let found: Found | null = null;
@@ -181,7 +201,7 @@ export async function signInWithCode(
           `Cet appareil est déjà connecté sous le nom de ${me.name}. Déconnectez-vous avant d'entrer avec ce code.`,
         ),
       };
-    const userId = found.kind === "demo" ? await demoAccount(tx, demo!) : found.userId;
+    const userId = found.kind === "demo" ? await demoAccount(tx, demo!, now) : found.userId;
     // Used up in one statement: a link opened at the same moment, or the
     // same code typed twice, signs in one device only.
     if (found.kind === "personal" && !(await consumeInvite(found.invite, tx)))

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { canadianPhone, codeDigits, COMPANY_CODE_LENGTH, PHONE_HINT } from "@/shared/signup";
 
 import { openSession, typedLine, UNREVIEWED_SESSION_DAYS, type Executor } from "../auth";
+import { isDemoPhone } from "../access-code/demo";
 import { db, schema } from "../db/client";
 import { env, type SignupLimits } from "../env";
 import { badRequest, HttpError } from "../http";
@@ -104,7 +105,8 @@ async function phoneInUse(phone: string, executor: Executor): Promise<boolean> {
       ),
     )
     .limit(1);
-  return Boolean(found);
+  // The demonstration's number is taken too, even while its account is gone.
+  return Boolean(found) || (await isDemoPhone(phone, executor));
 }
 
 /**

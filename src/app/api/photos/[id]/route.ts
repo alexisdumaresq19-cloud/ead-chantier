@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 
 import { assertOpen, projectFor } from "@/server/access";
+import { refuseDemoUnlessAuthor } from "@/server/access-code/rules";
 import { requireUser } from "@/server/auth";
 import { body, forbidden, notFound, route } from "@/server/http";
 import { removePhoto, setPhotoCaption } from "@/server/photos/changes";
@@ -23,6 +24,7 @@ async function photoToSee(request: NextRequest, id: string) {
 /** Same, for its author or someone who manages the project, while the project is open. */
 async function photoToChange(request: NextRequest, id: string) {
   const found = await photoToSee(request, id);
+  refuseDemoUnlessAuthor(found.user, found.row.createdBy);
   if (!canEditPhoto(found.row, found.user))
     throw forbidden(
       "Seuls son auteur, les contremaîtres et le bureau peuvent modifier cette photo.",

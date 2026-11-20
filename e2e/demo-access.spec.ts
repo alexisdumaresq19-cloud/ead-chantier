@@ -39,6 +39,11 @@ test("the office makes the access on a project and reads its number and code", a
   access = read.body.access;
   expect(access.phone).toBe("418 555-0100");
   await expect(card).toContainText(`${access.code.slice(0, 4)}\u00a0${access.code.slice(4)}`);
+  // Where each goes for Apple, ready to paste.
+  await expect(card).toContainText(
+    "le cellulaire va comme nom d'utilisateur, le code comme mot de passe",
+  );
+  await expect(card.getByRole("button", { name: "Copier pour Apple" })).toBeVisible();
   // The team's list names it for what it is.
   await expect(
     page.getByRole("link", { name: /Compte de démonstration/ }).getByText("Démonstration", {
@@ -68,6 +73,14 @@ test("a visitor types them and sees the project as a foreman, for a day", async 
   await page.getByRole("link", { name: "Rapports", exact: true }).first().click();
   await expect(page.getByRole("heading", { name: "Rapports" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Plans", exact: true }).first()).toBeVisible();
+  // A report opens, with its PDF, and the assistant is offered.
+  const reports = (await call(visitor.request, "GET", `/api/projects/${seed.projectId}/reports`))
+    .body as { id: string }[];
+  expect(reports.length).toBeGreaterThan(0);
+  const pdf = await visitor.request.get(`/api/reports/${reports[0].id}/pdf`);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toContain("application/pdf");
+  expect((await call(visitor.request, "GET", "/api/assistant")).body).toEqual({ dictation: true });
   await visitor.close();
 });
 
@@ -95,8 +108,10 @@ test("the account never touches the team, by the screens or by the API", async (
   const demo = people.find((person) => person.demo)!;
   const worker = people.find((person) => person.name === "Marc Lévesque")!;
   const tries = [
+    // A foreman may do these two: only the demonstration's own check refuses them.
     ["POST", `/api/projects/${seed.projectId}/qr`, {}],
     ["POST", `/api/projects/${seed.projectId}/members/${worker.id}/review`, { decision: "refuse" }],
+    // These were the office's already.
     ["POST", `/api/projects/${seed.projectId}/members`, { userIds: [worker.id] }],
     ["DELETE", `/api/projects/${seed.projectId}/members/${worker.id}`, undefined],
     ["POST", "/api/users", { name: "Intrus", role: "admin", projectIds: [] }],
@@ -109,6 +124,11 @@ test("the account never touches the team, by the screens or by the API", async (
     const refused = await call(visitor.request, method, path, data);
     expect(refused.status, `${method} ${path}`).toBe(403);
   }
+  // Nor does the office give a person its number.
+  const shared = await call(office.request, "PATCH", `/api/users/${worker.id}`, {
+    phone: access.phone,
+  });
+  expect([shared.status, shared.body.error.code]).toEqual([400, "demo_phone"]);
   // Nor does the office make it anything else, or send it a link.
   const promoted = await call(office.request, "PATCH", `/api/users/${demo.id}`, { role: "admin" });
   expect(promoted.status).toBe(403);
@@ -118,6 +138,63 @@ test("the account never touches the team, by the screens or by the API", async (
     role: "contremaitre",
   });
   await Promise.all([office.close(), visitor.close()]);
+});
+
+test("the account adds to its projects, and never removes or changes what the team made", async ({
+  browser,
+}) => {
+  const visitor = await device(browser);
+  expect((await call(visitor.request, "POST", "/api/sessions/code", access)).status).toBe(200);
+  const project = `/api/projects/${seed.projectId}`;
+  const [photo] = (await call(visitor.request, "GET", `${project}/photos`)).body as {
+    id: string;
+    canEdit: boolean;
+  }[];
+  const [document] = (await call(visitor.request, "GET", `${project}/documents`)).body as {
+    id: string;
+  }[];
+  const [report] = (await call(visitor.request, "GET", `${project}/reports`)).body as {
+    id: string;
+  }[];
+  // The screens offer no change to the foreman's photo.
+  expect(photo.canEdit).toBe(false);
+  const tries = [
+    ["DELETE", `/api/photos/${photo.id}`, undefined, "modifie seulement ce qu'il a ajouté"],
+    ["PATCH", `/api/photos/${photo.id}`, { caption: "Effacé" }, "modifie seulement"],
+    ["DELETE", `/api/documents/${document.id}`, undefined, "modifie seulement"],
+    ["PATCH", `/api/reports/${report.id}`, { notes: "Effacé" }, "modifie seulement"],
+    ["DELETE", `/api/reports/${report.id}`, undefined, "modifie seulement"],
+    ["PATCH", `/api/sheets/${seed.sheetIds[0]}`, { title: "Effacé" }, "sans les modifier"],
+    ["DELETE", `/api/sheets/${seed.sheetIds[0]}`, undefined, "sans les modifier"],
+    ["POST", `${project}/plan-folders`, { name: "Essai" }, "sans les modifier"],
+  ] as const;
+  for (const [method, path, data, said] of tries) {
+    const refused = await call(visitor.request, method, path, data);
+    expect(refused.status, `${method} ${path}`).toBe(403);
+    expect(refused.body.error.message).toContain(said);
+  }
+  // Everything is still there for the team.
+  const foreman = await contextAs(browser, "foreman");
+  expect((await call(foreman.request, "GET", `/api/photos/${photo.id}`)).status).toBe(200);
+  expect((await call(foreman.request, "GET", `/api/reports/${report.id}`)).status).toBe(200);
+  await Promise.all([foreman.close(), visitor.close()]);
+});
+
+test("wrong codes on its number never shut the demonstration out", async ({ browser }) => {
+  const wrong = access.code.slice(0, 7) + ((Number(access.code[7]) + 1) % 10);
+  // More wrong codes than any person's number takes, each from its own network.
+  for (let i = 0; i < 12; i++) {
+    const stranger = await device(browser);
+    const refused = await call(stranger.request, "POST", "/api/sessions/code", {
+      phone: access.phone,
+      code: wrong,
+    });
+    expect(refused.body.error.code).toBe("wrong_access_code");
+    await stranger.close();
+  }
+  const reviewer = await device(browser);
+  expect((await call(reviewer.request, "POST", "/api/sessions/code", access)).status).toBe(200);
+  await reviewer.close();
 });
 
 test("the visitor deletes the account, and the next visitor still gets in", async ({ browser }) => {
@@ -158,6 +235,9 @@ test("the office removes the access: the number and the code stop working", asyn
   // Signed out everywhere, and its code refused like any wrong one.
   expect((await call(visitor.request, "GET", "/api/me")).status).toBe(401);
   const refused = await call(visitor.request, "POST", "/api/sessions/code", access);
-  expect(refused.body.error.code).toBe("wrong_access_code");
+  expect(refused.status).not.toBe(200);
+  // Its number is now one like any other: the strangers' wrong codes of the
+  // earlier test count against it, and it may already be held.
+  expect(["wrong_access_code", "too_many_tries"]).toContain(refused.body.error.code);
   await Promise.all([office.close(), visitor.close()]);
 });

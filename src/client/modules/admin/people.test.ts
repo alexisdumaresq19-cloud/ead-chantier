@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { codeFromText } from "@/shared/access";
+import { readMessage } from "@/shared/access";
 import type { Person } from "@/shared/api";
 
 import { ApiFailure } from "../../lib/api";
@@ -96,13 +96,30 @@ describe("sending an invitation", () => {
     expect(inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 1)).toContain("jusqu'à demain.");
   });
 
-  it("ends the invitation with its code, and how to type it in the app", () => {
-    const text = inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14, "48271936");
-    expect(text).toContain(
-      "J'ai déjà un compte, puis Avec un code du bureau. Votre code\u00a0: 4827\u00a01936\n",
+  it("puts the code first, with the number it goes with, and the link for those without the app", () => {
+    const text = inviteMessage(
+      "Julie Cyr",
+      "https://exemple.ca/i/abc",
+      14,
+      "48271936",
+      "4185550142",
     );
-    expect(text).toMatch(/\nLe lien et le code servent une seule fois, pendant 14 jours\.$/);
-    expect(codeFromText(text)).toBe("48271936");
+    const lines = text.split("\n");
+    expect(lines[0]).toBe("Bonjour Julie, voici comment entrer dans EAD Chantier.");
+    expect(lines[1]).toBe(
+      "Dans l'application, touchez J'ai déjà un compte si ce bouton est là, puis Avec un code du bureau. Entrez votre cellulaire (418 555-0142) et ce code\u00a0: 4827\u00a01936",
+    );
+    // The link only after: tapped first on an iPhone, it would use the code up in Safari.
+    expect(lines.slice(2)).toEqual([
+      "Sans l'application, ouvrez plutôt ce lien\u00a0:",
+      "https://exemple.ca/i/abc",
+      "Utilisez l'un ou l'autre\u00a0: ils servent une seule fois, pendant 14 jours.",
+    ]);
+    expect(readMessage(text)).toEqual({ phone: "418 555-0142", code: "48271936" });
+    // Without a number on file, the text still says which number to type.
+    expect(inviteMessage("Julie Cyr", "https://exemple.ca/i/abc", 14, "48271936")).toContain(
+      "Entrez votre cellulaire et ce code",
+    );
   });
 
   it("counts the days a link has left", () => {

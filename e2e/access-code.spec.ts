@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { device, fictionalPhone, personWithCode, typeCode } from "./access-support";
-import { call, contextAs, post, seed } from "./support";
+import { address, device, fictionalPhone, personWithCode, typeCode } from "./access-support";
+import { call, contextAs, deviceAt, post, seed } from "./support";
 
 // Getting in by typing: the office adds someone and reads the code beside
 // their link, the person types their cell number and that code (the iPhone
@@ -38,17 +38,33 @@ test("the office reads the code beside the link; the person types it and is in, 
   const shown = sheet.getByTestId("access-code");
   await expect(shown).toHaveText(/^\d{4}\u00a0\d{4}$/);
   await expect(sheet).toContainText(
-    "Dans l'application\u00a0: J'ai déjà un compte, puis Avec un code du bureau.",
+    "Dans l'application, touchez J'ai déjà un compte si ce bouton est là, puis Avec un code du bureau.",
   );
   await expect(sheet).toContainText(`À taper avec son cellulaire, le ${phone}.`);
   const code = (await shown.textContent())!.replace(/\D/g, "");
-  // The text message carries it too.
-  const sms = await sheet.getByRole("link", { name: "Texto" }).getAttribute("href");
-  expect(decodeURIComponent(sms!)).toContain(
-    `Votre code\u00a0: ${code.slice(0, 4)}\u00a0${code.slice(4)}`,
+  // The text message carries it too, with the number, before the link: a
+  // link tapped on an iPhone opens Safari, and would use the code up there.
+  const sms = decodeURIComponent(
+    (await sheet.getByRole("link", { name: "Texto" }).getAttribute("href"))!,
   );
-  const link = new URL(await sheet.getByLabel(`Lien personnel de ${name}`).inputValue()).pathname;
+  const said = `Entrez votre cellulaire (${phone}) et ce code\u00a0: ${code.slice(0, 4)}\u00a0${code.slice(4)}`;
+  expect(sms).toContain(said);
+  const url = await sheet.getByLabel(`Lien personnel de ${name}`).inputValue();
+  expect(sms.indexOf(said)).toBeLessThan(sms.indexOf(url));
+  const link = new URL(url).pathname;
   await office.close();
+
+  // The link opened in an iPhone's browser says the code is for the app.
+  const safari = await deviceAt(browser, address(), {
+    userAgent:
+      "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  });
+  const tapped = await safari.newPage();
+  await tapped.goto(link);
+  await expect(tapped.getByRole("button", { name: "Entrer", exact: true })).toBeVisible();
+  await expect(tapped.getByText("L'application EAD est sur cet iPhone?")).toBeVisible();
+  await expect(tapped.getByText(/Tapez plutôt votre code dans l'application/)).toBeVisible();
+  await safari.close();
 
   const phoneDevice = await device(browser);
   const page = await phoneDevice.newPage();
@@ -97,7 +113,7 @@ test("a wrong code is refused, and too many tries are said plainly", async ({ br
   await page.getByLabel("Code du bureau").fill(made.invite.code);
   await page.getByRole("button", { name: "Entrer", exact: true }).click();
   await expect(formError(page)).toContainText(
-    /^Trop d'essais à partir de ce réseau\. Réessayez (à|demain à) \d+\u00a0h\u00a0\d\d, ou demandez au bureau un lien pour entrer\.$/,
+    /^Trop d'essais à partir de ce réseau\. Réessayez (à|demain à) \d+\u00a0h\u00a0\d\d, ou essayez sans Wi-Fi, avec les données cellulaires\.$/,
   );
   // Another network, with the right code, still gets in.
   const elsewhere = await device(browser);

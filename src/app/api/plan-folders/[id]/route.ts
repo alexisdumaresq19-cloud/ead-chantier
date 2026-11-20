@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { projectToChange } from "@/server/access";
+import { refuseDemoOnPlans } from "@/server/access-code/rules";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { body, notFound, route } from "@/server/http";
@@ -9,6 +10,7 @@ import { updateFolder } from "@/server/plans/folders";
 
 async function folderToChange(request: Parameters<typeof requireUser>[0], id: string) {
   const user = await requireUser(request);
+  refuseDemoOnPlans(user);
   const [folder] = await db
     .select()
     .from(schema.planFolders)
