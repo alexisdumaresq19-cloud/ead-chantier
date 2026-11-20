@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  Clock,
   Phone,
   Printer,
   QrCode as QrIcon,
@@ -14,10 +13,10 @@ import { useState } from "react";
 import { Link } from "wouter";
 
 import type { InviteLink, Member, ProjectDetail } from "@/shared/api";
-import { isAdmin, ROLE_LABELS } from "@/shared/roles";
+import { isAdmin } from "@/shared/roles";
 
 import { api, errorMessage } from "../../lib/api";
-import { count, formatTime, formatWeekday } from "../../lib/format";
+import { count, formatWeekday } from "../../lib/format";
 import { queryClient } from "../../lib/query";
 import { useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
@@ -44,11 +43,13 @@ import { canShare, LinkField, shareLink } from "./invite-link";
 import {
   formatPhone,
   matchesPerson,
+  roleAndTitle,
+  SITE_CODE_DAYS,
+  siteCodeText,
   sortByName,
   sortMembers,
   telHref,
   titleOrRole,
-  validUntilText,
 } from "./people";
 import { CheckRow } from "./project-picker";
 import { QrCode } from "./qr";
@@ -255,9 +256,11 @@ function MemberRow({
 }) {
   const tel = member.phone ? telHref(member.phone) : null;
   const phone = member.phone ? formatPhone(member.phone) : null;
-  // A foreman or the office already carries a badge: the line under the name
-  // is for the job title.
-  const detail = member.title ?? (member.role === "travailleur" ? titleOrRole(member) : null);
+  // A foreman or the office carries a badge (in their own words when their
+  // title says the same): the line under the name is for the job title.
+  const { role, title } = roleAndTitle(member);
+  const badge = member.role === "travailleur" ? null : role;
+  const detail = badge ? title : (title ?? role);
   const name = <span className="font-semibold wrap-anywhere">{member.name}</span>;
   return (
     <li className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
@@ -274,9 +277,7 @@ function MemberRow({
           ) : (
             name
           )}
-          {member.role === "travailleur" ? null : (
-            <Badge tone="blue">{ROLE_LABELS[member.role]}</Badge>
-          )}
+          {badge ? <Badge tone="blue">{badge}</Badge> : null}
         </p>
         {detail ? <p className="text-dim text-sm wrap-anywhere">{detail}</p> : null}
         {/* Beside the name on a wide screen, the number is in the call button. */}
@@ -529,18 +530,16 @@ function SiteCodeSheet({
           <p className="mt-3 text-center text-[15px] font-semibold text-pretty">
             À scanner avec l&apos;appareil photo du téléphone
           </p>
-          <p className="text-dim mt-1 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-sm">
-            <span className="flex items-center gap-1.5">
-              <Clock className="size-4" aria-hidden />
-              {validUntilText(code.link.expiresAt, code.now)}
-            </span>
-            {memberCount !== undefined ? (
-              <span className="flex items-center gap-1.5">
-                <Users className="size-4" aria-hidden />
-                {count(memberCount, "personne")}
-              </span>
-            ) : null}
+          {/* Said plainly: the code is printed and taped up for the week. */}
+          <p className="mt-1 text-center text-[15px] text-pretty">
+            {siteCodeText(code.link.expiresAt)}
           </p>
+          {memberCount !== undefined ? (
+            <p className="text-dim mt-1 flex items-center justify-center gap-1.5 text-sm">
+              <Users className="size-4" aria-hidden />
+              {count(memberCount, "personne")} dans l&apos;équipe
+            </p>
+          ) : null}
           <div className="mt-4 space-y-2">
             {/* A new code starts with a link not copied yet. */}
             <LinkField key={code.link.url} url={code.link.url} label="Lien du code QR" />
@@ -582,12 +581,12 @@ function SiteCodeSheet({
           ) : (
             <p className="text-[15px] text-pretty">
               {code.state === "expired"
-                ? "Le code a atteint ses 24 heures : il ne fonctionne plus."
+                ? "Ce code est arrivé à échéance\u00a0: il ne fonctionne plus."
                 : code.state === "replaced"
                   ? "Ce code a été remplacé par un plus récent, créé sur un autre de vos appareils. Il ne fonctionne plus."
                   : code.state === "ended"
                     ? "Ce code ne fonctionne plus."
-                    : "Le code permet aux travailleurs d'entrer sur ce projet avec leur téléphone, pendant 24 heures."}
+                    : `Le code permet aux travailleurs d'entrer sur ce projet avec leur téléphone, pendant ${SITE_CODE_DAYS}\u00a0jours.`}
             </p>
           )}
           <Button size="lg" block onClick={code.renew}>
@@ -661,8 +660,8 @@ function SitePoster({ project, link }: { project: ProjectDetail; link: InviteLin
           </li>
         </ol>
         <p className="mt-[0.3in] text-[10.5pt] text-balance">
-          Code valide jusqu&apos;au {formatWeekday(end)}, {formatTime(end)}. Passé ce moment,
-          demandez un nouveau code à votre contremaître.
+          Ce code fonctionne jusqu&apos;au {formatWeekday(end)}. Ensuite, demandez le nouveau code à
+          votre contremaître.
         </p>
         <p className="font-display mt-1 text-[10.5pt] font-bold">
           Les Entreprises Allen Dumaresq · EAD Chantier

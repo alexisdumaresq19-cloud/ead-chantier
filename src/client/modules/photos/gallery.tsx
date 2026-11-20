@@ -1,4 +1,3 @@
-import { useMutation } from "@tanstack/react-query";
 import {
   Archive,
   CalendarDays,
@@ -10,7 +9,6 @@ import {
   Image as ImageIcon,
   ImagePlus,
   Images,
-  X,
 } from "lucide-react";
 import {
   memo,
@@ -20,16 +18,13 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ChangeEvent,
-  type FormEvent,
   type ReactNode,
 } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 
-import { PHOTO_CAPTION_MAX, siteDay, type Photo, type PhotoDay } from "@/shared/photos";
+import { siteDay, type Photo, type PhotoDay } from "@/shared/photos";
 import { isAdmin } from "@/shared/roles";
 
-import { api, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { navigate } from "../../lib/location";
@@ -39,23 +34,17 @@ import { Page } from "../../shell/page";
 import {
   Button,
   buttonClass,
-  Card,
   confirmAction,
   EmptyState,
-  FormError,
-  IconButton,
-  Input,
   QueryState,
   Sheet,
   Skeleton,
   Spinner,
   toast,
 } from "../../ui";
-import { photoChanged, refreshProject, usePhotoDays, usePhotoList } from "./data";
+import { usePhotoDays, usePhotoList } from "./data";
 import { dayTitle, groupByDay, monthTitle, type DayGroup, type LocalPhoto } from "./logic";
 import {
-  addPhotos,
-  captionWaiting,
   localFile,
   localPreviewUrl,
   removeWaiting,
@@ -64,6 +53,7 @@ import {
   useLocalPhotos,
   useSendProgress,
 } from "./outbox";
+import { TakePhotoButton, useJustAdded } from "./take";
 import { PhotoViewer } from "./viewer";
 
 // The gallery: a project's photos by day, newest first, with what is still
@@ -123,12 +113,7 @@ export function GalleryScreen({ day }: { day: string | null }) {
   const total = day ? counts.get(day) : project.photoCount;
 
   const [choosingDay, setChoosingDay] = useState(false);
-  const [batch, setBatch] = useState<string[] | null>(null);
-  // A file of the batch that turned out not to be a photo has left it.
-  const batchKept = batch?.filter(
-    (id) => mine.some((local) => local.id === id) || photos.some((photo) => photo.id === id),
-  );
-  const [adding, setAdding] = useState(false);
+  const justAdded = useJustAdded();
   const [localId, setLocalId] = useState<string | null>(null);
   const openLocal = mine.find((local) => local.id === localId && local.state !== "sent");
 
@@ -153,28 +138,11 @@ export function GalleryScreen({ day }: { day: string | null }) {
     else navigate(path, { replace: true });
   }, [path]);
 
-  async function addFiles(event: ChangeEvent<HTMLInputElement>) {
-    const files = [...(event.target.files ?? [])];
-    // So that choosing the same file again is still a change.
-    event.target.value = "";
-    if (!files.length) return;
-    setAdding(true);
-    try {
-      const { ids, refused } = await addPhotos(project.id, me.id, files);
-      if (refused)
-        toast.error(
-          refused === 1
-            ? "Un fichier n'est pas une image. Il n'a pas été ajouté."
-            : `${refused} fichiers ne sont pas des images. Ils n'ont pas été ajoutés.`,
-        );
-      if (ids.length) {
-        setBatch(ids);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
-    } finally {
-      setAdding(false);
-    }
-  }
+  // What was just taken goes in at the top of the grid: that is where the eye
+  // must be when its window closes.
+  useEffect(() => {
+    if (justAdded.size > 0) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [justAdded]);
 
   // Thumbnails that could not load without a network are asked for again
   // when it returns.
@@ -206,6 +174,7 @@ export function GalleryScreen({ day }: { day: string | null }) {
         group.tiles.filter((tile) => tile.kind === "local" && tile.local.state !== "sent").length
       }
       single={Boolean(day)}
+      justAdded={justAdded}
       onOpen={openPhoto}
       onOpenLocal={setLocalId}
     />
@@ -268,7 +237,7 @@ export function GalleryScreen({ day }: { day: string | null }) {
         <>
           {day || project.photoCount > 0 ? (
             <Button variant="secondary" onClick={() => setChoosingDay(true)}>
-              <CalendarDays aria-hidden /> {day ? "Autre jour" : "Par jour"}
+              <CalendarDays aria-hidden /> {day ? "Autre jour" : "Calendrier"}
             </Button>
           ) : null}
           {canAdd ? (
@@ -276,31 +245,37 @@ export function GalleryScreen({ day }: { day: string | null }) {
             <div className="hidden gap-2 lg:flex">
               {touch ? (
                 <>
-                  <FileButton variant="secondary" multiple busy={adding} onFiles={addFiles}>
+                  <TakePhotoButton
+                    projectId={project.id}
+                    camera={false}
+                    label="Choisir des photos"
+                    className={buttonClass({ variant: "secondary" })}
+                  >
                     <Images aria-hidden /> Choisir des photos
-                  </FileButton>
-                  <FileButton camera busy={adding} onFiles={addFiles}>
+                  </TakePhotoButton>
+                  <TakePhotoButton
+                    projectId={project.id}
+                    label="Prendre une photo"
+                    className={buttonClass()}
+                  >
                     <Camera aria-hidden /> Prendre une photo
-                  </FileButton>
+                  </TakePhotoButton>
                 </>
               ) : (
-                <FileButton multiple busy={adding} onFiles={addFiles}>
+                <TakePhotoButton
+                  projectId={project.id}
+                  camera={false}
+                  label="Ajouter des photos"
+                  className={buttonClass()}
+                >
                   <ImagePlus aria-hidden /> Ajouter des photos
-                </FileButton>
+                </TakePhotoButton>
               )}
             </div>
           ) : null}
         </>
       }
     >
-      {batchKept?.length ? (
-        <BatchCaption
-          key={batch?.join()}
-          projectId={project.id}
-          ids={batchKept}
-          onDone={() => setBatch(null)}
-        />
-      ) : null}
       {closed && !day ? (
         <div
           role="note"
@@ -321,23 +296,26 @@ export function GalleryScreen({ day }: { day: string | null }) {
         <>
           {/* Room for the bar below, so that it never hides the last row. */}
           <div className="h-20 lg:hidden" />
-          <div className="no-print border-line bg-surface/95 fixed inset-x-0 bottom-[calc(4rem+env(safe-area-inset-bottom)+1px)] z-20 border-t px-3 py-2.5 backdrop-blur lg:hidden">
+          {/* On the tabs, or at the very bottom when the frame hides them
+              (--ead-tabs, set by the frame), above the phone's home bar. */}
+          <div className="no-print border-line bg-surface/95 fixed inset-x-0 bottom-[var(--ead-tabs,calc(4rem+1px+env(safe-area-inset-bottom)))] z-20 border-t px-3 pt-2.5 pb-[calc(0.625rem+max(0px,env(safe-area-inset-bottom)-var(--ead-tabs,4rem)))] backdrop-blur lg:hidden">
             <div className="mx-auto flex max-w-lg gap-2">
-              <FileButton
-                variant="secondary"
-                size="lg"
-                multiple
-                busy={adding}
-                onFiles={addFiles}
+              <TakePhotoButton
+                projectId={project.id}
+                camera={false}
                 label="Choisir des photos"
-                className="px-4"
+                className={buttonClass({ variant: "secondary", size: "lg", className: "px-4" })}
               >
                 <Images aria-hidden />
-                <span className="max-[23rem]:hidden">Choisir</span>
-              </FileButton>
-              <FileButton size="lg" camera busy={adding} onFiles={addFiles} className="flex-1 px-4">
+                <span className="max-[23rem]:hidden">De la galerie</span>
+              </TakePhotoButton>
+              <TakePhotoButton
+                projectId={project.id}
+                label="Prendre une photo"
+                className={buttonClass({ size: "lg", className: "flex-1 px-4" })}
+              >
                 <Camera aria-hidden /> Prendre une photo
-              </FileButton>
+              </TakePhotoButton>
             </div>
           </div>
         </>
@@ -366,147 +344,6 @@ export function GalleryScreen({ day }: { day: string | null }) {
         />
       ) : null}
     </Page>
-  );
-}
-
-// --- Adding ---------------------------------------------------------------------
-
-/**
- * A button that opens the camera or the phone's gallery. It is a label
- * around a file input, which is what phones open most reliably.
- */
-function FileButton({
-  camera,
-  multiple,
-  busy,
-  onFiles,
-  variant,
-  size,
-  label,
-  className,
-  children,
-}: {
-  /** Opens the camera, facing the work. */
-  camera?: boolean;
-  multiple?: boolean;
-  busy: boolean;
-  onFiles: (event: ChangeEvent<HTMLInputElement>) => void;
-  variant?: "primary" | "secondary";
-  size?: "md" | "lg";
-  /** The button's full name, for when its text is shortened on a narrow screen. */
-  label?: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <label
-      title={label}
-      aria-busy={busy || undefined}
-      className={buttonClass({
-        variant,
-        size,
-        className: cn(
-          "has-focus-visible:outline-ead/55 relative has-focus-visible:outline-3 has-focus-visible:outline-offset-2",
-          busy && "pointer-events-none opacity-60",
-          className,
-        ),
-      })}
-    >
-      {busy ? <Spinner className="size-[1.2em] text-current" label="Ajout en cours" /> : null}
-      {children}
-      <input
-        type="file"
-        // "image/*" rather than a list of types: an iPhone then hands over a
-        // JPEG even when it keeps its photos as HEIC.
-        accept="image/*"
-        capture={camera ? "environment" : undefined}
-        multiple={multiple}
-        disabled={busy}
-        onChange={onFiles}
-        aria-label={label}
-        className="sr-only"
-      />
-    </label>
-  );
-}
-
-/** Right after choosing: an optional word about the photos just added. */
-function BatchCaption({
-  projectId,
-  ids,
-  onDone,
-}: {
-  projectId: string;
-  ids: string[];
-  onDone: () => void;
-}) {
-  const [text, setText] = useState("");
-  const save = useMutation({
-    mutationFn: async () => {
-      const caption = text.trim() || null;
-      // Photos still on the device take the caption with them; those the
-      // server already has are changed there.
-      const sent = await captionWaiting(ids, caption);
-      const results = await Promise.allSettled(
-        sent.map((id) =>
-          api<Photo>(`/api/photos/${id}`, { method: "PATCH", body: { caption } }).then((photo) =>
-            photoChanged(projectId, photo),
-          ),
-        ),
-      );
-      const failed = results.find((result) => result.status === "rejected");
-      if (failed) throw failed.reason;
-    },
-    onSuccess: () => {
-      toast.success(ids.length > 1 ? "Description ajoutée aux photos." : "Description ajoutée.");
-      void refreshProject(projectId);
-      onDone();
-    },
-  });
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (text.trim()) save.mutate();
-    else onDone();
-  }
-
-  return (
-    <Card className="animate-rise mb-4 p-3.5 sm:p-4">
-      <form onSubmit={submit}>
-        <div className="flex items-start justify-between gap-2">
-          <label htmlFor="batch-caption" className="pt-0.5 font-semibold">
-            {ids.length > 1 ? `${ids.length} photos ajoutées` : "Photo ajoutée"}
-            <span className="text-dim block text-sm font-normal">
-              Vous pouvez dire ce qu&apos;{ids.length > 1 ? "elles montrent" : "elle montre"}. Ce
-              n&apos;est pas obligatoire.
-            </span>
-          </label>
-          <IconButton label="Fermer" onClick={onDone} className="-mt-1.5 -mr-1.5">
-            <X aria-hidden />
-          </IconButton>
-        </div>
-        <div className="mt-2.5 flex gap-2">
-          <Input
-            id="batch-caption"
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            maxLength={PHOTO_CAPTION_MAX}
-            placeholder="Ex. : tranchée avant remblai"
-            enterKeyHint="done"
-            autoComplete="off"
-            className="min-w-0 flex-1"
-          />
-          <Button type="submit" size="lg" loading={save.isPending} className="h-12 px-5">
-            OK
-          </Button>
-        </div>
-        {save.isError ? (
-          <div className="mt-2.5">
-            <FormError>{errorMessage(save.error)}</FormError>
-          </div>
-        ) : null}
-      </form>
-    </Card>
   );
 }
 
@@ -587,6 +424,7 @@ const DaySection = memo(function DaySection({
   title,
   count: photoCount,
   single,
+  justAdded,
   onOpen,
   onOpenLocal,
 }: {
@@ -595,6 +433,8 @@ const DaySection = memo(function DaySection({
   count: number;
   /** The page is about this day alone: its title already says which. */
   single: boolean;
+  /** Taken a moment ago on this device: outlined. */
+  justAdded: ReadonlySet<string>;
   onOpen: (id: string) => void;
   onOpenLocal: (id: string) => void;
 }) {
@@ -610,9 +450,19 @@ const DaySection = memo(function DaySection({
       <ul className={cn(GRID, "-mx-4 sm:mx-0 sm:overflow-hidden sm:rounded-xl")}>
         {group.tiles.map((tile) =>
           tile.kind === "photo" ? (
-            <PhotoTile key={tile.id} photo={tile.photo} onOpen={onOpen} />
+            <PhotoTile
+              key={tile.id}
+              photo={tile.photo}
+              outlined={justAdded.has(tile.id)}
+              onOpen={onOpen}
+            />
           ) : (
-            <LocalTile key={tile.id} local={tile.local} onOpen={onOpenLocal} />
+            <LocalTile
+              key={tile.id}
+              local={tile.local}
+              outlined={justAdded.has(tile.id)}
+              onOpen={onOpenLocal}
+            />
           ),
         )}
       </ul>
@@ -623,11 +473,26 @@ const DaySection = memo(function DaySection({
 const tileClass =
   "bg-line/70 relative block aspect-square w-full cursor-pointer overflow-hidden focus-visible:z-[1] focus-visible:-outline-offset-3";
 
+/** Drawn over the image: a ring of the tile itself would be hidden under it. */
+function Outline({ shown }: { shown: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "ring-ead pointer-events-none absolute inset-0 ring-3 transition-opacity duration-500 ring-inset",
+        shown ? "opacity-100" : "opacity-0",
+      )}
+    />
+  );
+}
+
 const PhotoTile = memo(function PhotoTile({
   photo,
+  outlined,
   onOpen,
 }: {
   photo: Photo;
+  outlined: boolean;
   onOpen: (id: string) => void;
 }) {
   // Just sent from this device: its small image stays under the real
@@ -656,6 +521,7 @@ const PhotoTile = memo(function PhotoTile({
           onError={(event) => (event.currentTarget.dataset.broken = "")}
           className="size-full object-cover transition-[filter] group-hover:brightness-90 data-broken:invisible"
         />
+        <Outline shown={outlined} />
       </button>
     </li>
   );
@@ -663,9 +529,11 @@ const PhotoTile = memo(function PhotoTile({
 
 const LocalTile = memo(function LocalTile({
   local,
+  outlined,
   onOpen,
 }: {
   local: LocalPhoto;
+  outlined: boolean;
   onOpen: (id: string) => void;
 }) {
   const preview = localPreviewUrl(local.id);
@@ -708,6 +576,7 @@ const LocalTile = memo(function LocalTile({
             <CircleAlert className="size-3.5" aria-hidden /> Non envoyée
           </span>
         ) : null}
+        <Outline shown={outlined} />
       </button>
     </li>
   );

@@ -61,6 +61,10 @@ test("the office adds a person and gets a personal link that works once", async 
   await windowOpen(page);
   // The window opens on the name, ready to type.
   await expect(page.getByLabel("Prénom et nom")).toBeFocused();
+  // Sent without a name: said in French under the field, never the browser's bubble.
+  await page.getByRole("button", { name: "Ajouter et créer le lien" }).click();
+  await expect(page.getByText("Inscrivez le nom de la personne.")).toBeVisible();
+  await expect(page.getByLabel("Prénom et nom")).toBeFocused();
   await page.getByLabel("Prénom et nom").fill(name);
   await page.getByLabel("Cellulaire").fill("418 555-0123");
   await page.getByRole("checkbox", { name: /Réfection de la rue Principale/ }).check();
@@ -86,7 +90,7 @@ test("the office edits a role, and cannot take its own office access away", asyn
   const page = await office.newPage();
   await page.goto(`/equipe?personne=${person.id}`);
   await expect(page.getByRole("heading", { name: `Essai Rôle ${run()}` })).toBeVisible();
-  await page.getByLabel("Rôle").selectOption("contremaitre");
+  await page.getByLabel("Accès dans l'application").selectOption("contremaitre");
   await page.getByRole("button", { name: "Enregistrer" }).click();
   await expect(page.getByText("Fiche enregistrée")).toBeVisible();
   const people = await call(office.request, "GET", "/api/users");
@@ -95,7 +99,7 @@ test("the office edits a role, and cannot take its own office access away", asyn
   // One's own role is locked on screen, and the server refuses it anyway.
   const me = await idOf(office);
   await page.goto(`/equipe?personne=${me}`);
-  await expect(page.getByLabel("Rôle")).toBeDisabled();
+  await expect(page.getByLabel("Accès dans l'application")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Désactiver l'accès" })).toHaveCount(0);
   for (const change of [{ role: "contremaitre" }, { active: false }]) {
     const refused = await call(office.request, "PATCH", `/api/users/${me}`, change);
@@ -171,6 +175,11 @@ test("the foreman's site code: kept, used to join, then confirmed or refused", a
   const link = page.getByLabel("Lien du code QR");
   await expect(link).toHaveValue(/\/j\//);
   const url = await link.inputValue();
+  // How long it works, said plainly: it is printed for the week.
+  await expect(page.getByRole("dialog")).toContainText(
+    new RegExp(`Ce code fonctionne 7${NBSP}jours, jusqu'au `),
+  );
+  await expect(page.getByRole("dialog")).toContainText(/\d+\spersonnes?\sdans l'équipe/);
   await windowOpen(page);
   await page.getByRole("button", { name: "Fermer" }).click();
   await page.reload();
@@ -186,6 +195,9 @@ test("the foreman's site code: kept, used to join, then confirmed or refused", a
     const device = await browser.newContext({ baseURL: seed.base });
     const phone = await device.newPage();
     await phone.goto(new URL(url).pathname);
+    await phone.getByRole("button", { name: "Entrer sur le chantier" }).click();
+    await expect(phone.getByText("Inscrivez votre prénom et votre nom.")).toBeVisible();
+    await expect(phone.getByLabel("Prénom et nom")).toBeFocused();
     await phone.getByLabel("Prénom et nom").fill(name);
     await phone.getByRole("button", { name: "Entrer sur le chantier" }).click();
     await expect(phone).toHaveURL(new RegExp(`/projets/${seed.projectId}$`));
@@ -245,6 +257,11 @@ test("the office creates, edits, archives and reopens a project", async ({ brows
   const page = await office.newPage();
   const name = `Essai Projet ${run()}`;
   await page.goto("/projets/nouveau");
+  // The name first, where the cursor is; missing, it is asked for in French.
+  await expect(page.getByLabel("Nom du projet")).toBeFocused();
+  await page.getByRole("button", { name: "Créer le projet" }).click();
+  await expect(page.getByText("Inscrivez le nom du projet.")).toBeVisible();
+  await expect(page.getByLabel("Nom du projet")).toBeFocused();
   await page.getByLabel("Nom du projet").fill(name);
   await page.getByRole("button", { name: "Créer le projet" }).click();
   await expect(page.getByRole("heading", { name })).toBeVisible();
@@ -310,6 +327,36 @@ test("the office creates, edits, archives and reopens a project", async ({ brows
   await expect(reopened.getByRole("button", { name: "Code QR du chantier" }).first()).toBeVisible();
   await again.close();
   await call(office.request, "DELETE", `/api/projects/${projectId}/members/${foremanId}`);
+  await Promise.all([office.close(), foreman.close()]);
+});
+
+test("a title that repeats the role is said once, as the person's own word", async ({
+  browser,
+}) => {
+  // The seeded foreman's title is "Contremaîtresse".
+  const office = await contextAs(browser, "admin");
+  const page = await office.newPage();
+  await page.goto("/equipe");
+  const row = page.getByRole("link", { name: new RegExp(seed.people.foreman) });
+  await expect(row).toContainText("Contremaîtresse");
+  await expect(row).not.toContainText("Contremaître ·");
+  await row.click();
+  const heading = page.getByRole("heading", { name: seed.people.foreman });
+  await expect(heading).toBeVisible();
+  // Under the name: the badge in her own word, then the other facts.
+  const header = heading.locator("..");
+  await expect(header.getByText("Contremaîtresse")).toHaveCount(1);
+  await expect(header.getByText("Contremaître", { exact: true })).toHaveCount(0);
+
+  const foreman = await contextAs(browser, "foreman");
+  const desk = await foreman.newPage();
+  await desk.goto(`/projets/${seed.projectId}/equipe`);
+  const item = desk.getByRole("listitem").filter({ hasText: seed.people.foreman });
+  await expect(item.getByText("Contremaîtresse")).toHaveCount(1);
+  await expect(item.getByText("Contremaître", { exact: true })).toHaveCount(0);
+  await desk.goto("/moi");
+  await expect(desk.getByRole("main").getByText("Contremaîtresse")).toHaveCount(1);
+  await expect(desk.getByRole("main").getByText(/Contremaître ·/)).toHaveCount(0);
   await Promise.all([office.close(), foreman.close()]);
 });
 

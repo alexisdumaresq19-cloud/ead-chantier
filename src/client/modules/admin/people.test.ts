@@ -12,6 +12,7 @@ import {
   lastSeenText,
   mailHref,
   matchesPerson,
+  roleAndTitle,
   scannedText,
   signOutFailure,
   smsHref,
@@ -19,8 +20,9 @@ import {
   sortMembers,
   sortPeople,
   telHref,
+  siteCodeText,
+  titleIsRole,
   titleOrRole,
-  validUntilText,
 } from "./people";
 
 describe("phone numbers", () => {
@@ -92,16 +94,9 @@ describe("sending an invitation", () => {
     expect(daysLeft(new Date(2026, 10, 19, 15, 0).toISOString(), now)).toBe(1);
   });
 
-  it("says until when a code works", () => {
-    const now = new Date(2026, 10, 19, 9, 0);
-    expect(validUntilText(new Date(2026, 10, 19, 14, 5).toISOString(), now)).toMatch(
-      /^Valide aujourd'hui jusqu'à 14 h 05$/,
-    );
-    expect(validUntilText(new Date(2026, 10, 20, 9, 0).toISOString(), now)).toMatch(
-      /^Valide jusqu'à demain, 9 h 00$/,
-    );
-    expect(validUntilText(new Date(2026, 11, 3, 9, 0).toISOString(), now)).toBe(
-      "Valide jusqu'au jeudi 3 décembre",
+  it("says plainly how long a site's code works, and until when", () => {
+    expect(siteCodeText(new Date(2026, 10, 26, 22, 1).toISOString())).toBe(
+      "Ce code fonctionne 7\u00a0jours, jusqu'au jeudi\u00a026\u00a0novembre.",
     );
   });
 });
@@ -123,6 +118,23 @@ describe("the office's list", () => {
     );
     expect(titleOrRole({ title: null, role: "admin" })).toBe("Bureau");
     expect(titleOrRole({ title: "  ", role: "contremaitre" })).toBe("Contremaître");
+  });
+
+  it("never says the role twice: a title that repeats it takes its place", () => {
+    expect(titleIsRole("Contremaîtresse", "contremaitre")).toBe(true);
+    expect(titleIsRole("CONTREMAITRE", "contremaitre")).toBe(true);
+    expect(titleIsRole("Travailleuse", "travailleur")).toBe(true);
+    expect(titleIsRole("Opérateur", "travailleur")).toBe(false);
+    expect(titleIsRole(null, "admin")).toBe(false);
+    expect(roleAndTitle({ title: "Contremaîtresse", role: "contremaitre" })).toEqual({
+      role: "Contremaîtresse",
+      title: null,
+    });
+    expect(roleAndTitle({ title: " Opérateur de pelle ", role: "travailleur" })).toEqual({
+      role: "Travailleur",
+      title: "Opérateur de pelle",
+    });
+    expect(roleAndTitle({ title: null, role: "admin" })).toEqual({ role: "Bureau", title: null });
   });
 
   it("says when someone was last seen", () => {

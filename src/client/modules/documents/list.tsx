@@ -9,6 +9,7 @@ import {
   ExternalLink,
   FileText,
   Plus,
+  SearchX,
   WifiOff,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -157,20 +158,28 @@ export function DocumentsScreen() {
                 </p>
               )}
               {groups.length === 0 ? (
-                <div className="py-10 text-center">
-                  <p className="text-dim wrap-anywhere">
-                    Aucun document ne correspond à «&nbsp;{search.trim()}&nbsp;».
-                  </p>
-                  <Button variant="ghost" className="mt-2" onClick={() => setSearch("")}>
-                    Effacer la recherche
-                  </Button>
-                </div>
+                <EmptyState
+                  icon={SearchX}
+                  title="Aucun document trouvé"
+                  text={
+                    <span className="wrap-anywhere">
+                      Aucun document ne correspond à «&nbsp;{search.trim()}&nbsp;».
+                    </span>
+                  }
+                  action={
+                    <Button variant="secondary" onClick={() => setSearch("")}>
+                      Effacer la recherche
+                    </Button>
+                  }
+                  className="mt-4"
+                />
               ) : (
                 groups.map(({ category, documents: inCategory }) => {
                   const open = searching || !folded.has(category);
                   const listId = `documents-${category}`;
                   return (
-                    <section key={category} className="mt-5">
+                    // Close together: a category of one document stays a short block.
+                    <section key={category} className="mt-3 first-of-type:mt-4">
                       <h2>
                         <button
                           type="button"

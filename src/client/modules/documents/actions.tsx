@@ -65,6 +65,7 @@ function ActionsSheet({
 }) {
   const [step, setStep] = useState<Step>("menu");
   const [title, setTitle] = useState(document?.title ?? "");
+  const [untitled, setUntitled] = useState(false);
   const formId = useId();
 
   const change = useMutation({
@@ -92,10 +93,15 @@ function ActionsSheet({
     },
   });
 
-  const rename = (event: FormEvent) => {
+  const rename = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const next = tidyTitle(title);
-    if (!next) return;
+    setUntitled(!next);
+    if (!next) {
+      const field = event.currentTarget.elements.namedItem("title");
+      if (field instanceof HTMLElement) field.focus();
+      return;
+    }
     if (next === document?.title) onClose();
     else change.mutate({ title: next });
   };
@@ -133,15 +139,16 @@ function ActionsSheet({
       ) : null}
 
       {document && step === "rename" ? (
-        <form id={formId} onSubmit={rename} className="space-y-4">
-          <Field label="Titre">
+        <form id={formId} onSubmit={rename} noValidate className="space-y-4">
+          <Field label="Titre" error={untitled ? "Inscrivez le titre du document." : null}>
             <Input
+              name="title"
               value={title}
               onChange={(event) => setTitle(event.target.value)}
               onFocus={(event) => event.target.select()}
               maxLength={DOCUMENT_TITLE_MAX}
               autoFocus
-              required
+              aria-invalid={untitled || undefined}
               autoComplete="off"
               enterKeyHint="done"
             />

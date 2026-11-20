@@ -341,7 +341,9 @@ function Composer({
                       <span className="shrink-0">&nbsp;· {formatSize(draft.file.size)}</span>
                     </p>
                     {untitled ? (
-                      <p className="text-bad mt-0.5 text-sm font-medium">Donnez un titre.</p>
+                      <p className="text-bad mt-0.5 text-sm font-medium">
+                        Inscrivez le titre du document.
+                      </p>
                     ) : hasTwin(draft) ? (
                       <p className="text-warn mt-0.5 text-sm font-medium">
                         Un autre document porte ce titre.
@@ -375,8 +377,10 @@ function Composer({
         </Notice>
       )}
 
-      {/* Stays in reach of the thumb, above the tabs, however long the list is. */}
-      <div className="bg-canvas/95 sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] -mx-4 mt-4 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
+      {/* Stays in reach of the thumb however long the list is: on the tabs, or
+          at the very bottom when the frame hides them (--ead-tabs), above the
+          phone's home bar. */}
+      <div className="bg-canvas/95 sticky bottom-[var(--ead-tabs,calc(4rem+1px+env(safe-area-inset-bottom)))] -mx-4 mt-4 px-4 pt-3 pb-[calc(0.75rem+max(0px,env(safe-area-inset-bottom)-var(--ead-tabs,4rem)))] backdrop-blur sm:-mx-6 sm:px-6 lg:static lg:mx-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
         <Button type="submit" size="lg" block disabled={accepted.length === 0}>
           <Send aria-hidden />
           {accepted.length > 0
