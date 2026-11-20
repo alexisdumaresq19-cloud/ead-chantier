@@ -26,6 +26,7 @@ import { PHOTO_CAPTION_MAX, type Photo } from "@/shared/photos";
 import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { queryClient } from "../../lib/query";
+import { isNativeApp } from "../../native";
 import { Button, confirmAction, FormError, Sheet, Spinner, Textarea, toast } from "../../ui";
 import { photoChanged, photoKeys, photoRemoved, refreshProject, usePhoto } from "./data";
 import { takenLabel } from "./logic";
@@ -623,6 +624,8 @@ function CaptionSheet({
 
 /** A phone that can hand an image to its other apps (messages, email…). */
 function canShareImages() {
+  // The iPhone app has the share sheet, which also saves to Photos.
+  if (isNativeApp()) return true;
   try {
     return (
       window.matchMedia("(pointer: coarse)").matches &&
@@ -673,6 +676,16 @@ function useSharing(photo: Photo | undefined, displayed: boolean) {
     try {
       const blob = held.current?.id === photo.id ? held.current.blob : await fetchImage(photo.url);
       const file = new File([blob], name, { type: "image/jpeg" });
+      if (isNativeApp()) {
+        // The image is in hand: what fails from here is the sheet, never the network.
+        try {
+          const { shareFile } = await import("../../native/files");
+          await shareFile(file, { text: photo.caption ?? undefined });
+        } catch {
+          toast.error("Le partage n'a pas abouti. Réessayez.");
+        }
+        return;
+      }
       if (native && navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({ files: [file], text: photo.caption ?? undefined });

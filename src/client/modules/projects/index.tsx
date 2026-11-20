@@ -30,6 +30,7 @@ import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
 import { projectsOpenedAt, recentSheetIds } from "../../lib/recents";
 import { keys, useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
+import { directionsUrl } from "../../native";
 import { planPaths, usePlans, warmSheet } from "../plans/data";
 import { TakePhotoButton } from "../photos/take";
 import { PlanThumb } from "../plans/parts";
@@ -335,7 +336,7 @@ export function ProjectHomeScreen() {
                 <MapPin className="text-ead size-4 shrink-0" aria-hidden /> {address}
               </p>
               <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`}
+                href={directionsUrl(address)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-sm font-semibold transition-colors hover:bg-white/20"
