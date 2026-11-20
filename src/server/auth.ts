@@ -193,7 +193,13 @@ export function deviceLabel(userAgent: string): string {
 // --- Invitations ------------------------------------------------------------
 
 const PERSONAL_INVITE_DAYS = 14;
-const PROJECT_INVITE_HOURS = 24;
+/**
+ * A site's QR code is printed and taped in the trailer for the crew that
+ * starts that week: it works for seven days. What bounds it is elsewhere:
+ * its places (below), the foreman confirming each newcomer, and its end the
+ * moment its author no longer manages the project.
+ */
+const PROJECT_INVITE_DAYS = 7;
 /**
  * How many people one QR code lets in: more than the largest crew that starts
  * on a site the same day, few enough that a photo of the code passed around
@@ -251,7 +257,7 @@ export async function createProjectInvite(
       ),
     );
   const token = newToken();
-  const expiresAt = new Date(Date.now() + PROJECT_INVITE_HOURS * 3_600_000);
+  const expiresAt = new Date(Date.now() + PROJECT_INVITE_DAYS * DAY);
   await db.insert(schema.invites).values({
     id: newId(),
     tokenHash: hashToken(token),
