@@ -284,8 +284,11 @@ check("QR join needs a name", r.status === 400, r.json);
 // A name the database cannot store used to take a place and create nobody.
 r = await worker.call("POST", `/api/invites/${qrToken}`, { name: "Luc\u0000Travailleur" });
 check(
-  "a name with a control character is refused, and takes no place of the code",
-  r.status === 400 && !worker.cookie && (await usesOf(qrToken)).uses === 0,
+  "a name with a control character is refused, in French, and takes no place of the code",
+  r.status === 400 &&
+    r.json?.error?.message === "Ce nom contient des caractères non permis. Retapez-le." &&
+    !worker.cookie &&
+    (await usesOf(qrToken)).uses === 0,
   { status: r.status, json: r.json, ...(await usesOf(qrToken)) },
 );
 r = await worker.call("POST", `/api/invites/${qrToken}`, { name: "  Luc\t Travailleur\n" });
@@ -326,6 +329,11 @@ check(
     Date.now() - later.last_seen_at.getTime() < 60_000,
   later,
 );
+check(
+  "and the cookie /api/me sends again ends with the session, not 400 days later",
+  Math.abs(worker.cookieExpires!.getTime() - later.expires_at.getTime()) < 1000,
+  { cookie: worker.cookieExpires, session: later.expires_at },
+);
 const foremanSession = await sessionOf(foremanId);
 await sql`update sessions set last_seen_at = now() - interval '7 hours',
           expires_at = now() + interval '100 days' where id = ${foremanSession.id}`;
@@ -338,9 +346,11 @@ r = await admin.call("PATCH", `/api/users/${luc.id}`, { unreviewed: false });
 r = await worker.call("GET", "/api/me");
 later = await sessionOf(luc.id);
 check(
-  "once the office has confirmed the person, the next request renews the session",
-  r.status === 200 && Math.abs(daysFromNow(later.expires_at) - 400) < 0.01,
-  later,
+  "once the office has confirmed the person, the next request renews the session, cookie too",
+  r.status === 200 &&
+    Math.abs(daysFromNow(later.expires_at) - 400) < 0.01 &&
+    Math.abs(daysFromNow(worker.cookieExpires) - 400) < 0.01,
+  { session: later.expires_at, cookie: worker.cookieExpires },
 );
 const passing = new Client();
 r = await passing.call("POST", `/api/invites/${qrToken}`, { name: "Zoé De Passage" });
@@ -607,17 +617,11 @@ const lateFolder = `${STORAGE_DIR}/private/u/${ticket.uploadId}`;
 await sendFile(ticket.target, bytes(2001));
 await sql`update uploads set created_at = now() - interval '4 hours' where id = ${ticket.uploadId}`;
 r = await worker.call("POST", `/api/uploads/${ticket.uploadId}/complete`);
-check(
-  "an upload is confirmed within three hours or not at all",
-  r.status === 400 && /trop tardé/.test(r.json?.error?.message) && existsSync(lateFolder),
-  r.json,
-);
-r = await photo(2002);
 [row] = await sql`select status from uploads where id = ${ticket.uploadId}`;
 check(
-  "the next upload announced removes it on the way, row and file",
-  r.status === 200 && !row && !existsSync(lateFolder),
-  { status: r.status, row },
+  "an upload is confirmed within three hours or not at all, and is then removed, row and file",
+  r.status === 400 && /trop tardé/.test(r.json?.error?.message) && !row && !existsSync(lateFolder),
+  { answer: r.json, row },
 );
 
 // Unfinished uploads: an allowance per person, and a clean-up after three hours.
@@ -732,7 +736,7 @@ check(
   await pendingOf(greedyId),
 );
 
-// What one person may send in a day, confirmed uploads included.
+// What one person may send of each kind in a day, confirmed uploads included.
 const sendWhole = async (client: Client, name: string) => {
   const announced = await hoard(client, name, 2000);
   if (announced.status !== 200) return announced.status;
@@ -748,26 +752,51 @@ check(
 );
 // The rest of a very long day, written straight to the table.
 const [{ sentToday }] = await sql`select count(*)::int as "sentToday" from uploads
-                                  where created_by = ${greedyId}`;
+                                  where created_by = ${greedyId} and kind = 'photo'`;
 await sql`insert into uploads (id, project_id, kind, storage_key, filename, content_type, size,
                                status, created_by, created_at)
           select 'jour-' || n, ${projectId}, 'photo', 'u/jour-' || n || '/p.jpg', 'p.jpg',
                  'image/jpeg', 2000, 'complete', ${greedyId}, now() - interval '23 hours'
-          from generate_series(1, ${499 - sentToday}) as n`;
-r = await hoard(greedy, "la-500e");
-check("the 500th upload of a day is accepted", r.status === 200, r.json);
-r = await hoard(greedy, "la-501e");
+          from generate_series(1, ${299 - sentToday}) as n`;
+r = await hoard(greedy, "la-300e");
+check("the 300th photo of a day is accepted", r.status === 200, r.json);
+r = await hoard(greedy, "la-301e");
 check(
-  "the next is refused until tomorrow, in French",
+  "the next is refused until tomorrow, in French, as an allowance the app waits for",
   r.status === 429 &&
-    r.json?.error?.code === "daily_upload_limit" &&
+    r.json?.error?.code === "too_many_uploads" &&
     /limite d'envois pour une journée/.test(r.json?.error?.message),
   r.json,
 );
 await sql`update uploads set created_at = now() - interval '25 hours'
           where created_by = ${greedyId} and id like 'jour-%'`;
-r = await hoard(greedy, "la-501e");
+r = await hoard(greedy, "la-301e");
 check("what was sent more than a day ago no longer counts", r.status === 200, r.json);
+
+// Plans have their own day: 6 GB, so a foreman's twelfth 500 MB plan waits.
+await sql`delete from uploads where created_by = ${anneId}`;
+await sql`insert into uploads (id, project_id, kind, storage_key, filename, content_type, size,
+                               status, created_by, created_at)
+          select 'plans-' || n, ${otherProjectId}, 'plan', 'u/plans-' || n || '/p.pdf', 'p.pdf',
+                 'application/pdf', ${500 * MB}, 'complete', ${anneId}, now() - interval '5 hours'
+          from generate_series(1, 11) as n`;
+r = await hoard(anne, "plans-du-jour", 500 * MB, "plan");
+check("a foreman's plans of the day may reach 6 GB", r.status === 200, r.json);
+r = await hoard(anne, "plans-de-trop", 400 * MB, "plan");
+check(
+  "and no more",
+  r.status === 429 && /limite d'envois pour une journée/.test(r.json?.error?.message),
+  r.json,
+);
+r = await anne.call("POST", "/api/uploads", {
+  projectId: otherProjectId,
+  kind: "photo",
+  filename: "photo-du-jour.jpg",
+  contentType: "image/jpeg",
+  size: 2000,
+});
+check("which leaves the photos of the day alone", r.status === 200, r.json);
+
 await sql`insert into uploads (id, project_id, kind, storage_key, filename, content_type, size,
                                status, created_by, created_at)
           select 'bureau-' || n, ${projectId}, 'photo', 'u/bureau-' || n || '/p.jpg', 'p.jpg',
@@ -775,7 +804,21 @@ await sql`insert into uploads (id, project_id, kind, storage_key, filename, cont
           from generate_series(1, 600) as n`;
 r = await hoard(admin, "le-bureau-charge-un-projet");
 check("the office, which loads whole projects, has no daily limit", r.status === 200, r.json);
-await sql`delete from uploads where id like 'bureau-%' or id like 'jour-%'`;
+await sql`delete from uploads where id like 'bureau-%' or id like 'jour-%' or id like 'plans-%'`;
+
+// A confirmed upload that nothing used is removed after a day, file and row.
+const unused = await sendWhole(greedy, "jamais-utilisee");
+const [unusedRow] = await sql`select id from uploads where created_by = ${greedyId}
+                              and filename = 'jamais-utilisee.jpg'`;
+const unusedFolder = `${STORAGE_DIR}/private/u/${unusedRow?.id}`;
+await sql`update uploads set created_at = now() - interval '25 hours' where id = ${unusedRow?.id}`;
+await hoard(greedy, "le-lendemain");
+[row] = await sql`select id from uploads where id = ${unusedRow?.id}`;
+check(
+  "a confirmed upload nothing used is removed after a day, row and file",
+  unused === 200 && !row && !existsSync(unusedFolder),
+  { unused, row },
+);
 
 // A QR code is worth what its author's rights are worth today, and once
 // found worthless it is ended for good.
@@ -855,16 +898,24 @@ check(
 r = await anon.call("GET", `/api/invites/${crowdToken}`);
 const lateJoin = await anon.call("POST", `/api/invites/${crowdToken}`, { name: "Trop Tard" });
 check(
-  "then the code is an expired link for anyone new, and the foreman shows a new one",
-  r.status === 410 && lateJoin.status === 410,
-  [r.status, lateJoin.status],
+  "then the code tells anyone new that it has no place left, preview and acceptance",
+  [r, lateJoin].every(
+    (answer) =>
+      answer.status === 410 &&
+      answer.json?.error?.code === "invite_full" &&
+      answer.json?.error?.message ===
+        "Toutes les places de ce code QR sont prises. Demandez un nouveau code à votre contremaître.",
+  ),
+  [r.json, lateJoin.json],
 );
 r = await paul.call("GET", `/api/invites/${crowdToken}`);
 const paulJoin = await paul.call("POST", `/api/invites/${crowdToken}`, {});
 const paulProject = await paul.call("GET", `/api/projects/${crowdedId}`);
 check(
   "also for a worker with an account who is not on the project",
-  r.status === 410 && paulJoin.status === 410 && paulProject.status === 404,
+  r.json?.error?.code === "invite_full" &&
+    paulJoin.json?.error?.code === "invite_full" &&
+    paulProject.status === 404,
   [r.status, paulJoin.status, paulProject.status],
 );
 const crowdMember = new Client();

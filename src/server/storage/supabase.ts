@@ -48,17 +48,23 @@ const alreadyExists = (error: ServiceError) =>
   /already exists/i.test(error.message) || error.status === 409 || error.statusCode === "409";
 
 /**
- * Whether the service looked at the request and would not take it as it is
- * (400, 413 or 422, in the HTTP status or in the answer's own code), as it
- * does for a size limit above the project's. A timeout, an outage (5xx), a
- * refused key (401, 403) or "slow down" (429) say nothing about the request.
+ * Whether the service refused the bucket's size limit, as it does for one
+ * above the Supabase project's own: "EntityTooLarge", 413 (as the HTTP status
+ * or, in its older answers, as its own code next to a 400) or a message about
+ * the size. Anything else, a timeout, an outage (5xx), a refused key (401,
+ * 403), "slow down" (429) or a refusal for another reason, is not about the
+ * limit, and dropping the limit would not be the answer to it.
  */
-function refusedTheRequest(error: ServiceError): boolean {
+export function refusedTheSizeLimit(error: ServiceError): boolean {
   const codes = [error.status, Number(error.statusCode)];
-  const asked = (code: number | undefined) => code === 400 || code === 413 || code === 422;
   const elsewhere = (code: number | undefined) =>
     code !== undefined && (code >= 500 || code === 401 || code === 403 || code === 429);
-  return codes.some(asked) && !codes.some(elsewhere);
+  if (codes.some(elsewhere)) return false;
+  return (
+    error.code === "EntityTooLarge" ||
+    codes.includes(413) ||
+    /maximum allowed size|size limit|file ?size|too large/i.test(error.message)
+  );
 }
 
 /** Creates the bucket with these settings, or gives them to the one that exists. */
@@ -78,10 +84,11 @@ async function applyBucket(api: BucketApi, name: string, options: BucketOptions)
  * A bucket's size limit may not exceed the Supabase project's own ("global")
  * limit, and the service refuses it when it does. The deployment then goes on
  * without the bucket limit, with a warning: the global limit still applies.
- * Only a refusal of the request leads there. Any other failure (storage down
- * or slow, a wrong key) stops the deployment: dropping the limit because of
- * a passing error would take it off a bucket that had it, and that limit is
- * the only bound on what an upload link accepts.
+ * Only a refusal of that limit leads there. Any other failure (storage down
+ * or slow, a wrong key, another setting refused) stops the deployment:
+ * dropping the limit because of a passing error would take it off a bucket
+ * that had it, and that limit is the only bound on what an upload link
+ * accepts.
  */
 export async function ensureBuckets(rules: BucketRules, api: BucketApi = supabase().storage) {
   for (const bucket of ["public", "private"] as const) {
@@ -90,8 +97,7 @@ export async function ensureBuckets(rules: BucketRules, api: BucketApi = supabas
     const options = { public: bucket === "public", fileSizeLimit, allowedMimeTypes };
     const refused: ServiceError | null = await applyBucket(api, name, options);
     if (!refused) continue;
-    if (!refusedTheRequest(refused)) fail(`bucket ${name}`, refused);
-    // If the limit was not the reason, this is refused as well.
+    if (!refusedTheSizeLimit(refused)) fail(`bucket ${name}`, refused);
     const unlimited = await applyBucket(api, name, { ...options, fileSizeLimit: null });
     if (unlimited) fail(`bucket ${name}`, refused);
     const megabytes = Math.round(fileSizeLimit / (1024 * 1024));
@@ -135,11 +141,11 @@ export function supabaseStorage(using?: Pick<SupabaseClient, "storage">): Storag
       if (isMissing(error)) return null;
       fail("info", error);
     }
-    // Without a size or a type there is nothing to compare with what was
-    // announced: an error, never "no type kept" (which would pass the check).
     if (typeof data.size !== "number") fail("info", { message: "taille inconnue" });
-    if (!data.contentType) fail("info", { message: "type de fichier inconnu" });
-    return { size: data.size, contentType: data.contentType };
+    // Hosted storage records the type the file came with. Without one, the
+    // type is unknown, which is not the announced one: an empty type fails
+    // the comparison, where null ("no type kept") would skip it.
+    return { size: data.size, contentType: data.contentType || "" };
   }
 
   return {

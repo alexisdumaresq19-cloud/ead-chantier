@@ -331,7 +331,10 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
   // Nor does a name the database would refuse (it used to take a place and create nobody).
   const stranger = await api.newContext({ baseURL });
   const unstorable = await call(stranger, "POST", invite, { name: "Jean\u0000Tremblay" });
-  expect(unstorable.status).toBe(400);
+  expect(unstorable).toMatchObject({
+    status: 400,
+    body: { error: { message: "Ce nom contient des caractères non permis. Retapez-le." } },
+  });
   expect(await usesLeft()).toBe(4);
 
   // A worker with an account who asks ten times at the same moment takes one place.
@@ -363,10 +366,31 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
   expect(scanned.every((member) => member.unreviewed)).toBe(true);
   expect(await usesLeft()).toBe(0);
 
-  // The full code is an expired link for anyone new. Those already in still
-  // open the project with it: the office, and someone who got in.
-  expect((await call(stranger, "GET", invite)).status).toBe(410);
-  expect((await call(stranger, "POST", invite, { name: "Essai Trop Tard" })).status).toBe(410);
+  // The full code tells anyone new that its places are taken, before they
+  // type their name. Those already in still open the project with it: the
+  // office, and someone who got in.
+  const noPlace = {
+    status: 410,
+    body: {
+      error: {
+        code: "invite_full",
+        message:
+          "Toutes les places de ce code QR sont prises. Demandez un nouveau code à votre contremaître.",
+      },
+    },
+  };
+  expect(await call(stranger, "GET", invite)).toMatchObject(noPlace);
+  expect(await call(stranger, "POST", invite, { name: "Essai Trop Tard" })).toMatchObject(noPlace);
+  const late = await browser.newContext({ baseURL });
+  const page = await late.newPage();
+  await page.goto(qr.url.replace(/^https?:\/\/[^/]+/, ""));
+  await expect(page.getByRole("heading", { name: "Ce code QR est complet" })).toBeVisible();
+  await expect(page.getByText(noPlace.body.error.message)).toBeVisible();
+  await expect(page.getByLabel("Prénom et nom")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Réessayer" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Ouvrir l'application" }).click();
+  await expect(page.getByRole("heading", { name: "Bienvenue" })).toBeVisible();
+  await late.close();
   const winner = devices[answers.findIndex((answer) => answer.status === 200)];
   for (const already of [office.request, winner, worker.request]) {
     const preview = await call(already, "GET", invite);
@@ -378,10 +402,14 @@ test("a QR code lets in exactly as many people as it has places", async ({ brows
   }
   expect(await usesLeft()).toBe(0);
 
-  // Whoever got in by QR code is signed in for seven days, until confirmed.
-  const { cookies } = await winner.storageState();
-  const session = cookies.find((cookie) => cookie.name === "ead_session");
-  expect(Math.abs((session?.expires ?? 0) - (Date.now() / 1000 + 7 * DAY))).toBeLessThan(120);
+  // Whoever got in by QR code is signed in for seven days, until confirmed,
+  // and opening the app does not stretch the cookie beyond them.
+  const cookieEnd = async () =>
+    (await winner.storageState()).cookies.find((cookie) => cookie.name === "ead_session")
+      ?.expires ?? 0;
+  expect(Math.abs((await cookieEnd()) - (Date.now() / 1000 + 7 * DAY))).toBeLessThan(120);
+  expect((await call(winner, "GET", "/api/me")).status).toBe(200);
+  expect(Math.abs((await cookieEnd()) - (Date.now() / 1000 + 7 * DAY))).toBeLessThan(120);
 
   // The seeded worker's project list is left as it was.
   await call(office.request, "DELETE", `/api/projects/${project.id}/members/${workerId}`);

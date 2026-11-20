@@ -5,8 +5,7 @@ import {
   BUCKET_RULES,
   exceedsAllowance,
   exceedsDailyAllowance,
-  MAX_DAILY_BYTES,
-  MAX_DAILY_UPLOADS,
+  DAILY_LIMITS,
   MAX_PENDING_BYTES,
   MAX_PENDING_UPLOADS,
   uploadProblem,
@@ -88,13 +87,35 @@ describe("exceedsAllowance", () => {
 });
 
 describe("exceedsDailyAllowance", () => {
-  it("stops at 500 uploads or 5 GB in a day, far above a day's work", () => {
-    expect(MAX_DAILY_UPLOADS).toBeGreaterThan(MAX_PENDING_UPLOADS * 10);
-    expect(MAX_DAILY_BYTES).toBe(5 * 1024 * MB);
-    expect(exceedsDailyAllowance({ count: MAX_DAILY_UPLOADS - 1, bytes: 0 }, 10)).toBe(false);
-    expect(exceedsDailyAllowance({ count: MAX_DAILY_UPLOADS, bytes: 0 }, 10)).toBe(true);
-    expect(exceedsDailyAllowance({ count: 10, bytes: 5000 * MB }, 100 * MB)).toBe(false);
-    expect(exceedsDailyAllowance({ count: 10, bytes: 5000 * MB }, 500 * MB)).toBe(true);
+  const GB = 1024 * MB;
+
+  it("counts each kind on its own, far above a heavy day's work", () => {
+    expect(DAILY_LIMITS).toEqual({
+      photo: { count: 300, bytes: 3 * GB },
+      document: { count: 100, bytes: 4 * GB },
+      plan: { count: 30, bytes: 6 * GB },
+    });
+    // Far above what the allowance of unfinished uploads lets through at once.
+    for (const limit of Object.values(DAILY_LIMITS)) {
+      expect(limit.count).toBeGreaterThanOrEqual(MAX_PENDING_UPLOADS);
+      expect(limit.bytes).toBeGreaterThan(MAX_PENDING_BYTES);
+    }
+  });
+
+  it("stops at the number of uploads of the kind", () => {
+    expect(exceedsDailyAllowance("photo", { count: 299, bytes: 0 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance("photo", { count: 300, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("plan", { count: 29, bytes: 0 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance("plan", { count: 30, bytes: 0 }, 10)).toBe(true);
+    expect(exceedsDailyAllowance("document", { count: 100, bytes: 0 }, 10)).toBe(true);
+  });
+
+  it("stops at the bytes of the kind", () => {
+    // Eleven 500 MB plans fit in 6 GB, a thirteenth does not.
+    expect(exceedsDailyAllowance("plan", { count: 11, bytes: 5500 * MB }, 500 * MB)).toBe(false);
+    expect(exceedsDailyAllowance("plan", { count: 12, bytes: 6000 * MB }, 500 * MB)).toBe(true);
+    expect(exceedsDailyAllowance("photo", { count: 100, bytes: 3 * GB - 10 }, 10)).toBe(false);
+    expect(exceedsDailyAllowance("photo", { count: 100, bytes: 3 * GB - 10 }, 11)).toBe(true);
   });
 });
 

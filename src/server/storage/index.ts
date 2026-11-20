@@ -24,8 +24,9 @@ export type StoredFile = {
    * The type storage recorded when the file arrived (the sender's
    * content-type header). Null only for a store that keeps none: the
    * development folder, whose file route refuses any other type than the
-   * announced one. Hosted storage always has one, and its driver fails
-   * rather than answer null: null skips the comparison in completeUpload.
+   * announced one. Hosted storage always keeps one: its driver answers ""
+   * when the service gives none, so the comparison in completeUpload fails
+   * instead of being skipped.
    */
   contentType: string | null;
 };

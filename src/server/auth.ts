@@ -25,7 +25,11 @@ export const SESSION_DAYS = 400; // the longest a browser keeps a cookie
 export const UNREVIEWED_SESSION_DAYS = 7;
 const DAY = 86_400_000;
 
-export type SessionUser = typeof schema.users.$inferSelect & { sessionId: string };
+export type SessionUser = typeof schema.users.$inferSelect & {
+  sessionId: string;
+  /** When this device's session ends, renewal included: its cookie ends then too. */
+  sessionExpiresAt: Date;
+};
 
 /**
  * The database, or a transaction of it. What signs someone in is done in
@@ -80,7 +84,11 @@ export async function currentUser(request: NextRequest): Promise<SessionUser | n
       .set({ lastSeenAt: renewal.lastSeenAt })
       .where(eq(schema.users.id, row.user.id));
   }
-  return { ...row.user, sessionId: row.session.id };
+  return {
+    ...row.user,
+    sessionId: row.session.id,
+    sessionExpiresAt: renewal?.expiresAt ?? row.session.expiresAt,
+  };
 }
 
 export async function requireUser(request: NextRequest): Promise<SessionUser> {
@@ -285,6 +293,17 @@ export async function findInvite(token: string): Promise<Invite | null> {
     .set({ revokedAt: new Date() })
     .where(and(eq(schema.invites.id, invite.id), isNull(schema.invites.revokedAt)));
   return null;
+}
+
+/**
+ * A line of text as people type or paste it (a name, a phone number): runs
+ * of spaces, tabs and line breaks become one space. Null when any other
+ * control character is left, which no one types and the database may refuse
+ * (a NUL): such a line is refused before an invitation is touched.
+ */
+export function typedLine(text: string): string | null {
+  const line = text.replace(/\s+/gu, " ").trim();
+  return /\p{Cc}/u.test(line) ? null : line;
 }
 
 /** Whether every use of the invitation has been taken. */

@@ -12,6 +12,7 @@ import {
   openSession,
   setSessionCookie,
   UNREVIEWED_SESSION_DAYS,
+  typedLine,
   type SessionUser,
 } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
@@ -25,6 +26,20 @@ const expired = () =>
     "invite_expired",
     "Ce lien n'est plus valide. Demandez-en un nouveau au bureau ou à votre contremaître.",
   );
+/** A site's code whose places are all taken: it still works for those already in. */
+const full = () =>
+  new HttpError(
+    410,
+    "invite_full",
+    "Toutes les places de ce code QR sont prises. Demandez un nouveau code à votre contremaître.",
+  );
+/**
+ * Why a place could not be taken. The code stood a moment ago: unless it has
+ * expired since, its places are gone (or it was just replaced by a new code,
+ * which the same advice covers).
+ */
+const noPlace = (invite: { expiresAt: Date }) =>
+  invite.expiresAt > new Date() ? full() : expired();
 
 /**
  * What a site's QR code does for someone who is signed in. The code is for
@@ -67,9 +82,9 @@ export const GET = route<{ token: string }>(async (request, { token }) => {
     .limit(1);
   if (!project) throw expired();
   const access = me ? await codeAccess(me, project.id) : "join";
-  // A code with no place left admits nobody new. It still opens the project
-  // for those who already have access.
-  if (access === "join" && inviteIsFull(invite)) throw expired();
+  // A code with no place left admits nobody new, and says so. It still opens
+  // the project for those who already have access.
+  if (access === "join" && inviteIsFull(invite)) throw full();
   return {
     kind: "project",
     projectName: project.name,
@@ -79,23 +94,6 @@ export const GET = route<{ token: string }>(async (request, { token }) => {
     projectId: access === "open" ? project.id : null,
   } satisfies InvitePreview;
 });
-
-/**
- * A line of text as people type or paste it: runs of spaces, tabs and line
- * breaks become one space. Any other control character is refused here,
- * before an invitation is touched (the database would refuse a NUL, after a
- * place of the code had been taken).
- */
-const line = (max: number) =>
-  z
-    .string()
-    .transform((text) => text.replace(/\s+/gu, " ").trim())
-    .pipe(
-      z
-        .string()
-        .max(max)
-        .regex(/^\P{Cc}*$/u, "caractères non permis"),
-    );
 
 /**
  * Accepts the invitation. A personal link signs this device in as that
@@ -111,13 +109,16 @@ const line = (max: number) =>
 export const POST = route<{ token: string }>(async (request, { token }) => {
   const input = await body(
     request,
-    z.object({
-      name: line(80)
-        .refine((name) => name.length >= 2, "au moins 2 caractères")
-        .optional(),
-      phone: line(30).optional(),
-    }),
+    z.object({ name: z.string().max(200).optional(), phone: z.string().max(100).optional() }),
   );
+  // Checked before an invitation is touched: a line the database would
+  // refuse must not take one of a code's places.
+  const name = input.name === undefined ? undefined : typedLine(input.name);
+  const phone = input.phone === undefined ? undefined : typedLine(input.phone);
+  if (name === null) throw badRequest("Ce nom contient des caractères non permis. Retapez-le.");
+  if (phone === null) throw badRequest("Ce numéro contient des caractères non permis. Retapez-le.");
+  if (name !== undefined && name.length > 80) throw badRequest("Ce nom est trop long.");
+  if (phone !== undefined && phone.length > 30) throw badRequest("Ce numéro est trop long.");
   const invite = await findInvite(token);
   if (!invite) throw expired();
   const me = await currentUser(request);
@@ -177,22 +178,21 @@ export const POST = route<{ token: string }>(async (request, { token }) => {
         .values({ projectId, userId: me.id })
         .onConflictDoNothing()
         .returning({ userId: schema.projectMembers.userId });
-      if (added.length && !(await consumeInvite(invite, tx))) throw expired();
+      if (added.length && !(await consumeInvite(invite, tx))) throw noPlace(invite);
     });
     return joined;
   }
 
   // Someone new. A place is taken before the account exists, in one
   // statement, so a code never lets in more people than it has places.
-  if (!input.name) throw badRequest("Entrez votre nom.");
-  const name = input.name;
+  if (!name || name.length < 2) throw badRequest("Entrez votre prénom et votre nom.");
   const session = await db.transaction(async (tx) => {
-    if (!(await consumeInvite(invite, tx))) throw expired();
+    if (!(await consumeInvite(invite, tx))) throw noPlace(invite);
     const userId = newId();
     await tx.insert(schema.users).values({
       id: userId,
       name,
-      phone: input.phone || null,
+      phone: phone || null,
       role: "travailleur",
       unreviewed: true,
       createdBy: invite.createdBy,

@@ -5,6 +5,7 @@ import {
   isSetupCode,
   SESSION_DAYS,
   sessionRenewal,
+  typedLine,
   UNREVIEWED_SESSION_DAYS,
 } from "./auth";
 
@@ -75,5 +76,20 @@ describe("inviteIsFull", () => {
     expect(inviteIsFull({ uses: 39, maxUses: 40 })).toBe(false);
     expect(inviteIsFull({ uses: 40, maxUses: 40 })).toBe(true);
     expect(inviteIsFull({ uses: 1000, maxUses: null })).toBe(false);
+  });
+});
+
+describe("typedLine", () => {
+  it("keeps a line as it was typed, spaces tidied", () => {
+    expect(typedLine("  Jean   Tremblay ")).toBe("Jean Tremblay");
+    expect(typedLine("Jean\tTremblay\n")).toBe("Jean Tremblay");
+    expect(typedLine("Éloïse D'Amours-Côté")).toBe("Éloïse D'Amours-Côté");
+    expect(typedLine("418 555-0123")).toBe("418 555-0123");
+  });
+
+  // A NUL used to take one of a code's places before the database refused it.
+  it("refuses any other control character", () => {
+    for (const text of ["Jean\u0000Tremblay", "Jean\u0007", "\u001bJean", "Jean\u007f"])
+      expect(typedLine(text), JSON.stringify(text)).toBeNull();
   });
 });

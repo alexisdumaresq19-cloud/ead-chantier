@@ -133,8 +133,8 @@ const { consumeInvite, createProjectInvite, findInvite } = await import("./auth"
 const {
   beginUpload,
   completeUpload,
+  DAILY_LIMITS,
   discardUpload,
-  MAX_DAILY_UPLOADS,
   MAX_PENDING_UPLOADS,
   sweepAbandonedUploads,
   takeUpload,
@@ -150,6 +150,13 @@ const photo = (name = "photo.jpg", size = 100) => ({
   kind: "photo" as const,
   filename: name,
   contentType: "image/jpeg",
+  size,
+});
+const plan = (size: number, name = `plans-${size}.pdf`) => ({
+  projectId,
+  kind: "plan" as const,
+  filename: name,
+  contentType: "application/pdf",
   size,
 });
 const jpeg = (size: number, body = "the announced file") => ({
@@ -229,9 +236,10 @@ describe.skipIf(!ready)("with a database", () => {
       await send(upload.storageKey, { size: 100, contentType: "text/html", body: "a page" });
       await expect(completeUpload(user, upload.id)).rejects.toThrow(/n'est pas celui/);
       expect(state.files.size).toBe(0);
-      // Hosted storage always records a type: without one, nothing is concluded.
+      // Hosted storage always records a type: a file without one is refused.
       await send(upload.storageKey, { size: 100, body: "no type" });
-      await expect(completeUpload(user, upload.id)).rejects.toThrow(/type de fichier inconnu/);
+      await expect(completeUpload(user, upload.id)).rejects.toThrow(/n'est pas celui/);
+      expect(state.files.size).toBe(0);
       expect((await rowOf(upload.id)).status).toBe("pending");
     });
 
@@ -267,6 +275,9 @@ describe.skipIf(!ready)("with a database", () => {
 
         const row = await rowOf(upload.id);
         const stored = state.files.get(key);
+        // A confirmation deletes only what it found wrong while holding the
+        // row: the right file, once in, is never deleted.
+        expect(state.log, `round ${round}`).not.toContain(`DELETE ${right.body}`);
         if (row.status === "complete")
           expect(stored, `round ${round}: ${state.log.join(" → ")}`).toEqual(right);
         // Whatever happened, the announced file can still be sent and confirmed.
@@ -280,15 +291,26 @@ describe.skipIf(!ready)("with a database", () => {
       }
     }, 60_000);
 
-    it("refuses an upload past its time, which the clean-up then removes", async () => {
+    it("refuses an upload past its time, and removes it on the spot", async () => {
       const user = person();
       const { upload } = await beginUpload(user, photo());
       await send(upload.storageKey, jpeg(100));
       await age([upload.id], 4);
       await expect(completeUpload(user, upload.id)).rejects.toThrow(/trop tardé/);
-      expect(await sweepAbandonedUploads()).toBe(1);
       expect(await rowOf(upload.id)).toBeUndefined();
       expect(state.files.size).toBe(0);
+    });
+
+    it("lets confirmations of one upload take turns, and agree", async () => {
+      const user = person();
+      state.roundTrip = 10;
+      const { upload } = await beginUpload(user, photo());
+      await send(upload.storageKey, jpeg(100));
+      const answers = await Promise.all(
+        Array.from({ length: 6 }, () => refusal(completeUpload(user, upload.id))),
+      );
+      expect(answers).toEqual(Array(6).fill("accepted"));
+      expect(state.log.filter((line) => line.startsWith("DELETE"))).toEqual([]);
     });
   });
 
@@ -403,13 +425,17 @@ describe.skipIf(!ready)("with a database", () => {
       error.mockRestore();
     });
 
-    it("stops a person at what one may send in a day, confirmed uploads included", async () => {
+    it("stops a person at what one may send of a kind in a day, confirmed uploads included", async () => {
       const worker = person();
-      await past(worker, MAX_DAILY_UPLOADS - 1, 20, "complete");
+      await past(worker, DAILY_LIMITS.photo.count - 1, 20, "complete");
       expect(await refusal(beginUpload(worker, photo("avant-dernier.jpg")))).toBe("accepted");
-      expect(await refusal(beginUpload(worker, photo("de-trop.jpg")))).toBe(
-        "429 daily_upload_limit",
-      );
+      const tooMany = await beginUpload(worker, photo("de-trop.jpg")).catch((error) => error);
+      expect(tooMany).toMatchObject({ status: 429, code: "too_many_uploads" });
+      expect(tooMany.message).toMatch(/limite d'envois pour une journée/);
+      // The other kinds have their own count.
+      const foreman = person("contremaitre");
+      await past(foreman, DAILY_LIMITS.photo.count, 20, "complete");
+      expect(await refusal(beginUpload(foreman, plan(10 * MB)))).toBe("accepted");
       // What was sent more than a day ago no longer counts.
       await sql`update uploads set created_at = created_at - interval '5 hours'
                 where created_by = ${worker.id} and status = 'complete'`;
@@ -417,23 +443,57 @@ describe.skipIf(!ready)("with a database", () => {
 
       // The office loads whole projects: it has no such limit.
       const office = person("admin");
-      await past(office, MAX_DAILY_UPLOADS, 20, "complete");
+      await past(office, DAILY_LIMITS.photo.count, 20, "complete");
       expect(await refusal(beginUpload(office, photo()))).toBe("accepted");
     });
 
-    it("counts a day's bytes: ten 500 MB plans, not eleven", async () => {
+    it("counts a day's bytes of plans: 6 GB, then a smaller plan still fits", async () => {
       const foreman = person("contremaitre");
-      const ids = await past(foreman, 10, 20, "complete");
-      await sql`update uploads set size = ${500 * MB} where id in ${sql(ids)}`;
-      const plan = (size: number) => ({
-        projectId,
-        kind: "plan" as const,
-        filename: `plans-${size}.pdf`,
-        contentType: "application/pdf",
-        size,
-      });
-      expect(await refusal(beginUpload(foreman, plan(500 * MB)))).toBe("429 daily_upload_limit");
+      const ids = await past(foreman, 11, 20, "complete");
+      await sql`update uploads set kind = 'plan', size = ${500 * MB} where id in ${sql(ids)}`;
+      expect(await refusal(beginUpload(foreman, plan(500 * MB)))).toBe("accepted");
+      expect(await refusal(beginUpload(foreman, plan(400 * MB)))).toBe("429 too_many_uploads");
       expect(await refusal(beginUpload(foreman, plan(100 * MB)))).toBe("accepted");
+    });
+  });
+
+  describe("the clean-up", () => {
+    it("removes confirmed uploads that nothing used after a day, and keeps those in use", async () => {
+      const user = person("contremaitre");
+      const [unused, recent, imported, filed] = [
+        ...(await past(user, 1, 25, "complete")),
+        ...(await past(user, 1, 20, "complete")),
+        ...(await past(user, 2, 26, "complete")),
+      ];
+      for (const id of [unused, recent, imported, filed])
+        state.files.set(`u/${id}/photo.jpg`, jpeg(1000));
+      await sql`insert into plan_imports (id, project_id, upload_id, filename)
+                values ('import-1', ${projectId}, ${imported}, 'plans.pdf')`;
+      await sql`insert into documents (id, project_id, title, upload_id)
+                values ('document-1', ${projectId}, 'Devis', ${filed})`;
+
+      expect(await sweepAbandonedUploads(user.id)).toBe(1);
+      expect(await rowOf(unused)).toBeUndefined();
+      expect(state.files.has(`u/${unused}/photo.jpg`)).toBe(false);
+      for (const kept of [recent, imported, filed]) {
+        expect((await rowOf(kept))?.status).toBe("complete");
+        expect(state.files.has(`u/${kept}/photo.jpg`)).toBe(true);
+      }
+      await sql`delete from documents`;
+      await sql`delete from plan_imports`;
+    });
+
+    it("takes the caller's uploads first, oldest first", async () => {
+      const [someone, user] = [person(), person()];
+      const theirs = await past(someone, 5, 60);
+      const older = await past(user, 6, 40);
+      const newer = await past(user, 6, 10);
+      expect(await sweepAbandonedUploads(user.id)).toBe(10);
+      expect((await rowsOf(someone)).length).toBe(theirs.length);
+      const left = (await rowsOf(user)).map((row) => row.id);
+      expect(left).toHaveLength(2);
+      for (const id of left) expect(newer).toContain(id);
+      expect(left.some((id) => older.includes(id))).toBe(false);
     });
   });
 

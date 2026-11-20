@@ -2,7 +2,8 @@ import { StorageApiError } from "@supabase/supabase-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { BucketRules } from "./index";
-import { ensureBuckets, supabaseStorage } from "./supabase";
+import { uploadProblem } from "../uploads";
+import { ensureBuckets, refusedTheSizeLimit, supabaseStorage } from "./supabase";
 
 // Hosted storage cannot be reached from the tests: these check what the app
 // asks of it, against the client library's own shapes.
@@ -91,15 +92,22 @@ describe("supabase stat", () => {
     }
   });
 
-  // "No type" means "this store keeps none" to completeUpload, which then
-  // skips the comparison: hosted storage must never answer that.
-  it("fails rather than report a file with no recorded type", async () => {
+  // "No type" (null) means "this store keeps none" to completeUpload, which
+  // then skips the comparison: hosted storage answers an unknown type instead.
+  it("reports a file with no recorded type as of an unknown type, which fails the check", async () => {
     for (const data of [{ size: 1234 }, { size: 1234, contentType: "" }]) {
       const { storage } = fakeClient({ info: { data, error: null } });
-      await expect(storage.stat("private", "u/abc/plan.pdf")).rejects.toThrow(
-        /type de fichier inconnu/,
+      const stored = await storage.stat("private", "u/abc/plan.pdf");
+      expect(stored).toEqual({ size: 1234, contentType: "" });
+      expect(uploadProblem({ size: 1234, contentType: "application/pdf" }, stored!)).toMatch(
+        /n'est pas celui qui était annoncé/,
       );
     }
+  });
+
+  it("fails rather than report a file of unknown size", async () => {
+    const { storage } = fakeClient({ info: { data: { contentType: "image/jpeg" }, error: null } });
+    await expect(storage.stat("private", "u/abc/photo.jpg")).rejects.toThrow(/taille inconnue/);
   });
 });
 
@@ -217,6 +225,29 @@ describe("ensureBuckets", () => {
     await ensureBuckets(rules, api);
     expect(calls.at(-1)?.options.fileSizeLimit).toBeNull();
     expect(warn).toHaveBeenCalledTimes(2);
+  });
+
+  it("tells a refused size limit from every other refusal", () => {
+    expect(refusedTheSizeLimit({ message: "x", status: 400, code: "EntityTooLarge" })).toBe(true);
+    expect(refusedTheSizeLimit({ message: "Payload too large", status: 413 })).toBe(true);
+    expect(refusedTheSizeLimit({ message: "Invalid mime type", status: 400 })).toBe(false);
+    expect(refusedTheSizeLimit({ message: "Bad request", status: 422, statusCode: "422" })).toBe(
+      false,
+    );
+    expect(refusedTheSizeLimit({ message: "Payload too large", status: 503 })).toBe(false);
+  });
+
+  // Retrying without the limit would succeed here, and remove the limit for a
+  // reason that has nothing to do with it.
+  it("fails the deployment when another setting is refused", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const other = new StorageApiError("mime type image/webp is not supported", 400, "400");
+    const { calls, api } = fakeApi((_method, _name, options) => ({
+      error: options.fileSizeLimit === null ? null : other,
+    }));
+    await expect(ensureBuckets(rules, api)).rejects.toThrow(/mime type/);
+    expect(calls.filter((call) => call.options.fileSizeLimit === null)).toEqual([]);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("still fails the deployment on any other error", async () => {
