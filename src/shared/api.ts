@@ -62,14 +62,15 @@ export type Member = {
   unreviewed: boolean;
   /**
    * Made their own account with the company's code; null when the office or
-   * a site's QR code made it. (Not yet sent by every route: missing means null.)
+   * a site's QR code made it. A project's list says it only of the people
+   * still to confirm, to those who may confirm them. Missing means null.
    */
   joinedWith?: JoinedWith | null;
 };
 
 /** A member as GET /api/projects/:id/members gives them. */
 export type TeamMember = Member & {
-  /** For someone still to confirm, when they scanned the site's code; null otherwise. */
+  /** For someone still to confirm, when their account was made (a scan of the site's code, or the company's code); null otherwise. */
   scannedAt: string | null;
 };
 

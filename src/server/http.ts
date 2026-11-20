@@ -84,7 +84,19 @@ function assertSameOrigin(request: NextRequest) {
   const origin = request.headers.get("origin");
   if (!origin) return; // not a browser (curl, tests, server-to-server)
   const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-  if (new URL(origin).host !== host) throw forbidden("Requête refusée.");
+  if (hostOf(origin) !== host) throw forbidden("Requête refusée.");
+}
+
+/**
+ * The host an Origin header names; null for one that names no site ("null",
+ * which a sandboxed frame or a file sends, or anything that is not an address).
+ */
+function hostOf(origin: string): string | null {
+  try {
+    return new URL(origin).host || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function body<T>(request: NextRequest, schema: ZodType<T>): Promise<T> {

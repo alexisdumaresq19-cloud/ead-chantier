@@ -19,7 +19,7 @@ export function PwaHost() {
 }
 
 /** Signing in and a sheet in full screen are drawn without the frame, so without its tabs. */
-const WITHOUT_TABS = /^\/(bienvenue|demarrer|[ij]\/)|\/feuilles\//;
+const WITHOUT_TABS = /^\/(bienvenue|demarrer|inscription|[ij]\/)|\/feuilles\//;
 
 /**
  * "A new version is ready", just above the tabs. It only offers: reloading

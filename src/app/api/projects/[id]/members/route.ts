@@ -31,8 +31,11 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
       title: u.title,
       phone: u.phone,
       unreviewed,
-      // Someone to confirm got their account when they scanned the code.
+      // Someone to confirm got their account when they scanned the site's
+      // code, or made it themselves with the company's code. How and when
+      // is for those who confirm, like the rest.
       scannedAt: unreviewed ? u.createdAt.toISOString() : null,
+      joinedWith: unreviewed ? u.joinedWith : null,
     } satisfies Member & { scannedAt: string | null };
   });
 });
