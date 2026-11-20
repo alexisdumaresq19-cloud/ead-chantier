@@ -1,4 +1,4 @@
-import { asc, gt, inArray, sql as raw } from "drizzle-orm";
+import { asc, gt, inArray, isNull, sql as raw } from "drizzle-orm";
 
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
@@ -8,10 +8,18 @@ import { personalLink } from "@/server/people/links";
 import { newPerson, personProblem } from "@/server/people/rules";
 import type { Person } from "@/shared/api";
 
-/** Everyone, for the office: who they are, their projects, their devices. */
+/**
+ * Everyone, for the office: who they are, their projects, their devices.
+ * Someone who deleted their account is no longer anyone's to manage: their
+ * name stays on what they wrote, and nowhere here.
+ */
 export const GET = route(async (request) => {
   await requireAdmin(request);
-  const users = await db.select().from(schema.users).orderBy(asc(schema.users.name));
+  const users = await db
+    .select()
+    .from(schema.users)
+    .where(isNull(schema.users.deletedAt))
+    .orderBy(asc(schema.users.name));
   const memberships = await db
     .select({ userId: schema.projectMembers.userId, projectId: schema.projectMembers.projectId })
     .from(schema.projectMembers);
@@ -36,6 +44,7 @@ export const GET = route(async (request) => {
     email: u.email,
     active: u.active,
     unreviewed: u.unreviewed,
+    joinedWith: u.joinedWith,
     projectIds: projectIds.get(u.id) ?? [],
     deviceCount: deviceCount.get(u.id) ?? 0,
     lastSeenAt: u.lastSeenAt?.toISOString() ?? null,

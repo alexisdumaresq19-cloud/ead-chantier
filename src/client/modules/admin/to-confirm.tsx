@@ -4,7 +4,14 @@ import { Phone, ShieldAlert, ShieldCheck, UserX } from "lucide-react";
 import { api, errorMessage } from "../../lib/api";
 import { Avatar, Button, Card, confirmAction, toast } from "../../ui";
 import { refreshPeople, type TeamMember } from "./data";
-import { accessEndText, formatPhone, scannedText, telHref, UNREVIEWED_RULE } from "./people";
+import {
+  accessEndText,
+  formatPhone,
+  scannedText,
+  telHref,
+  UNREVIEWED_RULE,
+  whenText,
+} from "./people";
 
 // Workers who came in with the site's QR code, for the foreman (or the
 // office) to confirm or refuse, before the rest of the team.
@@ -56,9 +63,13 @@ export function ToConfirm({ projectId, people }: { projectId: string; people: Te
       <p className="bg-warn-tint text-warn mb-3 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty">
         <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
         <span>
-          {people.length > 1
-            ? "Ces personnes sont entrées avec le code QR du chantier. Confirmez celles que vous connaissez."
-            : "Cette personne est entrée avec le code QR du chantier. Confirmez-la si vous la connaissez."}{" "}
+          {people.some((member) => member.joinedWith === "company_code")
+            ? people.length > 1
+              ? "Ces personnes ont créé leur compte elles-mêmes. Confirmez celles que vous connaissez."
+              : "Cette personne a créé son compte elle-même. Confirmez-la si vous la connaissez."
+            : people.length > 1
+              ? "Ces personnes sont entrées avec le code QR du chantier. Confirmez celles que vous connaissez."
+              : "Cette personne est entrée avec le code QR du chantier. Confirmez-la si vous la connaissez."}{" "}
           {UNREVIEWED_RULE}
         </span>
       </p>
@@ -91,7 +102,10 @@ export function ToConfirm({ projectId, people }: { projectId: string; people: Te
                     ) : null}
                     {member.scannedAt ? (
                       <p className="text-dim text-sm">
-                        {scannedText(member.scannedAt)} · {accessEndText(member.scannedAt)}
+                        {member.joinedWith === "company_code"
+                          ? `Compte créé ${whenText(member.scannedAt)}`
+                          : scannedText(member.scannedAt)}{" "}
+                        · {accessEndText(member.scannedAt)}
                       </p>
                     ) : null}
                   </div>

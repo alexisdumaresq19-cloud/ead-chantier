@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
-import { LogOut } from "lucide-react";
+import { LogOut, UserRoundX } from "lucide-react";
 
+import { api, errorMessage } from "../../lib/api";
 import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
@@ -9,13 +10,38 @@ import { DeviceList } from "./devices";
 import { Meta } from "./meta";
 import { roleAndTitle, signOutFailure } from "./people";
 
-/** Who is signed in on this device, their other devices, and the way out. */
+/**
+ * Deletes the account, then lets go of this device. The server has already
+ * signed every device out: if signing this one out fails on the way (the
+ * network dropped), the welcome screen is opened all the same.
+ */
+async function deleteAccount() {
+  await api("/api/me", { method: "DELETE" });
+  try {
+    await signOut();
+  } catch {
+    window.location.assign("/bienvenue");
+  }
+}
+
+/** Who is signed in on this device, their other devices, the way out, and deleting the account. */
 export function AccountScreen() {
   const me = useCurrentUser();
   const { role, title } = roleAndTitle(me);
   // signOut() changes nothing until the server has ended the session: on a
   // failure the device is still signed in, and the screen says so.
   const leave = useMutation({ mutationFn: () => signOut() });
+
+  const remove = useMutation({ mutationFn: deleteAccount });
+  const askToRemove = async () => {
+    const ok = await confirmAction({
+      title: "Supprimer votre compte?",
+      text: "C'est immédiat et définitif. Vos appareils sont déconnectés, et votre numéro, vos liens et vos accès aux chantiers sont effacés. Les rapports, les photos et les documents que vous avez ajoutés restent à l'entreprise, avec votre nom.",
+      confirmLabel: "Supprimer mon compte",
+      danger: true,
+    });
+    if (ok) remove.mutate();
+  };
 
   const askToLeave = async () => {
     const ok = await confirmAction({
@@ -66,6 +92,30 @@ export function AccountScreen() {
         </Button>
         {leave.isError ? <FormError>{signOutFailure(leave.error)}</FormError> : null}
       </div>
+
+      <Section title="Supprimer mon compte" className="mt-10">
+        <Card className="p-4">
+          <p className="text-dim text-[15px] text-pretty">
+            Vous n&apos;utilisez plus l&apos;application? Supprimez votre compte. Ce que vous avez
+            ajouté aux chantiers reste à l&apos;entreprise, avec votre nom. Pour revenir, il faudra
+            un nouveau compte.
+          </p>
+          <Button
+            variant="secondary"
+            block
+            className="text-bad mt-3"
+            onClick={askToRemove}
+            loading={remove.isPending || remove.isSuccess}
+          >
+            <UserRoundX aria-hidden /> Supprimer mon compte
+          </Button>
+          {remove.isError ? (
+            <div className="mt-3">
+              <FormError>{errorMessage(remove.error)}</FormError>
+            </div>
+          ) : null}
+        </Card>
+      </Section>
 
       <p className="text-dim mt-10 text-center text-xs font-medium tracking-wide">EAD Chantier</p>
     </Page>

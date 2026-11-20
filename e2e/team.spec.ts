@@ -20,7 +20,7 @@ async function windowOpen(page: Page) {
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.waitForTimeout(400);
 }
-const NBSP = " ";
+const NBSP = "\u00a0";
 
 /** The id of whoever a context is signed in as. */
 async function idOf(context: BrowserContext): Promise<string> {
@@ -212,7 +212,9 @@ test("the foreman's site code: kept, used to join, then confirmed or refused", a
   const toConfirm = page.getByRole("region", { name: /À confirmer/ });
   await expect(toConfirm.getByText(known)).toBeVisible();
   await expect(toConfirm.getByText(stranger)).toBeVisible();
-  await expect(toConfirm.getByText(/l'accès prend fin 7 jours après le scan/)).toBeVisible();
+  await expect(
+    toConfirm.getByText(/l'accès prend fin 7 jours après la création du compte/),
+  ).toBeVisible();
   // The worker of the project sees a contact list, nobody to confirm.
   const worker = await contextAs(browser, "worker");
   const crew = await call(worker.request, "GET", `/api/projects/${seed.projectId}/members`);
@@ -441,7 +443,7 @@ test("signing out from the account screen, and its failure without a network", a
   const person = await newPerson(office, `Essai Sortie ${run()}`);
   const { device, page } = await enterWith(browser, person.invite.url);
   await page.goto("/moi");
-  await expect(page.getByRole("heading", { name: "Mon compte" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Mon compte", exact: true })).toBeVisible();
 
   await page.route("**/api/logout", (route) => route.abort());
   await page.getByRole("button", { name: "Se déconnecter" }).click();

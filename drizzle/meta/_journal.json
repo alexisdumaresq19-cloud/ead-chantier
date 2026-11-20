@@ -29,6 +29,13 @@
       "when": 1795186036870,
       "tag": "0003_report_photos",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795191540396,
+      "tag": "0004_company_code_signup",
+      "breakpoints": true
     }
   ]
 }

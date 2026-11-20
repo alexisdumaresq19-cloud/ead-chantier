@@ -28,7 +28,8 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
           .for("update")
       : null;
     const [user] = await tx.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
-    if (!user) throw notFound("Personne introuvable.");
+    // A deleted account is not brought back: the person makes a new one.
+    if (!user || user.deletedAt) throw notFound("Personne introuvable.");
     if (office) {
       if (!office.some((account) => account.id === admin.id)) throw forbidden("Réservé au bureau.");
       const refusal = officeLockout({

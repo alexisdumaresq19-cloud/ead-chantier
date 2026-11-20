@@ -136,3 +136,28 @@ test("moving between screens never reloads the page", async ({ browser }) => {
   );
   await context.close();
 });
+
+test("with account creation open, the first screen offers it, and the ways in one tap away", async ({
+  browser,
+  baseURL,
+}) => {
+  const office = await browser.newContext({ storageState: sessionOf("admin") });
+  await post(office.request, "/api/company/code");
+  const device = await browser.newContext({ baseURL });
+  const page = await device.newPage();
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Bienvenue" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Créer mon compte" })).toBeVisible();
+  await page.getByRole("link", { name: "J'ai déjà un compte" }).click();
+  await expect(page).toHaveURL(/\/bienvenue\/compte$/);
+  await expect(
+    page.getByText("Scannez le code QR de votre contremaître", { exact: false }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Nouveau téléphone ou lien expiré? Demandez un nouveau lien au bureau."),
+  ).toBeVisible();
+  await page.getByRole("link", { name: "Retour" }).click();
+  await expect(page.getByRole("link", { name: "Créer mon compte" })).toBeVisible();
+  await office.request.delete("/api/company/code", { headers: { origin: seed.base } });
+  await Promise.all([device.close(), office.close()]);
+});

@@ -24,6 +24,7 @@ import {
   Skeleton,
 } from "../../ui";
 import { refreshPeople, usePeople } from "./data";
+import { CompanyCodeCard } from "./company-code";
 import { InviteLinkPanel } from "./invite-link";
 import { Meta } from "./meta";
 import { OfficeOnly } from "./office-only";
@@ -33,7 +34,10 @@ import {
   matchesPerson,
   roleAndTitle,
   sortPeople,
+  toConfirmText,
   UNREVIEWED_RULE,
+  joinedWithText,
+  whenText,
 } from "./people";
 import {
   focusName,
@@ -174,15 +178,14 @@ function Everyone({ people, onOpen }: { people: Person[]; onOpen: () => void }) 
           <p className="bg-warn-tint text-warn mb-3 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty">
             <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
             <span>
-              {waiting.length > 1
-                ? "Ces personnes sont entrées avec le code QR d'un chantier. Ouvrez une fiche pour confirmer la personne ou couper son accès."
-                : "Cette personne est entrée avec le code QR d'un chantier. Ouvrez sa fiche pour la confirmer ou couper son accès."}{" "}
-              {UNREVIEWED_RULE}
+              {toConfirmText(waiting)} {UNREVIEWED_RULE}
             </span>
           </p>
           <PeopleTable people={waiting} onOpen={onOpen} />
         </Section>
       ) : null}
+      {/* The people to check come first; the way newcomers get in, right after. */}
+      <CompanyCodeCard className={waiting.length > 0 ? "mt-8" : undefined} />
       {/* Without anyone to check, the list needs no title: the page's says it. */}
       {waiting.length > 0 ? (
         <Section title="Tout le monde">
@@ -286,6 +289,12 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
             ) : null}
             {person.active ? null : <Badge>Accès désactivé</Badge>}
           </span>
+          {/* Someone to confirm: how and when they came in, before anything else. */}
+          {person.unreviewed && person.active ? (
+            <span className="text-warn block text-sm font-medium">
+              {joinedWithText(person.joinedWith)} · {whenText(person.createdAt)}
+            </span>
+          ) : null}
           <Meta items={[role, title]} className="text-dim text-sm wrap-anywhere lg:hidden" />
           {/* "Jamais connecté" already says there is no device. */}
           <Meta

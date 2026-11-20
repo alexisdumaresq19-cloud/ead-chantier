@@ -22,6 +22,9 @@ import {
   telHref,
   siteCodeText,
   titleIsRole,
+  toConfirmText,
+  joinedWithText,
+  whenText,
   titleOrRole,
 } from "./people";
 
@@ -239,5 +242,28 @@ describe("signOutFailure", () => {
     expect(
       signOutFailure(new ApiFailure(500, "server_error", "Une erreur est survenue. Réessayez.")),
     ).toBe("Une erreur est survenue. Réessayez. Vous êtes encore connecté sur cet appareil.");
+  });
+});
+
+describe("people who came in by themself", () => {
+  const now = new Date("2026-11-20T12:00:00");
+  it("says how and when they came in", () => {
+    expect(joinedWithText("company_code")).toBe("Compte créé avec le code d'entreprise");
+    expect(joinedWithText(null)).toBe("Entré avec le code QR d'un chantier");
+    expect(whenText(new Date("2026-11-20T07:30:00").toISOString(), now)).toBe(
+      "aujourd'hui à 7 h 30",
+    );
+  });
+
+  it("explains the list to confirm by the ways they came in", () => {
+    expect(toConfirmText([{ joinedWith: "company_code" }])).toMatch(
+      /^Cette personne a créé son compte avec le code d'entreprise/,
+    );
+    expect(toConfirmText([{ joinedWith: null }, { joinedWith: null }])).toMatch(
+      /^Ces personnes sont entrées avec le code QR d'un chantier/,
+    );
+    expect(toConfirmText([{ joinedWith: "company_code" }, {}])).toMatch(
+      /code QR d'un chantier ou le code d'entreprise/,
+    );
   });
 });

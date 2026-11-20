@@ -31,6 +31,7 @@ import {
   roleAndTitle,
   telHref,
   UNREVIEWED_RULE,
+  whenText,
 } from "./people";
 import { focusName, nameProblem, personBody, PersonFields, type PersonForm } from "./person-fields";
 import { ShownError } from "./shown-error";
@@ -202,9 +203,13 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
             <ShieldAlert className="mt-0.5 size-5 shrink-0" aria-hidden />
             <span>
               <strong className="font-semibold">
-                {first} a utilisé le code QR d&apos;un chantier pour entrer.
+                {person.joinedWith === "company_code"
+                  ? `${first} a créé son compte avec le code d'entreprise, ${whenText(person.createdAt)}.`
+                  : `${first} a utilisé le code QR d'un chantier pour entrer.`}
               </strong>{" "}
-              Vous connaissez cette personne? Confirmez-la. Sinon, désactivez son accès.{" "}
+              {person.joinedWith === "company_code" && person.projectIds.length === 0
+                ? "Vous connaissez cette personne? Confirmez-la, puis cochez ses projets plus bas. Sinon, désactivez son accès."
+                : "Vous connaissez cette personne? Confirmez-la. Sinon, désactivez son accès."}{" "}
               {UNREVIEWED_RULE}
             </span>
           </p>

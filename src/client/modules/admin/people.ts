@@ -1,4 +1,4 @@
-import type { Person } from "@/shared/api";
+import type { JoinedWith, Person } from "@/shared/api";
 import { ROLE_LABELS, type Role } from "@/shared/roles";
 
 import { ApiFailure, errorMessage } from "../../lib/api";
@@ -88,19 +88,48 @@ export const siteCodeText = (expiresAt: string) =>
 
 // --- People to confirm ------------------------------------------------------
 
-/** How long someone who came in by a site's QR code stays in without a confirmation (UNREVIEWED_SESSION_DAYS on the server). */
+/**
+ * How long someone who came in by themself (a site's QR code, the company's
+ * code) stays in without a confirmation (UNREVIEWED_SESSION_DAYS on the server).
+ */
 const UNREVIEWED_DAYS = 7;
 
-/** What happens to someone who came in by a site's QR code, said where they are to confirm. */
-export const UNREVIEWED_RULE = `Sans confirmation, l'accès prend fin ${UNREVIEWED_DAYS} jours après le scan du code.`;
+/** What happens to someone nobody has confirmed yet, said where they are to confirm. */
+export const UNREVIEWED_RULE = `Sans confirmation, l'accès prend fin ${UNREVIEWED_DAYS} jours après la création du compte.`;
+
+/** "aujourd'hui à 7 h 30", "hier à 16 h 05", "il y a 3 jours", "le 2 novembre 2026". */
+export function whenText(at: string, now = new Date()): string {
+  const ago = formatAgo(at, now);
+  if (/^\d/.test(ago)) return `le ${ago}`;
+  return ago === "aujourd'hui" || ago === "hier" ? `${ago} à ${formatTime(at)}` : ago;
+}
 
 /** "Code scanné aujourd'hui à 7 h 30", "Code scanné il y a 3 jours". */
-export function scannedText(scannedAt: string, now = new Date()): string {
-  const ago = formatAgo(scannedAt, now);
-  if (/^\d/.test(ago)) return `Code scanné le ${ago}`;
-  return ago === "aujourd'hui" || ago === "hier"
-    ? `Code scanné ${ago} à ${formatTime(scannedAt)}`
-    : `Code scanné ${ago}`;
+export const scannedText = (scannedAt: string, now = new Date()) =>
+  `Code scanné ${whenText(scannedAt, now)}`;
+
+/** How someone nobody has confirmed came in. */
+export const joinedWithText = (joinedWith: JoinedWith | null | undefined) =>
+  joinedWith === "company_code"
+    ? "Compte créé avec le code d'entreprise"
+    : "Entré avec le code QR d'un chantier";
+
+/**
+ * Why the people listed are to confirm: each came in by themself, with a
+ * site's QR code or with the company's code.
+ */
+export function toConfirmText(people: { joinedWith?: JoinedWith | null }[]): string {
+  const ways = new Set(people.map((person) => person.joinedWith ?? "site_code"));
+  const one = people.length === 1;
+  if (ways.size > 1)
+    return "Ces personnes sont entrées par elles-mêmes, avec le code QR d'un chantier ou le code d'entreprise. Ouvrez une fiche pour confirmer la personne ou couper son accès.";
+  if (ways.has("company_code"))
+    return one
+      ? "Cette personne a créé son compte avec le code d'entreprise. Ouvrez sa fiche pour la confirmer et l'ajouter à ses chantiers, ou couper son accès."
+      : "Ces personnes ont créé leur compte avec le code d'entreprise. Ouvrez une fiche pour confirmer la personne et l'ajouter à ses chantiers, ou couper son accès.";
+  return one
+    ? "Cette personne est entrée avec le code QR d'un chantier. Ouvrez sa fiche pour la confirmer ou couper son accès."
+    : "Ces personnes sont entrées avec le code QR d'un chantier. Ouvrez une fiche pour confirmer la personne ou couper son accès.";
 }
 
 /** "Accès jusqu'au jeudi 26 novembre": when the device of someone not confirmed is signed out. */
@@ -187,6 +216,6 @@ export function matchesPerson(
 /** Why signing out did not happen: the person is still signed in on this device. */
 export function signOutFailure(error: unknown): string {
   return error instanceof ApiFailure && error.offline
-    ? "Pas de réseau : vous êtes encore connecté sur cet appareil. Réessayez quand la connexion revient."
+    ? "Pas de réseau\u00a0: vous êtes encore connecté sur cet appareil. Réessayez quand la connexion revient."
     : `${errorMessage(error)} Vous êtes encore connecté sur cet appareil.`;
 }

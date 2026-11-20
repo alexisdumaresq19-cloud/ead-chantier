@@ -48,7 +48,7 @@ export function personProblem(details: { name?: string; email?: string | null })
   if (details.name !== undefined && details.name.length < 2)
     return "Entrez le prénom et le nom de la personne.";
   if (details.email && !looksLikeEmail(details.email))
-    return "Vérifiez le courriel : il semble incomplet.";
+    return "Vérifiez le courriel\u00a0: il semble incomplet.";
   return null;
 }
 
@@ -93,4 +93,18 @@ export function reviewRefusal(
     return { status: 404, message: "Cette personne n'est pas sur ce projet." };
   if (!target.unreviewed) return { status: 409, message: "Cette personne est déjà confirmée." };
   return null;
+}
+
+/**
+ * Why someone may not delete their own account, or null when they may. The
+ * last active office account stays: without it nobody could let anyone in
+ * again, nor reach the projects.
+ */
+export function deletionRefusal(
+  target: { role: Role; active: boolean },
+  /** Active office accounts, the target left out. */
+  otherActiveAdmins: number,
+): string | null {
+  if (target.role !== "admin" || !target.active || otherActiveAdmins > 0) return null;
+  return "Vous êtes la seule personne active au bureau. Donnez d'abord l'accès du bureau à une autre personne, puis supprimez votre compte.";
 }

@@ -74,7 +74,8 @@ export async function currentUser(request: NextRequest): Promise<SessionUser | n
       ),
     )
     .limit(1);
-  if (!row || !row.user.active) return null;
+  // A deleted account never signs in again, whatever reactivates it.
+  if (!row || !row.user.active || row.user.deletedAt) return null;
 
   const renewal = sessionRenewal(row.session, row.user.unreviewed, new Date());
   if (renewal) {
