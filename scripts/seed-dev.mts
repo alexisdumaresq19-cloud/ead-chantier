@@ -1,7 +1,8 @@
 /**
  * Fills an empty development database through the running app: an office
  * account, a foreman, a worker, three projects and, in the first one, a set
- * of example plans. Everything is fictional.
+ * of example plans, two daily reports and the photos of the older one.
+ * Everything is fictional.
  *
  *   npm run db:fresh && npm run dev        (in another terminal)
  *   BASE=http://localhost:3200 npm run seed
@@ -12,6 +13,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- loose JSON in a dev script */
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+
+import { siteTimeToDate } from "../src/shared/photos";
 
 const BASE = process.env.BASE ?? "http://localhost:3200";
 const OUT = process.env.SEED_OUT ?? ".data/dev";
@@ -123,7 +126,7 @@ admin.save("admin");
 foreman.save("foreman");
 worker.save("worker");
 
-// Two daily reports by the foreman, for the last two days.
+// Two daily reports by the foreman, for the last two days; the older one with its photos.
 const siteDay = (daysAgo: number) =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
     Date.now() - daysAgo * 86_400_000,
@@ -133,6 +136,60 @@ const crew = [
   { name: "Marc Lévesque", hours: 10, userId: null },
   { name: "Simon Arsenault", hours: 9.5, userId: null },
 ];
+
+// A few photos of the oldest day, sent the way the foreman's phone sends them
+// (announced, uploaded, then added), each drawn here and stamped "EXEMPLE".
+const sharp = (await import("sharp")).default;
+const samplePhotos = [
+  { width: 1600, height: 1200, hour: 9, caption: "Tranchée ouverte entre R-3 et R-4 (exemple)" },
+  {
+    width: 1200,
+    height: 1600,
+    hour: 11,
+    caption: "Conduite 200 mm en place sur son assise (exemple)",
+  },
+  { width: 1600, height: 1200, hour: 13, caption: null },
+  { width: 1600, height: 1200, hour: 15, caption: "Remblai compacté, rue nettoyée (exemple)" },
+];
+const photoIds: string[] = [];
+for (const [index, sample] of samplePhotos.entries()) {
+  const { width: w, height: h } = sample;
+  const picture = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+    <rect width="100%" height="100%" fill="hsl(${200 + index * 6},50%,${72 - index * 4}%)"/>
+    <rect y="${h * 0.56}" width="100%" height="${h * 0.44}" fill="hsl(${30 + index * 3},30%,${40 + index * 3}%)"/>
+    <polygon points="${w * 0.12},${h * 0.62} ${w * 0.88},${h * 0.62} ${w * 0.72},${h * 0.94} ${w * 0.28},${h * 0.94}" fill="hsl(28,28%,24%)"/>
+    <rect x="${w * 0.3}" y="${h * 0.76}" width="${w * 0.4}" height="${h * 0.06}" rx="${h * 0.03}" fill="#2f7fb4"/>
+    <rect x="${w * 0.6}" y="${h * 0.3}" width="${w * 0.24}" height="${h * 0.2}" rx="10" fill="#e9a400"/>
+    <text x="50%" y="${h * 0.16}" font-family="sans-serif" font-size="${Math.min(w, h) * 0.09}" font-weight="700" fill="#ffffff" text-anchor="middle">EXEMPLE ${index + 1}</text>
+  </svg>`;
+  const jpeg = await sharp(Buffer.from(picture)).jpeg({ quality: 82 }).toBuffer();
+  const photoTicket = await foreman.call("POST", "/api/uploads", {
+    projectId: main.id,
+    kind: "photo",
+    filename: `exemple-${index + 1}.jpg`,
+    contentType: "image/jpeg",
+    size: jpeg.length,
+  });
+  const photoSent = await fetch(new URL(photoTicket.target.url, BASE), {
+    method: "PUT",
+    headers: photoTicket.target.headers,
+    body: jpeg,
+  });
+  if (!photoSent.ok) throw new Error(`Envoi de la photo refusé : ${photoSent.status}`);
+  await foreman.call("POST", `/api/uploads/${photoTicket.uploadId}/complete`);
+  const added = await foreman.call("POST", `/api/projects/${main.id}/photos`, {
+    uploadId: photoTicket.uploadId,
+    // At these hours on the site's clock, whatever the season.
+    takenAt: siteTimeToDate(
+      Date.parse(
+        `${siteDay(2)}T${String(sample.hour).padStart(2, "0")}:${String(index * 13).padStart(2, "0")}:00Z`,
+      ),
+    ).toISOString(),
+    ...(sample.caption ? { caption: sample.caption } : {}),
+  });
+  photoIds.push(added.id);
+}
+
 await foreman.call("POST", `/api/projects/${main.id}/reports`, {
   day: siteDay(2),
   weather: { condition: "nuageux", temperatureC: 6, note: "" },
@@ -141,6 +198,7 @@ await foreman.call("POST", `/api/projects/${main.id}/reports`, {
   workDone:
     "Excavation de la tranchée entre les regards R-3 et R-4. Pose de 36 m de conduite d'aqueduc 200 mm.",
   notes: "",
+  photoIds,
 });
 await foreman.call("POST", `/api/projects/${main.id}/reports`, {
   day: siteDay(1),
@@ -232,5 +290,5 @@ writeFileSync(
   ),
 );
 console.log(
-  `Prêt : 3 projets, ${published.sheetIds.length} feuilles de plans, 2 rapports, 1 document, 3 sessions dans ${OUT}/`,
+  `Prêt : 3 projets, ${published.sheetIds.length} feuilles de plans, 2 rapports, ${photoIds.length} photos, 1 document, 3 sessions dans ${OUT}/`,
 );
