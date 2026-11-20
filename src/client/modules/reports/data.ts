@@ -5,9 +5,9 @@ import type { Member } from "@/shared/api";
 import type { Photo } from "@/shared/photos";
 import type { DayReport, Report, ReportSummary } from "@/shared/reports";
 
-import { api } from "../../lib/api";
+import { api, ApiFailure } from "../../lib/api";
 import { todayKey } from "../../lib/format";
-import { keys } from "../../lib/session";
+import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
 import { draftsVersion, listDrafts, subscribeToDrafts } from "./drafts";
 
 // What the reports screens fetch. Every key starts with the project's, so a
@@ -25,41 +25,56 @@ export const reportKeys = {
 
 export const reportsPath = (projectId: string) => `/projets/${projectId}/rapports`;
 
-// The app's default (30 days, lib/query.ts) is more than a browser timer can
-// count (24.8 days): it fires at once, and what no screen is showing is
-// forgotten — the people of the project fetched ahead for the form, the list
-// behind a report. Until the default is shorter, these say how long themselves.
-const KEPT = 21 * 24 * 3600 * 1000;
+/**
+ * Whether the person may write, change or remove reports here: an archived
+ * project is read-only, except for the office. The server decides again.
+ */
+export function useCanChangeReports() {
+  const project = useCurrentProject();
+  const me = useCurrentUser();
+  return project.status !== "archive" || me.role === "admin";
+}
 
 const listQuery = (projectId: string) => ({
   queryKey: reportKeys.list(projectId),
   queryFn: () => api<ReportSummary[]>(`/api/projects/${projectId}/reports`),
-  gcTime: KEPT,
 });
 
 export const dayQuery = (projectId: string, day: string) => ({
   queryKey: reportKeys.day(projectId, day),
   queryFn: () => api<DayReport>(`/api/projects/${projectId}/reports/day/${day}`),
-  gcTime: KEPT,
 });
 
 export const membersQuery = (projectId: string) => ({
   queryKey: keys.members(projectId),
   queryFn: () => api<Member[]>(`/api/projects/${projectId}/members`),
-  gcTime: KEPT,
 });
 
 export const useReports = (projectId: string) => useQuery(listQuery(projectId));
 
+/**
+ * A report of this project. The API answers for any project the person
+ * manages: an id from another one, put in this project's address, is not
+ * shown (nor changed) here as if it belonged to it.
+ */
 export const useReport = (projectId: string, reportId: string) =>
   useQuery({
     queryKey: reportKeys.one(projectId, reportId),
-    queryFn: () => api<Report>(`/api/reports/${reportId}`),
-    gcTime: KEPT,
+    queryFn: async () => {
+      const report = await api<Report>(`/api/reports/${reportId}`);
+      if (report.projectId !== projectId)
+        throw new ApiFailure(404, "not_found", "Rapport introuvable.");
+      return report;
+    },
   });
 
+/**
+ * Asked again each time the form opens, even just after the list fetched it:
+ * whether the day already has a report decides between writing a new one and
+ * opening that one.
+ */
 export const useDayReport = (projectId: string, day: string, enabled = true) =>
-  useQuery({ ...dayQuery(projectId, day), enabled });
+  useQuery({ ...dayQuery(projectId, day), enabled, staleTime: 0 });
 
 export const useMembers = (projectId: string) => useQuery(membersQuery(projectId));
 
@@ -76,7 +91,6 @@ export const useDayPhotos = (projectId: string, day: string | undefined) =>
     },
     enabled: Boolean(day),
     retry: false,
-    gcTime: KEPT,
   });
 
 /**

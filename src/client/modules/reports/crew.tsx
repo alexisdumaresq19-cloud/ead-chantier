@@ -7,10 +7,10 @@ import { isValidHours, REPORT_LIMITS, type CrewLine } from "@/shared/reports";
 
 import { count } from "../../lib/format";
 import { Avatar, Button, IconButton, Input, Skeleton, toast } from "../../ui";
-import { waitsForNetwork } from "./fetched";
 import {
   addBlankRow,
   addMember,
+  membersToAdd,
   removeRow,
   setDayHours,
   setRowHours,
@@ -46,11 +46,7 @@ export function CrewEditor({
   // The line just added by hand: its name field takes the keyboard.
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const full = form.crew.length >= REPORT_LIMITS.crew;
-  const listed = new Set(form.crew.flatMap((row) => row.userId ?? []));
-  // In French order: "Émilie" between "Denis" and "François", not after "Xavier".
-  const toAdd = (members.data ?? [])
-    .filter((member) => !listed.has(member.id))
-    .sort((a, b) => a.name.localeCompare(b.name, "fr"));
+  const toAdd = membersToAdd(form, members.data ?? []);
 
   const takePrevious = () => {
     if (!previous) return;
@@ -147,7 +143,7 @@ export function CrewEditor({
           </div>
 
           {members.data === undefined ? (
-            members.isError || waitsForNetwork(members) ? (
+            members.isError || members.isPaused ? (
               <p className="text-dim mt-4 text-sm">
                 La liste des personnes du projet n&apos;est pas disponible sans réseau. Ajoutez les
                 noms à la main.

@@ -15,7 +15,7 @@ import {
   type WeatherCondition,
 } from "@/shared/reports";
 
-import { projectToManage } from "../access";
+import { assertOpen, projectToManage, type Project } from "../access";
 import type { SessionUser } from "../auth";
 import { db, schema } from "../db/client";
 import type { ReportCrewLine, ReportWeather } from "../db/schema";
@@ -23,9 +23,8 @@ import { badRequest, forbidden, HttpError, notFound } from "../http";
 import { newId } from "../ids";
 import { EMPTY_REPORT, type newReport, type reportChange } from "./input";
 
-// Daily reports: one per project and per day, written by the foremen and the
-// office. The table has no unique constraint on (project, day), so creating
-// one and moving one to another day go through a lock on that day.
+// Daily reports: one per project and per day (the unique index
+// daily_reports_project_day), written by the foremen and the office.
 
 type Row = typeof schema.dailyReports.$inferSelect;
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -90,19 +89,28 @@ const canDelete = (user: SessionUser, row: Row) =>
   user.role === "admin" || row.createdBy === user.id;
 
 /**
- * The report, for someone allowed to work on it: its project is read from the
+ * The report, for someone allowed to read it: its project is read from the
  * record. A report of a project the person does not see answers "not found",
  * like one that does not exist.
  */
-export async function reportToManage(user: SessionUser, id: string): Promise<Row> {
+export async function reportToManage(
+  user: SessionUser,
+  id: string,
+): Promise<{ row: Row; project: Project }> {
   const [row] = await db.select().from(reports).where(eq(reports.id, id)).limit(1);
   if (!row) throw notFound(MISSING);
   try {
-    await projectToManage(user, row.projectId);
+    return { row, project: await projectToManage(user, row.projectId) };
   } catch (error) {
     if (error instanceof HttpError && error.status === 404) throw notFound(MISSING);
     throw error;
   }
+}
+
+/** Same, to change or remove it: refused once its project is archived, except to the office. */
+export async function reportToChange(user: SessionUser, id: string): Promise<Row> {
+  const { row, project } = await reportToManage(user, id);
+  assertOpen(user, project);
   return row;
 }
 
@@ -171,21 +179,21 @@ export async function dayReport(
   };
 }
 
-/** Held until the transaction ends: one request at a time decides who has a day. */
-const lockDay = (tx: Transaction, projectId: string, day: string) =>
-  tx.execute(
-    raw`select pg_advisory_xact_lock(hashtextextended(${`daily-report:${projectId}:${day}`}, 0))`,
-  );
+const DAY_TAKEN = "Un rapport existe déjà pour cette journée.";
 
-const reportOfDay = async (tx: Transaction, projectId: string, day: string) =>
-  (
-    await tx
-      .select()
-      .from(reports)
-      .where(and(eq(reports.projectId, projectId), eq(reports.day, day)))
-      .orderBy(asc(reports.createdAt))
-      .limit(1)
-  ).at(0);
+/**
+ * Whether a query failed on the one-report-per-day index. The driver's error
+ * may come wrapped (Drizzle puts it in `cause`).
+ */
+export function isDayTaken(error: unknown): boolean {
+  let link = error;
+  for (let depth = 0; depth < 5 && typeof link === "object" && link !== null; depth++) {
+    const { code, constraint_name, cause } = link as Record<string, unknown>;
+    if (code === "23505" && constraint_name === "daily_reports_project_day") return true;
+    link = cause;
+  }
+  return false;
+}
 
 /**
  * A line stays tied to a person only if that person is on the project, or
@@ -219,6 +227,15 @@ async function knownCrew(
   );
 }
 
+const reportOfDay = async (projectId: string, day: string) =>
+  (
+    await db
+      .select()
+      .from(reports)
+      .where(and(eq(reports.projectId, projectId), eq(reports.day, day)))
+      .limit(1)
+  ).at(0);
+
 /** Creates the day's report, or returns the one the day already has, untouched. */
 export async function createReport(
   user: SessionUser,
@@ -226,12 +243,12 @@ export async function createReport(
   input: z.infer<typeof newReport>,
 ): Promise<SavedReport> {
   const crew = await knownCrew(db, projectId, input.crew);
-  const { row, created } = await db.transaction(async (tx) => {
-    await lockDay(tx, projectId, input.day);
-    const existing = await reportOfDay(tx, projectId, input.day);
-    if (existing) return { row: existing, created: false };
+  // Two saves of the same day at the same moment: the index lets one row in,
+  // the other insert does nothing and reads the winner. That row can be
+  // deleted before it is read, so the day is tried again.
+  for (let attempt = 0; attempt < 3; attempt++) {
     const now = new Date();
-    const [inserted] = await tx
+    const [inserted] = await db
       .insert(reports)
       .values({
         ...input,
@@ -243,10 +260,13 @@ export async function createReport(
         createdAt: now,
         updatedAt: now,
       })
+      .onConflictDoNothing({ target: [reports.projectId, reports.day] })
       .returning();
-    return { row: inserted, created: true };
-  });
-  return { report: await reportOf(user, row), created };
+    if (inserted) return { report: await reportOf(user, inserted), created: true };
+    const existing = await reportOfDay(projectId, input.day);
+    if (existing) return { report: await reportOf(user, existing), created: false };
+  }
+  throw new HttpError(409, "day_taken", DAY_TAKEN);
 }
 
 /**
@@ -258,45 +278,46 @@ export async function changeReport(
   id: string,
   { baseUpdatedAt, ...change }: z.infer<typeof reportChange>,
 ): Promise<Report> {
-  const row = await db.transaction(async (tx) => {
-    const [current] = await tx.select().from(reports).where(eq(reports.id, id)).for("update");
-    if (!current) throw notFound(MISSING);
-    if (current.updatedAt.getTime() !== Date.parse(baseUpdatedAt))
-      throw new HttpError(
-        409,
-        "conflict",
-        "Ce rapport a été modifié depuis que vous l'avez ouvert. Rien n'a été enregistré.",
-      );
-    if (change.day && change.day !== current.day) {
-      await lockDay(tx, current.projectId, change.day);
-      if (await reportOfDay(tx, current.projectId, change.day))
-        throw new HttpError(409, "day_taken", "Un rapport existe déjà pour cette journée.");
-    }
-    const crew = change.crew
-      ? await knownCrew(tx, current.projectId, change.crew, current.crew)
-      : crewDto(current.crew);
-    const next = {
-      weather: change.weather ?? weatherDto(current.weather),
-      crew,
-      equipment: change.equipment ?? current.equipment,
-      workDone: change.workDone ?? current.workDone,
-      notes: change.notes ?? current.notes,
-    };
-    if (isEmptyContent(next)) throw badRequest(EMPTY_REPORT);
-    const [saved] = await tx
-      .update(reports)
-      .set({
-        ...next,
-        weather: weatherRow(next.weather),
-        day: change.day ?? current.day,
-        // Always later than the version it replaces, even within the same millisecond.
-        updatedAt: new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1)),
-      })
-      .where(eq(reports.id, id))
-      .returning();
-    return saved;
-  });
-  return reportOf(user, row);
+  try {
+    const row = await db.transaction(async (tx) => {
+      const [current] = await tx.select().from(reports).where(eq(reports.id, id)).for("update");
+      if (!current) throw notFound(MISSING);
+      if (current.updatedAt.getTime() !== Date.parse(baseUpdatedAt))
+        throw new HttpError(
+          409,
+          "conflict",
+          "Ce rapport a été modifié depuis que vous l'avez ouvert. Rien n'a été enregistré.",
+        );
+      const crew = change.crew
+        ? await knownCrew(tx, current.projectId, change.crew, current.crew)
+        : crewDto(current.crew);
+      const next = {
+        weather: change.weather ?? weatherDto(current.weather),
+        crew,
+        equipment: change.equipment ?? current.equipment,
+        workDone: change.workDone ?? current.workDone,
+        notes: change.notes ?? current.notes,
+      };
+      if (isEmptyContent(next)) throw badRequest(EMPTY_REPORT);
+      const [saved] = await tx
+        .update(reports)
+        .set({
+          ...next,
+          weather: weatherRow(next.weather),
+          // Moving onto a day that has a report breaks the index: see below.
+          day: change.day ?? current.day,
+          // Always later than the version it replaces, even within the same millisecond.
+          updatedAt: new Date(Math.max(Date.now(), current.updatedAt.getTime() + 1)),
+        })
+        .where(eq(reports.id, id))
+        .returning();
+      return saved;
+    });
+    return reportOf(user, row);
+  } catch (error) {
+    if (isDayTaken(error)) throw new HttpError(409, "day_taken", DAY_TAKEN);
+    throw error;
+  }
 }
 
 export async function deleteReport(user: SessionUser, row: Row) {

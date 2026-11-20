@@ -11,6 +11,7 @@ import {
   formSignature,
   formTotals,
   isBlankForm,
+  membersToAdd,
   removeRow,
   setDayHours,
   setRowHours,
@@ -141,6 +142,21 @@ describe("the crew of a report being written", () => {
     form = setRowHours(form, form.crew[0].key, "beaucoup");
     expect(formTotals(form)).toEqual({ people: 2, hours: 7.5 });
     expect(formTotals(emptyForm(TODAY))).toEqual({ people: 0, hours: 0 });
+  });
+});
+
+describe("the people offered to add", () => {
+  it("leaves out who is on the crew, by account or by a name typed by hand", () => {
+    const emilie = { id: "u-emilie", name: "Émilie Bouchard" };
+    const xavier = { id: "u-xavier", name: "Xavier Roy" };
+    let form = addMember(emptyForm(TODAY), julie);
+    // Yesterday's crew taken over as names, as a report saved without accounts has it.
+    form = takeCrew(form, [{ name: " marc lévesque ", hours: 8, userId: null }]).form;
+    expect(membersToAdd(form, [xavier, marc, julie, emilie, simon]).map((m) => m.name)).toEqual([
+      "Émilie Bouchard",
+      "Simon Arsenault",
+      "Xavier Roy",
+    ]);
   });
 });
 
