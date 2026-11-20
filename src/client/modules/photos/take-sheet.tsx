@@ -2,33 +2,18 @@ import { useMutation } from "@tanstack/react-query";
 import { Camera, CloudOff, Image as ImageIcon, Images } from "lucide-react";
 import { useState, type FormEvent } from "react";
 
-import { PHOTO_CAPTION_MAX, type Photo } from "@/shared/photos";
+import { PHOTO_CAPTION_MAX } from "@/shared/photos";
 
-import { api, errorMessage } from "../../lib/api";
+import { errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { useOnline } from "../../lib/online";
 import { Button, buttonClass, Field, FormError, Input, Sheet, Spinner, toast } from "../../ui";
-import { photoChanged, refreshProject } from "./data";
-import { captionWaiting, localPreviewUrl, useLocalPhotos } from "./outbox";
+import { describePhotos } from "./describe";
+import { localPreviewUrl, useLocalPhotos } from "./outbox";
 import { PhotoInput } from "./take";
 
 // The window over the screen a photo was just taken from: what was added, an
 // optional description for it, and the next photo.
-
-/** Gives a description to photos, wherever they are: still on the device or with the server. */
-async function describe(projectId: string, ids: string[], caption: string) {
-  const sent = await captionWaiting(ids, caption);
-  const results = await Promise.allSettled(
-    sent.map((id) =>
-      api<Photo>(`/api/photos/${id}`, { method: "PATCH", body: { caption } }).then((photo) =>
-        photoChanged(projectId, photo),
-      ),
-    ),
-  );
-  const failed = results.find((result) => result.status === "rejected");
-  if (failed) throw failed.reason;
-  void refreshProject(projectId);
-}
 
 const described = (ids: string[]) =>
   ids.length > 1 ? "Description ajoutée aux photos." : "Description ajoutée.";
@@ -56,7 +41,7 @@ export default function AddedSheet({
   const [text, setText] = useState("");
   const caption = text.trim();
   const save = useMutation({
-    mutationFn: () => describe(projectId, ids, caption),
+    mutationFn: () => describePhotos(projectId, ids, caption),
     onSuccess: () => {
       toast.success(described(ids));
       onClose();
@@ -73,7 +58,7 @@ export default function AddedSheet({
   const more = (files: File[]) => {
     if (!files.length) return;
     if (caption)
-      describe(projectId, ids, caption).then(
+      describePhotos(projectId, ids, caption).then(
         () => toast.success(described(ids)),
         (error) => toast.error(errorMessage(error)),
       );
