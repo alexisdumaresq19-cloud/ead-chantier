@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Redirect, useParams, useSearch } from "wouter";
 
+import { mayChangeAddedBy } from "@/shared/demo";
 import type { DictationField } from "@/shared/dictation";
 import {
   isRealDay,
@@ -55,6 +56,7 @@ import {
   reportsPath,
   useCanChangeReports,
   useDayReport,
+  useMayChangeReport,
   useMembers,
   useReport,
   useStillShown,
@@ -109,7 +111,13 @@ function EditReport({ reportId }: { reportId: string }) {
   const project = useCurrentProject();
   const me = useCurrentUser();
   const report = useReport(project.id, reportId);
+  const mayChange = useMayChangeReport(report.data);
   const [draft] = useState(() => readDraft(draftKey(me.id, project.id, reportId)));
+
+  // Someone else's report, for the demonstration account: it is read where
+  // it is shown, which says why it does not change.
+  if (report.data && !mayChange)
+    return <Redirect to={`${reportsPath(project.id)}/${reportId}`} replace />;
 
   // With a draft on the device, the form opens even if the report cannot be fetched.
   if (report.data === undefined && !draft) {
@@ -471,8 +479,18 @@ function Editor({
 
   // A day that already has a report leads to that report, unless something
   // written here would be left behind.
+  // The demonstration account goes to read it: it changes only its own.
   if (!reportId && sameDay && !dirty && !dayReport.isFetching && !finished)
-    return <Redirect to={`${base}/${sameDay.id}/modifier`} replace />;
+    return (
+      <Redirect
+        to={
+          mayChangeAddedBy(me, sameDay.authorId)
+            ? `${base}/${sameDay.id}/modifier`
+            : `${base}/${sameDay.id}`
+        }
+        replace
+      />
+    );
 
   const totals = formTotals(form);
   const relative =

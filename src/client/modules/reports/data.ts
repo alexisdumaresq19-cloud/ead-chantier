@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 import type { Member } from "@/shared/api";
+import { mayChangeAddedBy } from "@/shared/demo";
 import type { Photo } from "@/shared/photos";
 import type { DayReport, Report, ReportSummary } from "@/shared/reports";
 
@@ -34,6 +35,22 @@ export function useCanChangeReports() {
   const me = useCurrentUser();
   return project.status !== "archive" || me.role === "admin";
 }
+
+/**
+ * Whether the person may change or remove this saved report, where
+ * useCanChangeReports holds: the demonstration account only what it wrote
+ * itself (src/shared/demo.ts), and nothing while the report is not known yet.
+ * The server decides again.
+ */
+export function useMayChangeReport(report: Pick<Report, "authorId"> | null | undefined) {
+  const me = useCurrentUser();
+  const open = useCanChangeReports();
+  return open && (report ? mayChangeAddedBy(me, report.authorId) : !me.demo);
+}
+
+/** Said where the demonstration account would find a control it may not use. */
+export const DEMO_REPORT_TEXT =
+  "Le compte de démonstration modifie seulement les rapports qu'il a écrits.";
 
 const listQuery = (projectId: string) => ({
   queryKey: reportKeys.list(projectId),

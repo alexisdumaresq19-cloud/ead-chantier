@@ -7,7 +7,8 @@ import {
   type FileProblem,
   type ProjectDocument,
 } from "@/shared/documents";
-import type { ProjectDetail } from "@/shared/api";
+import type { Me, ProjectDetail } from "@/shared/api";
+import { mayChangeAddedBy } from "@/shared/demo";
 import type { Role } from "@/shared/roles";
 
 import { formatShortDay } from "../../lib/format";
@@ -23,6 +24,20 @@ export const canChangeDocuments = (
   project: Pick<ProjectDetail, "canManage" | "status">,
   role: Role,
 ) => project.canManage && (project.status !== "archive" || role === "admin");
+
+/**
+ * Whether to offer renaming, moving and archiving this document, on a
+ * project where canChangeDocuments holds: anyone who manages the project
+ * may, the demonstration account only on what it added itself. The list
+ * does not name a document's author by id: the documents this device sent
+ * for the demonstration account (`addedHere`, see data.ts) are the ones
+ * known to be its own, and any other is left alone.
+ */
+export const canManageDocument = (
+  me: Pick<Me, "id" | "demo">,
+  document: Pick<ProjectDocument, "id">,
+  addedHere: ReadonlySet<string>,
+) => mayChangeAddedBy(me, addedHere.has(document.id) ? me.id : null);
 
 /** Lowercase, without accents: "Échéancier" is found by typing "echeancier". */
 const plain = (text: string) => text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

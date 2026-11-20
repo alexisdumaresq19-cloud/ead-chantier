@@ -25,7 +25,7 @@ import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { navigate } from "../../lib/location";
-import { useCurrentProject } from "../../lib/session";
+import { useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
 import {
   Badge,
@@ -70,6 +70,7 @@ import { PlanThumb, Switch } from "./parts";
 
 export function ImportScreen() {
   const project = useCurrentProject();
+  const me = useCurrentUser();
   const { importId } = useParams<{ importId: string }>();
   const list = planPaths.list(project.id);
   const back = { href: list, label: "Plans" };
@@ -83,15 +84,21 @@ export function ImportScreen() {
           icon={Lock}
           // From the project's status: once it is archived, even its foreman
           // may not manage it, and is not to be told the screen is for others.
-          {...(project.status === "archive"
+          // The demonstration account is a foreman too, and is told why.
+          {...(me.demo
             ? {
-                title: "Ce projet est archivé",
-                text: "Ses plans ne changent plus. Seul le bureau peut encore en ajouter.",
+                title: "Plans en lecture seulement",
+                text: "Le compte de démonstration consulte les plans sans les modifier.",
               }
-            : {
-                title: "Réservé au bureau et aux contremaîtres",
-                text: "Les plans publiés se trouvent dans la liste des plans.",
-              })}
+            : project.status === "archive"
+              ? {
+                  title: "Ce projet est archivé",
+                  text: "Ses plans ne changent plus. Seul le bureau peut encore en ajouter.",
+                }
+              : {
+                  title: "Réservé au bureau et aux contremaîtres",
+                  text: "Les plans publiés se trouvent dans la liste des plans.",
+                })}
           action={<ButtonLink href={list}>Voir les plans</ButtonLink>}
         />
       </Page>

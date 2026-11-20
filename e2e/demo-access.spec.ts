@@ -1,7 +1,7 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { confirm, device, typeCode } from "./access-support";
-import { call, contextAs, seed } from "./support";
+import { call, contextAs, post, seed } from "./support";
 
 // The demonstration access, as Apple's reviewer will meet it: the office
 // makes it on a project and reads its number and code; a visitor types them
@@ -13,6 +13,35 @@ import { call, contextAs, seed } from "./support";
 test.describe.configure({ mode: "serial" });
 
 let access: { phone: string; code: string };
+
+/** The day at the site (the tests' browsers are on the site's clock too). */
+const siteDay = (daysAgo = 0) =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
+    Date.now() - daysAgo * 86_400_000,
+  );
+
+const reportOf = (day: string, workDone: string) => ({
+  day,
+  weather: { condition: "nuageux", temperatureC: 4, note: "" },
+  crew: [{ name: "Pavage Exemple inc.", hours: 8, userId: null }],
+  equipment: "",
+  workDone,
+  notes: "",
+});
+
+// A one-page PDF made here.
+const PDF = Buffer.from(
+  "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n" +
+    "2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n" +
+    "3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n" +
+    "trailer<</Root 1 0 R>>\n%%EOF\n",
+);
+
+const DEMO_REPORT = "Le compte de démonstration modifie seulement les rapports qu'il a écrits.";
+
+/** What the page shows at its size, of a control drawn twice (bar on a phone, header on a computer). */
+const shown = (page: Page, role: "link" | "button", name: string | RegExp) =>
+  page.getByRole(role, { name, exact: typeof name === "string" }).filter({ visible: true });
 
 test("the office makes the access on a project and reads its number and code", async ({
   browser,
@@ -184,6 +213,120 @@ test("the account adds to its projects, and never removes or changes what the te
   await Promise.all([foreman.close(), visitor.close()]);
 });
 
+test("the screens offer it only what it may do, and say why where its way is closed", async ({
+  browser,
+}) => {
+  const visitor = await device(browser);
+  const page = await visitor.newPage();
+  await typeCode(page, access.phone, access.code);
+  await expect(page.getByRole("heading", { name: "Projets" })).toBeVisible();
+  const base = `/projets/${seed.projectId}`;
+  const reports = `/api/projects/${seed.projectId}/reports`;
+  const foreman = await contextAs(browser, "foreman");
+  // Today's report, already written by the team's foreman; and one of the visitor's own.
+  const team = (
+    await post<{ report: { id: string } }>(
+      foreman.request,
+      reports,
+      reportOf(siteDay(), "Pose du ponceau."),
+    )
+  ).report;
+  const own = (
+    await post<{ report: { id: string } }>(
+      visitor.request,
+      reports,
+      reportOf(siteDay(4), "Visite du chantier."),
+    )
+  ).report;
+  const title = `Document de la visite ${test.info().project.name}`;
+  try {
+    // The plans: read, searched and opened, never changed.
+    await page.goto(`${base}/plans`);
+    await expect(page.locator(`a[href*="/feuilles/"]`).first()).toBeVisible();
+    for (const control of [
+      page.getByRole("button", { name: /Ajouter des plans/ }),
+      page.getByRole("button", { name: /Nouveau dossier/ }),
+      page.getByRole("button", { name: /^Gérer la feuille/ }),
+      page.getByRole("button", { name: /^Modifier le dossier/ }),
+    ])
+      await expect(control).toHaveCount(0);
+    await page.locator(`a[href*="/feuilles/"]`).first().click();
+    await expect(page.getByRole("button", { name: /révisions/i }).first()).toBeVisible();
+    // An import's address typed by hand says why.
+    await page.goto(`${base}/plans/import/inconnu`);
+    await expect(
+      page.getByText("Le compte de démonstration consulte les plans sans les modifier."),
+    ).toBeVisible();
+
+    // The documents: it adds, and manages only what it added.
+    await page.goto(`${base}/documents`);
+    await expect(page.getByText("Programme de prévention (exemple)")).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Gérer « / })).toHaveCount(0);
+    await page.getByRole("link", { name: /^Ajouter/ }).click();
+    await page
+      .locator('input[type="file"]')
+      .setInputFiles([{ name: "visite.pdf", mimeType: "application/pdf", buffer: PDF }]);
+    await page.getByLabel("Titre de visite.pdf").fill(title);
+    await page.getByLabel("Catégorie").selectOption("autre");
+    await page.getByRole("button", { name: "Envoyer 1 document" }).click();
+    await page.getByRole("link", { name: "Voir les documents" }).click();
+    await expect(page.getByRole("button", { name: `Gérer « ${title} »` })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Gérer « / })).toHaveCount(1);
+    await page.getByRole("button", { name: `Gérer « ${title} »` }).click();
+    await expect(page.getByRole("dialog").getByRole("button", { name: "Renommer" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // The reports: today's is the team's, read with its PDF, and the page says why.
+    await page.goto(`${base}/rapports`);
+    await expect(page.getByRole("link", { name: /Voir le rapport du jour/ })).toContainText(
+      DEMO_REPORT,
+    );
+    await expect(page.getByRole("link", { name: /Compléter le rapport du jour/ })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "Dicter le rapport du jour" })).toHaveCount(0);
+    await page.getByRole("link", { name: /Voir le rapport du jour/ }).click();
+    await expect(page).toHaveURL(`${base}/rapports/${team.id}`);
+    await expect(page.getByText("Pose du ponceau.")).toBeVisible();
+    await expect(page.getByText(DEMO_REPORT)).toBeVisible();
+    await expect(shown(page, "link", /PDF/).or(shown(page, "button", "PDF"))).toBeVisible();
+    for (const control of [
+      page.getByRole("link", { name: /Modifier/ }),
+      page.getByRole("button", { name: "Supprimer le rapport" }),
+      page.getByRole("button", { name: "Autres actions" }),
+    ])
+      await expect(control).toHaveCount(0);
+    // Its addresses for writing lead to reading it.
+    await page.goto(`${base}/rapports/${team.id}/modifier`);
+    await expect(page).toHaveURL(`${base}/rapports/${team.id}`);
+    await page.goto(`${base}/rapports/nouveau`);
+    await expect(page).toHaveURL(`${base}/rapports/${team.id}`);
+    // The project's home leads there too, with no dictation of a report that exists.
+    await page.goto(base);
+    await expect(page.getByRole("link", { name: /Rapport du jour fait/ })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Dicter le rapport du jour/ })).toHaveCount(0);
+
+    // Its own report keeps its controls.
+    await page.goto(`${base}/rapports/${own.id}`);
+    await expect(page.getByText("Visite du chantier.")).toBeVisible();
+    await expect(shown(page, "link", /Modifier/)).toBeVisible();
+    await expect(
+      shown(page, "button", "Supprimer le rapport").or(shown(page, "button", "Autres actions")),
+    ).toBeVisible();
+    await expect(page.getByText(DEMO_REPORT)).toHaveCount(0);
+  } finally {
+    // The other specs find the project's days and documents as the sample data left them.
+    expect((await call(foreman.request, "DELETE", `/api/reports/${team.id}`)).status).toBe(200);
+    expect((await call(visitor.request, "DELETE", `/api/reports/${own.id}`)).status).toBe(200);
+    const documents = (
+      await call(visitor.request, "GET", `/api/projects/${seed.projectId}/documents`)
+    ).body as { id: string; title: string }[];
+    for (const document of documents.filter((d) => d.title === title))
+      expect((await call(visitor.request, "DELETE", `/api/documents/${document.id}`)).status).toBe(
+        200,
+      );
+    await Promise.all([foreman.close(), visitor.close()]);
+  }
+});
+
 test("wrong codes on its number never shut the demonstration out", async ({ browser }) => {
   const wrong = access.code.slice(0, 7) + ((Number(access.code[7]) + 1) % 10);
   // More wrong codes than any person's number takes, each from its own network.
@@ -220,7 +363,20 @@ test("the visitor deletes the account, and the next visitor still gets in", asyn
   expect(written.status).toBe(200);
   const reportId = written.body.report.id as string;
   await page.goto("/moi");
+  // What is true for it: the same number and code let it back in, and make a
+  // new account once this one is deleted.
+  const comeBack =
+    "Le même cellulaire et le même code ouvrent ensuite un nouveau compte de démonstration.";
+  await expect(page.getByText(comeBack)).toBeVisible();
+  await page.getByRole("button", { name: "Se déconnecter" }).click();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Pour revenir, entrez de nouveau le même cellulaire et le même code.",
+  );
+  await page.waitForTimeout(450);
+  await page.getByRole("dialog").getByRole("button", { name: "Annuler" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "Supprimer mon compte" }).click();
+  await expect(page.getByRole("dialog")).toContainText(comeBack);
   await confirm(page, "Supprimer mon compte");
   await expect(page).toHaveURL(/\/bienvenue/);
   expect((await call(first.request, "GET", "/api/me")).status).toBe(401);

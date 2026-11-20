@@ -7,6 +7,7 @@ import type { InviteLink } from "@/shared/api";
 import { canadianPhone, PHONE_HINT } from "@/shared/signup";
 
 import { api } from "../../lib/api";
+import { isNativeApp, shareLinkInApp } from "../../native";
 import { buttonClass, Button, Input, toast } from "../../ui";
 import { refreshPeople, useNow } from "./data";
 import {
@@ -32,6 +33,15 @@ export async function shareLink(data: { title?: string; text?: string; url?: str
     if (error instanceof DOMException && error.name === "AbortError") return;
     toast.error("Le partage n'a pas fonctionné. Copiez le lien à la place.");
   }
+}
+
+// Inside the iPhone app the shell's share sheet is always there, as for the
+// site's QR code (project-team.tsx); a browser keeps its own, where it has one.
+const canShareHere = () => isNativeApp() || canShare();
+async function shareHere(data: { title?: string; text?: string; url?: string }) {
+  if (!isNativeApp()) return shareLink(data);
+  if (!(await shareLinkInApp(data)))
+    toast.error("Le partage n'a pas fonctionné. Copiez le lien à la place.");
 }
 
 /** A link shown in full, with a button that copies it. */
@@ -133,12 +143,12 @@ export function InviteLinkPanel({
         >
           <Mail aria-hidden /> Courriel
         </a>
-        {canShare() ? (
+        {canShareHere() ? (
           <Button
             variant="secondary"
             size="lg"
             className="col-span-2"
-            onClick={() => shareLink({ title: INVITE_SUBJECT, text: message })}
+            onClick={() => shareHere({ title: INVITE_SUBJECT, text: message })}
           >
             <Share2 aria-hidden /> Partager autrement
           </Button>
