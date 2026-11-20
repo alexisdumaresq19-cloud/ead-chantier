@@ -33,6 +33,8 @@ export const dictationPatch = z.object({
   notes: z.string().nullable(),
   replace: z.object({ equipment: z.boolean(), workDone: z.boolean(), notes: z.boolean() }),
   questions: z.array(z.string()),
+  /** Descriptions for the report's photos, by their number on screen. */
+  photos: z.array(z.object({ number: z.number(), description: z.string() })),
 });
 
 export type DictationPatch = z.infer<typeof dictationPatch>;
@@ -174,4 +176,59 @@ export function applyDictation(
     (field) => !same(content[field], current[field]),
   );
   return { content, changed, questions: [...new Set(questions)].slice(0, 4) };
+}
+
+type TextField = "equipment" | "workDone" | "notes";
+const TEXT_FIELDS: TextField[] = ["equipment", "workDone", "notes"];
+const TEXT_MAX: Record<TextField, number> = {
+  equipment: LIMITS.equipment,
+  workDone: LIMITS.text,
+  notes: LIMITS.text,
+};
+
+/** The figures of a text, written one way: "40", "7.5" for "7,5", "25000" for "25 000". */
+const figures = (text: string) =>
+  new Set(
+    (text.replace(/(\d)[\s\u00a0\u202f](?=\d{3}\b)/g, "$1").match(/\d+(?:[.,]\d+)?/g) ?? []).map(
+      (figure) => figure.replace(",", "."),
+    ),
+  );
+
+/**
+ * Whether a rewritten text can stand for the one it replaces: the very same
+ * figures (none lost, none added), not much shorter (a clean text loses
+ * hesitations and repetitions, never half of what was said) and not much
+ * longer (putting in clean French adds no sentence).
+ */
+export function keepsTheFacts(before: string, after: string): boolean {
+  const was = figures(before);
+  const now = figures(after);
+  const length = { before: before.trim().length, after: after.trim().length };
+  return (
+    was.size === now.size &&
+    [...was].every((figure) => now.has(figure)) &&
+    length.after >= length.before * 0.4 &&
+    length.after <= length.before * 1.3 + 40
+  );
+}
+
+/**
+ * The report with its texts put in clean French ("Mettre au propre"): only
+ * the equipment, the work done and the notes, only those that held text, and
+ * only a rewriting that keeps the facts. Everything else stays as it was.
+ */
+export function applyTidy(
+  current: ReportContent,
+  patch: DictationPatch,
+): { content: ReportContent; changed: DictationField[]; questions: string[] } {
+  const content = { ...current };
+  const changed: DictationField[] = [];
+  for (const field of TEXT_FIELDS) {
+    const before = current[field];
+    const after = cut(patch[field]?.trim() ?? "", TEXT_MAX[field]);
+    if (!before.trim() || !after || after === before || !keepsTheFacts(before, after)) continue;
+    content[field] = after;
+    changed.push(field);
+  }
+  return { content, changed, questions: [] };
 }

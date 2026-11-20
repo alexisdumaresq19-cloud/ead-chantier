@@ -7,7 +7,9 @@ import {
   LoaderCircle,
   Mic,
   MicOff,
+  PenLine,
   RotateCcw,
+  ScanEye,
   Send,
   Square,
   TriangleAlert,
@@ -19,20 +21,36 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import {
+  ASSISTANT_TASK_LABELS,
   DICTATION_FIELD_LABELS,
   DICTATION_MAX_SECONDS,
   DICTATION_MAX_TEXT,
+  type AssistantTask,
   type DictationField,
   type DictationResult,
+  type PhotoCaption,
 } from "@/shared/dictation";
 
 import { api, ApiFailure, errorMessage } from "../../../lib/api";
 import { cn } from "../../../lib/cn";
 import { useOnline } from "../../../lib/online";
 import { Button, Sheet, Textarea, toast } from "../../../ui";
-import type { ReportForm } from "../form";
+import { describePhotos } from "../../photos/describe";
+import { addPhotoIds, type ReportForm } from "../form";
+import { useReportPhotos, type ReportPhoto } from "../photos";
 import { Notice } from "../status";
-import { contentForDictation, dictationChips, formAfterDictation } from "./convert";
+import {
+  contentForDictation,
+  dictationChips,
+  formAfterDictation,
+  hasTextToTidy,
+  keepingPhotos,
+  photoNumbers,
+  photosForAssistant,
+  photosToDescribe,
+  tidyTexts,
+} from "./convert";
+import { PhotoStrip, PhotoThumb } from "./photo-strip";
 import { canRecord, useRecorder, type RecorderProblem, type Recording } from "./recorder";
 import {
   canSpeak,
@@ -43,21 +61,50 @@ import {
   wantsAnswersAloud,
 } from "./speak";
 
-// Dictating a report: the foreman talks, the report fills itself, and what is
-// still missing comes back as questions to answer the same way. Nothing is
-// saved here: the form is filled, then checked and saved as usual.
+// Dictating a report: the foreman talks and takes photos, the report fills
+// itself, the photos get their descriptions, and what is still missing comes
+// back as questions to answer the same way. The report is not saved here: the
+// form is filled, then checked and saved as usual. The descriptions are the
+// photos' own and are given at once.
 
-type Job = { recording: Recording; text?: undefined } | { text: string; recording?: undefined };
+type Job =
+  | { recording: Recording; text?: undefined; task?: undefined }
+  | { text: string; recording?: undefined; task?: undefined }
+  | { task: AssistantTask; recording?: undefined; text?: undefined };
+
+/** What a turn can put back: the form, and the descriptions the photos had. */
+type Before = { form: ReportForm; captions: Map<string, string | null> };
 
 type Turn = {
   id: number;
+  task: AssistantTask | null;
   heard: string;
   changed: DictationField[];
   /** What was understood, value by value ("Soleil, −2 °C"). */
   chips: string[];
+  /** What "Mettre au propre" wrote, in full, to be read over. */
+  texts: { field: DictationField; label: string; text: string }[];
+  /** The descriptions given to photos. */
+  described: PhotoCaption[];
   questions: string[];
-  /** The form as it was before this turn, while it can still be put back. */
-  before: ReportForm | null;
+  /** The photos it could not look at, by their number then. */
+  unseen: number[];
+  /** Photos left to describe. */
+  later: number;
+  /** As it was before this turn, while it can still be put back. */
+  before: Before | null;
+};
+
+const BUSY: Record<AssistantTask | "dictation", string> = {
+  dictation: "Je rédige le rapport…",
+  describe: "Je regarde les photos…",
+  tidy: "Je mets le texte au propre…",
+};
+
+const UNDO: Record<AssistantTask | "dictation", string> = {
+  dictation: "Annuler cette dictée",
+  describe: "Annuler les descriptions",
+  tidy: "Annuler la mise au propre",
 };
 
 const PROBLEMS: Record<RecorderProblem, string> = {
@@ -78,6 +125,8 @@ const fileName = (audio: Blob) =>
 /** The answer as the phone says it. */
 function spokenAnswer(result: DictationResult): string {
   const parts = result.changed.map((field) => DICTATION_FIELD_LABELS[field].toLowerCase());
+  if (result.captions.length > 0)
+    parts.push(result.captions.length === 1 ? "une photo décrite" : "photos décrites");
   const noted =
     parts.length > 0 ? `C'est noté : ${parts.join(", ")}.` : "Je n'ai rien trouvé à inscrire.";
   return [noted, ...result.questions].join(" ");
@@ -89,6 +138,7 @@ export function DictationSheet({
   projectId,
   form,
   onApply,
+  onPhotosAdded,
   startRecording,
 }: {
   open: boolean;
@@ -115,39 +165,84 @@ export function DictationSheet({
   const [failed, setFailed] = useState<{ job: Job; message: string; offline: boolean } | null>(
     null,
   );
-  const latest = useRef(form);
+  const { photos, loading: photosLoading } = useReportPhotos(projectId, form.photoIds);
+  const latest = useRef({ form, photos });
   useEffect(() => {
-    latest.current = form;
+    latest.current = { form, photos };
   });
+  // Known at once, before the form comes back: an answer arriving in between keeps the photo.
+  const photosAdded = (ids: string[]) => {
+    latest.current = { ...latest.current, form: addPhotoIds(latest.current.form, ids).form };
+    onPhotosAdded(ids);
+  };
   const nextId = useRef(1);
   const end = useRef<HTMLDivElement>(null);
 
+  /** Gives photos their descriptions; a failure is said, the report is still filled. */
+  const caption = (list: { photoId: string; caption: string | null }[]) =>
+    Promise.all(
+      list.map(({ photoId, caption: text }) => describePhotos(projectId, [photoId], text)),
+    ).catch((error: unknown) => {
+      toast.error(`Les descriptions des photos n'ont pas été enregistrées. ${errorMessage(error)}`);
+    });
+
   const send = useMutation({
-    mutationFn: (job: Job) => {
+    mutationFn: async (job: Job) => {
+      const { form: now, photos: shown } = latest.current;
       const body = new FormData();
-      body.set("day", latest.current.day);
-      body.set("current", JSON.stringify(contentForDictation(latest.current)));
-      body.set("asked", JSON.stringify(turns.at(-1)?.questions ?? []));
+      body.set("day", now.day);
+      body.set("current", JSON.stringify(contentForDictation(now)));
+      body.set("photos", JSON.stringify(photosForAssistant(shown)));
+      if (job.task) body.set("task", job.task);
+      else body.set("asked", JSON.stringify(turns.at(-1)?.questions ?? []));
       if (job.recording) body.set("audio", job.recording.audio, fileName(job.recording.audio));
-      else body.set("text", job.text);
-      return api<DictationResult>(`/api/projects/${projectId}/reports/dictation`, {
+      else if (job.text !== undefined) body.set("text", job.text);
+      const result = await api<DictationResult>(`/api/projects/${projectId}/reports/dictation`, {
         method: "POST",
         body,
       });
+      // The numbers and descriptions as they were when the request left.
+      return { result, form: now, photos: shown };
     },
     onMutate: () => setFailed(null),
-    onSuccess: (result, job) => {
-      const before = latest.current;
-      onApply(formAfterDictation(before, result.content), result.changed);
+    onSuccess: ({ result, form: before, photos: shown }, job) => {
+      const captions = new Map(shown.map((photo) => [photo.id, photo.caption]));
+      const number = new Map(shown.map((photo, index) => [photo.id, index + 1]));
+      // A photo taken while the answer was on its way stays with the report.
+      onApply(
+        keepingPhotos(formAfterDictation(before, result.content), latest.current.form),
+        result.changed,
+      );
+      void caption(result.captions);
       setTurns((list) => [
         ...list.map((turn) => ({ ...turn, before: null })),
         {
           id: nextId.current++,
+          task: job.task ?? null,
           heard: result.heard,
           changed: result.changed,
-          chips: dictationChips(contentForDictation(before), result.content, result.changed),
+          chips:
+            job.task === "tidy"
+              ? []
+              : dictationChips(contentForDictation(before), result.content, result.changed),
+          texts: job.task === "tidy" ? tidyTexts(result.content, result.changed) : [],
+          described: result.captions,
           questions: result.questions,
-          before,
+          // Those still on the phone show as such in the strip: only the others are said.
+          unseen: result.unseen
+            .filter((id) => shown.find((photo) => photo.id === id)?.photo)
+            .map((id) => number.get(id) ?? 0)
+            .filter(Boolean),
+          later: result.later.length,
+          before: {
+            form: before,
+            captions: new Map(
+              result.captions.map(({ photoId }: PhotoCaption) => [
+                photoId,
+                captions.get(photoId) ?? null,
+              ]),
+            ),
+          },
         },
       ]);
       if (job.text !== undefined) setText("");
@@ -200,9 +295,20 @@ export function DictationSheet({
 
   const undo = (turn: Turn) => {
     if (!turn.before) return;
-    onApply(turn.before, []);
+    // Only what the turn changed goes back: photos taken since stay with the report.
+    onApply(keepingPhotos(turn.before.form, latest.current.form), []);
+    void caption([...turn.before.captions].map(([photoId, text]) => ({ photoId, caption: text })));
     setTurns((list) => list.filter((other) => other.id !== turn.id));
   };
+
+  const runTask = (task: AssistantTask) => {
+    if (aloud) prepareSpeech();
+    send.mutate({ task });
+  };
+  const toDescribe = photosToDescribe(photos);
+  // Right after a clean copy, a second one would change nothing.
+  const canTidy = hasTextToTidy(form) && turns.at(-1)?.task !== "tidy";
+  const job = send.isPending ? send.variables : undefined;
 
   const sendText = () => {
     const said = text.trim();
@@ -231,11 +337,17 @@ export function DictationSheet({
       title={recording ? "J'écoute…" : "Dicter le rapport"}
       description={
         turns.length === 0 && !recording
-          ? "Racontez votre journée. Le rapport se remplit, vous le vérifiez, puis vous l'enregistrez."
+          ? "Racontez votre journée et prenez vos photos. Le rapport se remplit, vous le vérifiez, puis vous l'enregistrez."
           : undefined
       }
       footer={
-        <div className="w-full">
+        <div className="w-full space-y-3">
+          <PhotoStrip
+            projectId={projectId}
+            photos={photos}
+            disabled={recording || phase === "asking"}
+            onAdded={photosAdded}
+          />
           {writing ? (
             <div className="space-y-2">
               <Textarea
@@ -389,18 +501,48 @@ export function DictationSheet({
           <TurnView
             key={turn.id}
             turn={turn}
+            photos={photos}
             onUndo={turn.before && !busy && !recording ? () => undo(turn) : null}
           />
         ))}
 
         {busy ? (
-          <p
-            role="status"
-            className="text-dim animate-fade flex items-center gap-2.5 px-1 py-2 text-[15px] font-medium"
-          >
-            <LoaderCircle className="text-ead size-5 animate-spin" aria-hidden />
-            Je rédige le rapport…
-          </p>
+          <>
+            {job?.task ? <Asked task={job.task} /> : null}
+            <p
+              role="status"
+              className="text-dim animate-fade flex items-center gap-2.5 px-1 py-2 text-[15px] font-medium"
+            >
+              <LoaderCircle className="text-ead size-5 animate-spin" aria-hidden />
+              {BUSY[job?.task ?? "dictation"]}
+            </p>
+          </>
+        ) : null}
+
+        {/* Not while the photos are still being found: their numbers could still change. */}
+        {!busy && !recording && online && !photosLoading && (toDescribe > 0 || canTidy) ? (
+          <div className="grid gap-2 pt-1 sm:grid-cols-2">
+            {toDescribe > 0 ? (
+              <Button
+                variant="secondary"
+                className="h-12 justify-start"
+                onClick={() => runTask("describe")}
+              >
+                <ScanEye aria-hidden />
+                {ASSISTANT_TASK_LABELS.describe}
+              </Button>
+            ) : null}
+            {canTidy ? (
+              <Button
+                variant="secondary"
+                className="h-12 justify-start"
+                onClick={() => runTask("tidy")}
+              >
+                <PenLine aria-hidden />
+                {ASSISTANT_TASK_LABELS.tidy}
+              </Button>
+            ) : null}
+          </div>
         ) : null}
 
         {failed ? (
@@ -449,7 +591,7 @@ export function DictationSheet({
 const EXAMPLE =
   "«\u00a0Soleil, moins deux ce matin. Marc, Simon et moi, dix heures chacun. On a posé quarante mètres d'aqueduc entre R\u20113 et R\u20114. La pelle et deux camions. L'ingénieur est passé, il veut un essai de compaction demain.\u00a0»";
 const PRIVACY =
-  "Votre voix est transcrite par un service d'intelligence artificielle. L'application ne garde pas l'enregistrement.";
+  "Votre voix et les photos du rapport sont lues par un service d'intelligence artificielle. L'application ne garde pas l'enregistrement.";
 
 /** What to say, before the first dictation; a small reminder while recording. */
 function Example({ compact }: { compact: boolean }) {
@@ -469,47 +611,121 @@ function Example({ compact }: { compact: boolean }) {
   );
 }
 
-function TurnView({ turn, onUndo }: { turn: Turn; onUndo: (() => void) | null }) {
+const TASK_ICONS: Record<AssistantTask, typeof ScanEye> = { describe: ScanEye, tidy: PenLine };
+
+/** What the person asked for without speaking, as their side of the conversation. */
+function Asked({ task }: { task: AssistantTask }) {
+  const Icon = TASK_ICONS[task];
+  return (
+    <div className="bg-ead-tint animate-rise ml-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-2 rounded-2xl rounded-br-md px-3.5 py-2.5 text-[15px] font-semibold">
+      <Icon className="text-ead-dark size-4.5 shrink-0" aria-hidden />
+      {ASSISTANT_TASK_LABELS[task]}
+    </div>
+  );
+}
+
+function TurnView({
+  turn,
+  photos,
+  onUndo,
+}: {
+  turn: Turn;
+  /** The report's photos now, for the small images of those described. */
+  photos: ReportPhoto[];
+  onUndo: (() => void) | null;
+}) {
   const [whole, setWhole] = useState(false);
   const long = turn.heard.length > 220;
+  const noted = turn.chips.length > 0 || turn.texts.length > 0 || turn.described.length > 0;
   return (
     <div className="animate-rise space-y-2">
-      <div className="bg-ead-tint ml-8 rounded-2xl rounded-br-md px-3.5 py-2.5">
-        <p className={cn("text-[15px] leading-relaxed", long && !whole && "line-clamp-4")}>
-          {turn.heard}
-        </p>
-        {long ? (
-          <button
-            type="button"
-            onClick={() => setWhole((shown) => !shown)}
-            className="text-ead-dark mt-1 cursor-pointer text-sm font-semibold"
-          >
-            {whole ? "Réduire" : "Tout lire"}
-          </button>
-        ) : null}
-      </div>
+      {turn.task ? (
+        <Asked task={turn.task} />
+      ) : (
+        <div className="bg-ead-tint ml-8 rounded-2xl rounded-br-md px-3.5 py-2.5">
+          <p className={cn("text-[15px] leading-relaxed", long && !whole && "line-clamp-4")}>
+            {turn.heard}
+          </p>
+          {long ? (
+            <button
+              type="button"
+              onClick={() => setWhole((shown) => !shown)}
+              className="text-ead-dark mt-1 inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold"
+            >
+              {whole ? "Réduire" : "Tout lire"}
+            </button>
+          ) : null}
+        </div>
+      )}
 
       <div className="border-line mr-8 rounded-2xl rounded-bl-md border px-3.5 py-3">
-        {turn.changed.length > 0 ? (
+        {noted ? (
           <>
-            <p className="text-sm font-semibold">C&apos;est noté</p>
-            <ul className="mt-1.5 flex flex-wrap gap-1.5">
-              {turn.chips.map((chip) => (
-                <li
-                  key={chip}
-                  className="bg-good-tint text-good inline-flex max-w-full items-start gap-1 rounded-lg px-2 py-1 text-sm font-semibold"
-                >
-                  <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
-                  <span className="min-w-0 wrap-anywhere">{chip}</span>
-                </li>
-              ))}
-            </ul>
+            <p className="text-sm font-semibold">{turn.task ? "C'est fait" : "C'est noté"}</p>
+            {turn.chips.length > 0 ? (
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {turn.chips.map((chip) => (
+                  <li
+                    key={chip}
+                    className="bg-good-tint text-good inline-flex max-w-full items-start gap-1 rounded-lg px-2 py-1 text-sm font-semibold"
+                  >
+                    <Check className="mt-0.5 size-4 shrink-0" aria-hidden />
+                    <span className="min-w-0 wrap-anywhere">{chip}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {turn.texts.length > 0 ? (
+              <ul aria-label="Textes mis au propre" className="mt-2 space-y-2.5">
+                {turn.texts.map(({ field, label, text }) => (
+                  <TidyText key={field} label={label} text={text} />
+                ))}
+              </ul>
+            ) : null}
+            {turn.described.length > 0 ? (
+              <ul aria-label="Photos décrites" className="mt-2 space-y-2">
+                {turn.described.map(({ photoId, number, caption }) => {
+                  const photo = photos.find((one) => one.id === photoId);
+                  return (
+                    <li key={photoId} className="flex items-start gap-2.5">
+                      {photo ? (
+                        <PhotoThumb photo={photo} number={number} className="size-12" />
+                      ) : null}
+                      <p className="min-w-0 flex-1 text-[15px] leading-snug wrap-anywhere">
+                        <span className="font-semibold">Photo {number}</span>
+                        &nbsp;: {caption}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
           </>
         ) : (
           <p className="text-[15px]">
-            Je n&apos;ai rien trouvé à inscrire dans ce que vous avez dit.
+            {turn.task === "tidy"
+              ? "Le texte est déjà propre : je n'ai rien changé."
+              : turn.task === "describe"
+                ? "Je n'ai pas pu décrire les photos cette fois."
+                : "Je n'ai rien trouvé à inscrire dans ce que vous avez dit."}
           </p>
         )}
+
+        {turn.unseen.length > 0 ? (
+          <p className="text-warn mt-2 flex items-start gap-2 text-sm font-medium">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
+            Je n&apos;ai pas pu regarder {photoNumbers(turn.unseen)}. Réessayez plus tard.
+          </p>
+        ) : null}
+
+        {turn.later > 0 ? (
+          <p className="text-dim mt-2 text-sm">
+            {turn.later === 1
+              ? "Il reste une photo à décrire"
+              : `Il reste ${turn.later} photos à décrire`}
+            &nbsp;: touchez «&nbsp;{ASSISTANT_TASK_LABELS.describe}&nbsp;».
+          </p>
+        ) : null}
 
         {turn.questions.length > 0 ? (
           <div className="mt-3">
@@ -525,18 +741,49 @@ function TurnView({ turn, onUndo }: { turn: Turn; onUndo: (() => void) | null })
           </div>
         ) : null}
 
-        {onUndo && turn.changed.length > 0 ? (
+        {onUndo && noted ? (
           <button
             type="button"
             onClick={onUndo}
-            className="text-dim hover:text-text mt-2 -mb-1 inline-flex h-9 cursor-pointer items-center gap-1.5 text-sm font-semibold"
+            className="text-dim hover:text-text mt-1 -mb-2 inline-flex h-11 cursor-pointer items-center gap-1.5 text-sm font-semibold"
           >
             <RotateCcw className="size-4" aria-hidden />
-            Annuler cette dictée
+            {UNDO[turn.task ?? "dictation"]}
           </button>
         ) : null}
       </div>
     </div>
+  );
+}
+
+/** A text as "Mettre au propre" wrote it: read over here, before the report is saved. */
+function TidyText({ label, text }: { label: string; text: string }) {
+  const [whole, setWhole] = useState(false);
+  const long = text.length > 280 || text.split("\n").length > 5;
+  return (
+    <li className="border-good border-l-[3px] pl-3">
+      <p className="text-good flex items-center gap-1 text-sm font-semibold">
+        <Check className="size-4 shrink-0" aria-hidden />
+        {label}
+      </p>
+      <p
+        className={cn(
+          "mt-0.5 text-[15px] leading-snug wrap-anywhere whitespace-pre-line",
+          long && !whole && "line-clamp-5",
+        )}
+      >
+        {text}
+      </p>
+      {long ? (
+        <button
+          type="button"
+          onClick={() => setWhole((shown) => !shown)}
+          className="text-ead-dark inline-flex min-h-11 cursor-pointer items-center text-sm font-semibold"
+        >
+          {whole ? "Réduire" : "Tout lire"}
+        </button>
+      ) : null}
+    </li>
   );
 }
 

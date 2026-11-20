@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ReportContent } from "@/shared/reports";
 
-import { applyDictation, matchName, type DictationPatch } from "./patch";
+import { applyDictation, applyTidy, keepsTheFacts, matchName, type DictationPatch } from "./patch";
 
 const members = [
   { id: "u1", name: "Julie Cyr" },
@@ -29,6 +29,7 @@ const nothing: DictationPatch = {
   notes: null,
   replace: { equipment: false, workDone: false, notes: false },
   questions: [],
+  photos: [],
 };
 
 describe("matchName", () => {
@@ -143,6 +144,74 @@ describe("applyDictation", () => {
   it("changes nothing when nothing was said", () => {
     const { content, changed } = applyDictation(empty, nothing, members);
     expect(content).toEqual(empty);
+    expect(changed).toEqual([]);
+  });
+});
+
+describe("applyTidy", () => {
+  const current = {
+    ...empty,
+    weather: { condition: "pluie" as const, temperatureC: 4, note: "" },
+    equipment: "pelle, 2 camions",
+    workDone: "euh on a posé 40 m d'aqueduc entre R-3 et R-4 heu",
+    notes: "",
+  };
+
+  it("replaces the texts with their clean version, and nothing else", () => {
+    const { content, changed, questions } = applyTidy(current, {
+      ...nothing,
+      weather: { condition: "soleil", temperatureC: 20, note: "Beau" },
+      crew: [{ name: "Julie Cyr", hours: 8, remove: false }],
+      equipment: "Pelle et 2 camions.",
+      workDone: "Pose de 40 m de conduite d'aqueduc entre R-3 et R-4.",
+      notes: "Une note inventée.",
+      questions: ["Combien d'heures?"],
+    });
+    expect(content.equipment).toBe("Pelle et 2 camions.");
+    expect(content.workDone).toBe("Pose de 40 m de conduite d'aqueduc entre R-3 et R-4.");
+    // An empty part stays empty; the weather and the crew are not touched.
+    expect(content.notes).toBe("");
+    expect(content.weather).toEqual(current.weather);
+    expect(content.crew).toEqual([]);
+    expect(changed).toEqual(["equipment", "workDone"]);
+    expect(questions).toEqual([]);
+  });
+
+  it("keeps a text whose rewriting loses a figure or most of its words", () => {
+    const { content, changed } = applyTidy(current, {
+      ...nothing,
+      equipment: "Pelle et camions.",
+      workDone: "Pose.",
+    });
+    expect(content).toEqual(current);
+    expect(changed).toEqual([]);
+  });
+
+  it("keepsTheFacts compares the figures and the length", () => {
+    expect(keepsTheFacts("7,5 h et 200 mm", "200 mm, 7,5 h")).toBe(true);
+    expect(keepsTheFacts("7,5 h et 200 mm", "200 mm")).toBe(false);
+    // The same figure written another way is the same figure.
+    expect(keepsTheFacts("extra de 25 000 $, 7.5 h", "Extra de 25000 $, 7,5 h.")).toBe(true);
+  });
+
+  it("keeps a text whose rewriting adds a figure or a sentence", () => {
+    expect(
+      keepsTheFacts(
+        "On a posé 40 m de conduite.",
+        "On a posé 40 m de conduite. L'ingénieur a approuvé un extra de 25 000 $.",
+      ),
+    ).toBe(false);
+    expect(
+      keepsTheFacts(
+        "on a posé la conduite",
+        "On a posé la conduite. Le surveillant a confirmé que tout est conforme aux plans et devis.",
+      ),
+    ).toBe(false);
+    const { content, changed } = applyTidy(current, {
+      ...nothing,
+      workDone: "On a posé 40 m d'aqueduc entre R-3 et R-4. Essai de compaction réussi à 98 %.",
+    });
+    expect(content.workDone).toBe(current.workDone);
     expect(changed).toEqual([]);
   });
 });

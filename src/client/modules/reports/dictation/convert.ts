@@ -1,4 +1,8 @@
-import { DICTATION_FIELD_LABELS, type DictationField } from "@/shared/dictation";
+import {
+  DICTATION_FIELD_LABELS,
+  type DictationField,
+  type DictationPhoto,
+} from "@/shared/dictation";
 import {
   isValidHours,
   REPORT_LIMITS,
@@ -10,6 +14,7 @@ import {
 import { count } from "../../../lib/format";
 import { usualHours, type CrewRow, type ReportForm } from "../form";
 import { formatHours, formatTemperature, hoursText, parseHours, parseTemperature } from "../lib";
+import type { ReportPhoto } from "../photos";
 
 // Between the form being typed and the report the dictation works on. The
 // form may hold anything (half a number, a line without a name): what cannot
@@ -112,7 +117,17 @@ export function formAfterDictation(form: ReportForm, content: ReportContent): Re
   };
 }
 
-const NBSP = " ";
+/**
+ * A form from an earlier moment (the one a request left with, the one a turn
+ * puts back) laid over the form as it is now. The photos stay those the
+ * report has now: one taken in the meantime goes with the report all the same.
+ */
+export const keepingPhotos = (earlier: ReportForm, now: ReportForm): ReportForm => ({
+  ...earlier,
+  photoIds: now.photoIds,
+});
+
+const NBSP = "\u00a0";
 /** People named one by one in an answer; the others are counted. */
 const PEOPLE_SHOWN = 4;
 
@@ -167,4 +182,41 @@ function crewChips(before: CrewLine[], after: CrewLine[]): string[] {
   if (people.length <= PEOPLE_SHOWN) return people;
   const others = count(people.length - PEOPLE_SHOWN, "autre");
   return [...people.slice(0, PEOPLE_SHOWN), `+${NBSP}${others}`];
+}
+
+// --- Photos ---------------------------------------------------------------------
+
+/** The report's photos as the assistant is told about them, numbered by their order. */
+export function photosForAssistant(photos: ReportPhoto[]): DictationPhoto[] {
+  return photos.map((photo) => ({
+    id: photo.id,
+    caption: photo.caption?.trim() || null,
+    takenAt: photo.takenAt,
+    onServer: photo.photo ? true : photo.local.state === "sent",
+  }));
+}
+
+/** Photos the project has that still lack a description: "Décrire les photos" is for them. */
+export const photosToDescribe = (photos: ReportPhoto[]) =>
+  photos.filter((photo) => photo.photo && !photo.caption?.trim()).length;
+
+/** Whether the report holds text that can be put in clean French. */
+export const hasTextToTidy = (form: ReportForm) =>
+  [form.equipment, form.workDone, form.notes].some((text) => text.trim());
+
+type TextField = "equipment" | "workDone" | "notes";
+const isTextField = (field: DictationField): field is TextField =>
+  field === "equipment" || field === "workDone" || field === "notes";
+
+/** What "Mettre au propre" wrote, part by part, for the person to read before saving. */
+export const tidyTexts = (content: ReportContent, changed: DictationField[]) =>
+  changed
+    .filter(isTextField)
+    .map((field) => ({ field, label: DICTATION_FIELD_LABELS[field], text: content[field] }));
+
+/** "la photo 3", "les photos 3 et 5", "les photos 1, 2 et 4". */
+export function photoNumbers(numbers: number[]): string {
+  const sorted = [...numbers].sort((a, b) => a - b);
+  if (sorted.length === 1) return `la photo ${sorted[0]}`;
+  return `les photos ${sorted.slice(0, -1).join(", ")} et ${sorted.at(-1)}`;
 }
