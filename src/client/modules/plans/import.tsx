@@ -81,7 +81,9 @@ export function ImportScreen() {
       <Page title="Ajout de plans" back={back}>
         <EmptyState
           icon={Lock}
-          {...(project.canManage
+          // From the project's status: once it is archived, even its foreman
+          // may not manage it, and is not to be told the screen is for others.
+          {...(project.status === "archive"
             ? {
                 title: "Ce projet est archivé",
                 text: "Ses plans ne changent plus. Seul le bureau peut encore en ajouter.",

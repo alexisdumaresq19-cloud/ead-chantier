@@ -196,8 +196,10 @@ test.describe("as a foreman", () => {
 
     await expect(page.getByText("3 feuilles publiées. Le chantier les voit.")).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`${plansOf(project)}$`));
+    // The sheets' own links: for a moment the list may still show the import
+    // from before, whose name carries the same numbers.
     for (const number of [first, second, third])
-      await expect(page.getByRole("link", { name: new RegExp(number) })).toBeVisible();
+      await expect(page.getByRole("link", { name: new RegExp(`^${number} `) })).toBeVisible();
     await expect(
       page.getByRole("link", { name: new RegExp(`${third}.*Plan corrigé`) }),
     ).toBeVisible();
@@ -276,8 +278,12 @@ test("an archived project refuses changes to its plans, except from the office",
   const archived = await post<{ id: string }>(office.request, "/api/projects", {
     name: `Essai plans, projet archivé (${test.info().project.name})`,
   });
+  const worker = await contextAs(browser, "worker");
   const foremanId = (await call(foreman.request, "GET", "/api/me")).body.id;
-  await post(office.request, `/api/projects/${archived.id}/members`, { userIds: [foremanId] });
+  const workerId = (await call(worker.request, "GET", "/api/me")).body.id;
+  await post(office.request, `/api/projects/${archived.id}/members`, {
+    userIds: [foremanId, workerId],
+  });
 
   // While open: one sheet published, one import left to check, one folder.
   const published = await importByApi(office.request, archived.id, await planPdf(["A-101"]));
@@ -305,6 +311,11 @@ test("an archived project refuses changes to its plans, except from the office",
   await expect(page.getByText("En cours d'ajout")).toHaveCount(0);
   await page.goto(`${plansOf(archived.id)}/import/${pending}`);
   await expect(page.getByText("Ce projet est archivé")).toBeVisible();
+  // Told so from the project's status, whatever the person may manage.
+  const workerPage = await worker.newPage();
+  await workerPage.goto(`${plansOf(archived.id)}/import/${pending}`);
+  await expect(workerPage.getByText("Ce projet est archivé")).toBeVisible();
+  await expect(workerPage.getByText("Réservé au bureau et aux contremaîtres")).toHaveCount(0);
 
   // And the server refuses every change.
   const changes = [
@@ -340,7 +351,8 @@ test("an archived project refuses changes to its plans, except from the office",
   await officePage.goto(plansOf(archived.id));
   await expect(officePage.getByRole("button", { name: "Gérer la feuille A-101" })).toBeVisible();
 
-  // The seeded foreman's project list is left as it was.
-  await call(office.request, "DELETE", `/api/projects/${archived.id}/members/${foremanId}`);
-  await Promise.all([office.close(), foreman.close()]);
+  // The seeded people's project lists are left as they were.
+  for (const userId of [foremanId, workerId])
+    await call(office.request, "DELETE", `/api/projects/${archived.id}/members/${userId}`);
+  await Promise.all([office.close(), foreman.close(), worker.close()]);
 });

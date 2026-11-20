@@ -23,6 +23,7 @@ import {
   type RenderedPage,
 } from "./render";
 import { suggestSheetName } from "./suggest";
+import { pageTurns, type Turn } from "./turns";
 
 // Bringing a PDF of plans in. The PDF is read, then each page is drawn and
 // cut into tiles ("processing"); the office checks the sheet names
@@ -32,9 +33,11 @@ import { suggestSheetName } from "./suggest";
 // requests that look at the import. Any number may be started: each admits
 // itself in the database before it downloads anything. One reads the PDF
 // (a lease on the reading), and at most MAX_WORKERS draw pages at once (a
-// claim per page, under a lock on the import). A worker that dies loses
-// nothing: its page or its reading is taken again after a few minutes, and
-// given up the second time.
+// claim per page, under a lock on the import). Within one server process,
+// workers of all imports also wait for one of its few PDFiums (pageTurns)
+// before they take anything. A worker that dies loses nothing: its page or
+// its reading is taken again after a few minutes, and given up the second
+// time.
 
 type Import = typeof schema.planImports.$inferSelect;
 type Revision = typeof schema.sheetRevisions.$inferSelect;
@@ -54,10 +57,14 @@ export const MAX_ATTEMPTS = 2;
 /** A plan set is a few dozen sheets; a PDF over this is refused. */
 export const MAX_PAGES = 500;
 const UPLOADS_AT_ONCE = 16;
+/** Imports with a worker of this process waiting for a turn to draw (see pageTurns). */
+const waitingImports = new Set<string>();
 
 const NO_PAGE = "Ce PDF ne contient aucune page.";
 const READING_FAILED = "Ce PDF n'a pas pu être lu. Réessayez dans un moment.";
 const READING_STOPPED = "La lecture de ce PDF a été interrompue deux fois.";
+const READING_GIVEN_UP =
+  "La lecture de ce PDF a été interrompue trois fois. Essayez de l'exporter de nouveau, ou divisez-le en plusieurs PDF.";
 const GIVEN_UP = "Cette page n'a pas pu être convertie après deux essais.";
 export const tooManyPages = (pageCount: number) =>
   `Ce PDF compte ${pageCount} pages, la limite est de ${MAX_PAGES}. Divisez-le en plusieurs PDF, puis importez-les un à un.`;
@@ -67,6 +74,7 @@ const readingIsFinal = (error: string | null) =>
   error === PDF_UNREADABLE ||
   error === PDF_TOO_SLOW ||
   error === NO_PAGE ||
+  error === READING_GIVEN_UP ||
   (error?.startsWith("Ce PDF compte ") ?? false);
 
 /** A refusal of the PDF itself, in words fit for the office. */
@@ -83,8 +91,8 @@ export async function createImport(
   options: { folderId?: string | null; revisionLabel?: string | null; issuedOn?: string | null },
 ): Promise<Import> {
   return db.transaction(async (tx) => {
-    await tx
-      .select({ id: schema.uploads.id })
+    const [taken] = await tx
+      .select({ status: schema.uploads.status })
       .from(schema.uploads)
       .where(eq(schema.uploads.id, upload.id))
       .for("update");
@@ -94,6 +102,9 @@ export async function createImport(
       .where(eq(schema.planImports.uploadId, upload.id))
       .limit(1);
     if (existing) return existing;
+    // Looked at again under the lock: the PDF of an import cancelled
+    // meanwhile has been discarded, and starts nothing.
+    if (taken?.status !== "complete") throw badRequest("Le téléversement n'est pas terminé.");
     const [created] = await tx
       .insert(schema.planImports)
       .values({
@@ -147,7 +158,11 @@ export async function needsWorker(importId: string): Promise<boolean> {
  * Takes the reading of the PDF for one worker, or answers null when another
  * holds it. A reader that was never heard of again was stopped with its
  * server (a deployment, its memory, its time). Once is bad luck; the second
- * time, the PDF is what stops it, and the import fails.
+ * time, the PDF is what stops it, and the import fails. A person may try it
+ * once more (retryFailedPages); stopped again, it is final.
+ *
+ * While reading, the error column holds what the import ends with if this
+ * reader is stopped too: nobody sees it before.
  */
 async function takeReading(importId: string): Promise<Import | null> {
   return db.transaction(async (tx) => {
@@ -158,7 +173,8 @@ async function takeReading(importId: string): Promise<Import | null> {
       .for("update");
     if (row?.current.status !== "reading" || !row.readingFree) return null;
     const interrupted = row.current.readingStartedAt !== null;
-    if (interrupted && row.current.error === READING_STOPPED) {
+    const { error } = row.current;
+    if (interrupted && (error === READING_STOPPED || error === READING_GIVEN_UP)) {
       await tx
         .update(schema.planImports)
         .set({ status: "failed" })
@@ -167,8 +183,10 @@ async function takeReading(importId: string): Promise<Import | null> {
     }
     const [taken] = await tx
       .update(schema.planImports)
-      // The message is kept for the second time; nobody sees it while reading.
-      .set({ readingStartedAt: raw`now()`, error: interrupted ? READING_STOPPED : null })
+      .set({
+        readingStartedAt: raw`now()`,
+        error: interrupted ? READING_STOPPED : error === READING_GIVEN_UP ? error : null,
+      })
       .where(eq(schema.planImports.id, importId))
       .returning();
     return taken;
@@ -250,24 +268,38 @@ async function claimPage(importId: string): Promise<Revision | null> {
   return revision;
 }
 
-/** Once no page is waiting: on to review, or failed if not one page came out. */
+/**
+ * Once no page is waiting: on to review, or failed if not one page came out.
+ * The pages are counted under the import's lock, which retryFailedPages also
+ * takes: pages it puts back in the queue are seen, and keep the import going.
+ * (One update with the count in its condition would not do: waiting for the
+ * lock, it would still count the pages as they were before it waited.)
+ */
 async function finishIfDone(importId: string) {
-  const [counts] = await db
-    .select({
-      pending: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} in ('queued', 'processing'))::int`,
-      ready: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} = 'ready')::int`,
-    })
-    .from(schema.sheetRevisions)
-    .where(eq(schema.sheetRevisions.importId, importId));
-  if (counts.pending > 0) return;
-  await db
-    .update(schema.planImports)
-    .set(
-      counts.ready > 0
-        ? { status: "review", error: null }
-        : { status: "failed", error: "Aucune page de ce PDF n'a pu être convertie." },
-    )
-    .where(and(eq(schema.planImports.id, importId), eq(schema.planImports.status, "processing")));
+  await db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: schema.planImports.status })
+      .from(schema.planImports)
+      .where(eq(schema.planImports.id, importId))
+      .for("update");
+    if (current?.status !== "processing") return;
+    const [counts] = await tx
+      .select({
+        pending: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} in ('queued', 'processing'))::int`,
+        ready: raw<number>`count(*) filter (where ${schema.sheetRevisions.status} = 'ready')::int`,
+      })
+      .from(schema.sheetRevisions)
+      .where(eq(schema.sheetRevisions.importId, importId));
+    if (counts.pending > 0) return;
+    await tx
+      .update(schema.planImports)
+      .set(
+        counts.ready > 0
+          ? { status: "review", error: null }
+          : { status: "failed", error: "Aucune page de ce PDF n'a pu être convertie." },
+      )
+      .where(eq(schema.planImports.id, importId));
+  });
 }
 
 /** Whether trying again could help: what failed has not been tried enough yet. */
@@ -300,7 +332,12 @@ export async function retryFailedPages(importId: string) {
         );
       await tx
         .update(schema.planImports)
-        .set({ status: "reading", error: null, readingStartedAt: null })
+        .set({
+          status: "reading",
+          // After two readings stopped, this one is the last (see takeReading).
+          error: current.error === READING_STOPPED ? READING_GIVEN_UP : null,
+          readingStartedAt: null,
+        })
         .where(eq(schema.planImports.id, importId));
       return;
     }
@@ -316,11 +353,22 @@ export async function retryFailedPages(importId: string) {
       )
       .returning({ id: schema.sheetRevisions.id });
     if (!retried.length) {
-      if (current.status === "review" || current.status === "failed")
-        throw badRequest(
-          "Ces pages ont déjà été essayées deux fois. Publiez les autres, ou annulez l'import.",
-        );
-      return;
+      if (current.status !== "review" && current.status !== "failed") return;
+      const [failed] = await tx
+        .select({ id: schema.sheetRevisions.id })
+        .from(schema.sheetRevisions)
+        .where(
+          and(
+            eq(schema.sheetRevisions.importId, importId),
+            eq(schema.sheetRevisions.status, "failed"),
+          ),
+        )
+        .limit(1);
+      throw badRequest(
+        failed
+          ? "Ces pages ont déjà été essayées deux fois. Publiez les autres, ou annulez l'import."
+          : "Aucune page à réessayer.",
+      );
     }
     await tx
       .update(schema.planImports)
@@ -338,40 +386,65 @@ export async function retryFailedPages(importId: string) {
 export async function runImportWorker(importId: string): Promise<void> {
   const startedAt = Date.now();
   let pdf: PlanPdf | undefined;
+  let turn: Turn | null = null;
+  // Waits for a PDFium of this process before anything is taken in the
+  // database: a worker that waits holds no page and no reading, so waiting
+  // costs no attempt, and what it leaves is taken by a later worker.
+  const waitTurn = async () => {
+    turn = pageTurns.tryTake();
+    // Requests keep starting workers while pages wait: one waiting per import is enough.
+    if (turn || waitingImports.has(importId)) return turn;
+    waitingImports.add(importId);
+    try {
+      turn = await pageTurns.take(WORKER_BUDGET_MS - (Date.now() - startedAt));
+      return turn;
+    } finally {
+      waitingImports.delete(importId);
+    }
+  };
+  const load = async () =>
+    (
+      await db.select().from(schema.planImports).where(eq(schema.planImports.id, importId)).limit(1)
+    )[0];
   try {
-    let [current] = await db
-      .select()
-      .from(schema.planImports)
-      .where(eq(schema.planImports.id, importId))
-      .limit(1);
+    let current = await load();
     if (current?.status === "reading") {
+      if (!(await waitTurn())) return;
       const taken = await takeReading(importId);
-      if (!taken) return;
-      current = taken;
-      try {
-        pdf = await openImportPdf(current);
-        await listPages(current, pdf.pageCount);
-      } catch (error) {
-        // Whatever went wrong, the import does not stay "reading".
-        if (!(error instanceof UnreadablePdf || error instanceof RefusedPdf))
-          console.error("plan import: reading failed", importId, error);
-        await db
-          .update(schema.planImports)
-          .set({
-            status: "failed",
-            error:
-              error instanceof UnreadablePdf || error instanceof RefusedPdf
-                ? error.message
-                : READING_FAILED,
-          })
-          .where(
-            and(eq(schema.planImports.id, importId), eq(schema.planImports.status, "reading")),
-          );
-        return;
+      if (!taken) {
+        // Read by another meanwhile, perhaps while this one waited for its
+        // turn: its pages may be waiting, left to this worker by the others.
+        current = await load();
+      } else {
+        current = taken;
+        try {
+          pdf = await openImportPdf(current);
+          await listPages(current, pdf.pageCount);
+        } catch (error) {
+          // Whatever went wrong, the import does not stay "reading".
+          if (!(error instanceof UnreadablePdf || error instanceof RefusedPdf))
+            console.error("plan import: reading failed", importId, error);
+          await db
+            .update(schema.planImports)
+            .set({
+              status: "failed",
+              error:
+                error instanceof UnreadablePdf || error instanceof RefusedPdf
+                  ? error.message
+                  : READING_FAILED,
+            })
+            .where(
+              and(eq(schema.planImports.id, importId), eq(schema.planImports.status, "reading")),
+            );
+          return;
+        }
       }
-    } else if (current?.status !== "processing") return;
+    }
+    // Pages to draw: listed just now by this worker, or earlier.
+    if (!current || (!pdf && current.status !== "processing")) return;
 
     while (Date.now() - startedAt < WORKER_BUDGET_MS) {
+      if (!turn && !(await waitTurn())) break;
       const revision = await claimPage(importId);
       if (!revision) break;
       try {
@@ -386,10 +459,23 @@ export async function runImportWorker(importId: string): Promise<void> {
         break;
       }
       await processPage(current, revision, pdf);
+      if ([...waitingImports].some((other) => other !== importId)) {
+        // Another import waits for a PDFium: this one goes, with its memory,
+        // and this worker gets in line again.
+        await pdf.close();
+        pdf = undefined;
+        releaseTurn();
+      }
     }
     await finishIfDone(importId);
   } finally {
     await pdf?.close();
+    releaseTurn();
+  }
+
+  function releaseTurn() {
+    turn?.release();
+    turn = null;
   }
 }
 
@@ -704,7 +790,8 @@ export async function cancelImport(importId: string) {
     return { pages, uploadId: current.uploadId };
   });
   await removeTiles(pages);
-  // The PDF was sent for this import alone.
+  // The PDF was sent for this import alone. The import's row is gone first:
+  // the upload's row takes with it whatever still refers to it.
   await discardUpload(uploadId).catch((error) =>
     console.error("plan import: PDF of a cancelled import not removed", importId, error),
   );
