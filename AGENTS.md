@@ -38,6 +38,27 @@ The interface is in Québec French only.
   the request. Roles are in `src/shared/roles.ts`: `admin` (shown as
   "Bureau"), `contremaitre`, `travailleur`. Daily reports are for foremen and
   the office only.
+- **Getting in, without a password**: the office sends someone a personal
+  link (`/i/<token>`), a foreman shows a site's QR code (`/j/<token>`, which
+  puts a worker on that project), or the person makes their own account with
+  the company's code. That last way is the office's to open (Équipe → Code
+  d'entreprise; the `app_settings` row `company_code`, null while closed):
+  `/inscription` (`POST /api/signup`, `src/server/signup`) creates a worker on
+  no project, `unreviewed`, signed in for `UNREVIEWED_SESSION_DAYS`, whom the
+  office then confirms and adds to projects. The office's link carries the
+  code in the fragment (`/inscription#code=…`), never in the query.
+- **The door of account creation** (`src/server/signup/door.ts`): one
+  transaction under the advisory lock `ead:signup` (`holdDoor`, a 5 s wait,
+  then a 429) counts the tries, compares the code, records the try and makes
+  the account; never count outside it. Networks are keyed by `networkOf`
+  (IPv4 as it is, IPv6 by /64) and stored as a keyed digest. Wrong codes and
+  accounts are counted per day since the current code was set, so a new code
+  lifts both pauses; `GET /api/company/code` shows a pause to the office.
+- **Deleting one's account** (`DELETE /api/me`, `src/server/people/delete.ts`):
+  someone whose id is the author of reports, photos, documents, plans or
+  projects keeps a `users` row with the name only and `deleted_at` set;
+  everyone else is removed. The last active office account is refused, and
+  Mon compte says so before offering anything.
 - **Archived projects** are read-only for everyone but the office, and nobody
   new joins them. A project tells the screens two things: `canManage` (its
   foreman or the office: reads what only they read, such as the reports,
@@ -193,4 +214,7 @@ each role.
 the Playwright tests of `e2e/` at phone and desktop sizes, each size on fresh
 sample data, since tests change it (`E2E_PORT` and
 `E2E_DB` let two runs coexist). Every module has a spec there; a change to a
-screen or a route comes with a test that would fail without it.
+screen or a route comes with a test that would fail without it. The test
+server holds the door of account creation with its own limits
+(`scripts/e2e.sh`); a test that makes an account uses `deviceAt()` from
+`e2e/support.ts`, so that each has its own network address.
