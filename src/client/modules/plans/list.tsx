@@ -8,7 +8,7 @@ import {
   Plus,
   type LucideIcon,
 } from "lucide-react";
-import { memo, useCallback, useDeferredValue, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 import type { PlanFolder, Plans } from "@/shared/plans";
 
@@ -34,6 +34,13 @@ export function PlansScreen() {
   const project = useCurrentProject();
   const plans = usePlans(project.id);
   const canManage = useCanChangePlans();
+  // The viewer's code is fetched while the list is read, so that the first
+  // sheet tapped opens at once, even before the app has stored its screens.
+  useEffect(() => {
+    void import("./viewer").catch(() => {
+      // No network: it loads when a sheet is opened, or comes from the device.
+    });
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [menuSheetId, setMenuSheetId] = useState<string | null>(null);
   const [folderDialog, setFolderDialog] = useState<{ folder: PlanFolder | null } | null>(null);

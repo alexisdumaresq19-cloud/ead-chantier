@@ -51,7 +51,10 @@ The interface is in Québec French only.
   429 with code `too_many_uploads`: wait, do not retry in a loop). An upload
   link writes once and must carry exactly the announced type. A module that
   no longer needs an upload's file drops it with `discardUpload()`
-  (`src/server/uploads.ts`), never by deleting from storage itself.
+  (`src/server/uploads.ts`), never by deleting from storage or from the
+  uploads table itself: the row stays a day, marked, because it is what the
+  day's allowance is counted from. The module removes its own row that refers
+  to the upload first.
 - **Database**: Postgres with Drizzle (`src/server/db/schema.ts`, migrations
   in `drizzle/`, generated with `npm run db:generate`). Ids are made by the
   app (`newId()`).
