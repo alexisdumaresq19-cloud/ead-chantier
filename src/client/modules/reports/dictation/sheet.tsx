@@ -37,7 +37,7 @@ import { useOnline } from "../../../lib/online";
 import { Button, Sheet, Textarea, toast } from "../../../ui";
 import { describePhotos } from "../../photos/describe";
 import { addPhotoIds, type ReportForm } from "../form";
-import { useReportPhotos, type ReportPhoto } from "../photos";
+import { useReportPhotos, type KnownPhotos, type ReportPhoto } from "../photos";
 import { Notice } from "../status";
 import {
   contentForDictation,
@@ -137,6 +137,7 @@ export function DictationSheet({
   onClose,
   projectId,
   form,
+  knownPhotos,
   onApply,
   onPhotosAdded,
   startRecording,
@@ -146,6 +147,11 @@ export function DictationSheet({
   projectId: string;
   /** The report being written. */
   form: ReportForm;
+  /**
+   * The photos the saved report came with: they keep their numbers from the
+   * first moment, with or without a network. Left out for a report not saved yet.
+   */
+  knownPhotos?: KnownPhotos;
   /** Receives the form once filled, and the parts that changed. */
   onApply: (next: ReportForm, changed: DictationField[]) => void;
   /** Receives the ids of photos taken from this window: they go with the report. */
@@ -165,7 +171,7 @@ export function DictationSheet({
   const [failed, setFailed] = useState<{ job: Job; message: string; offline: boolean } | null>(
     null,
   );
-  const { photos, loading: photosLoading } = useReportPhotos(projectId, form.photoIds);
+  const { photos, loading: photosLoading } = useReportPhotos(projectId, form.photoIds, knownPhotos);
   const latest = useRef({ form, photos });
   useEffect(() => {
     latest.current = { form, photos };

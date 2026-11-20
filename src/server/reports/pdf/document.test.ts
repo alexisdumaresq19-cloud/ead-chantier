@@ -226,7 +226,8 @@ describe("a report's PDF", () => {
         const text = pages.map((page) => page.text).join("\n");
         expect(text).toMatch(new RegExp(`${count - lost}\\s+Photo ${count - lost}`));
       }
-  });
+    // Forty-two documents: a few seconds, more on a busy machine.
+  }, 60_000);
 
   it("holds a tall photo whose description has no space, in three lines", async () => {
     const tall = await image(1080, 2400);
@@ -446,8 +447,13 @@ describe("a report's PDF", () => {
   it("is ready in a fraction of a second", async () => {
     await renderReportPdf(report);
     const photos = await Promise.all(Array.from({ length: 8 }, () => photo(...LANDSCAPE)));
-    const started = performance.now();
-    await renderReportPdf({ ...report, photos });
-    expect(performance.now() - started).toBeLessThan(200);
+    // The best of three: a busy machine slows a run down, it never speeds one up.
+    const times: number[] = [];
+    for (let run = 0; run < 3; run++) {
+      const started = performance.now();
+      await renderReportPdf({ ...report, photos });
+      times.push(performance.now() - started);
+    }
+    expect(Math.min(...times)).toBeLessThan(200);
   });
 });

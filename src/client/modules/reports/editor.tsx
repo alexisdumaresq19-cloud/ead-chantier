@@ -768,7 +768,8 @@ function Editor({
               changed.length === 0 ? [] : [...new Set([...fields, ...changed])],
             );
           }}
-          onPhotosAdded={(ids) => setForm((current) => addPhotoIds(current, ids).form)}
+          knownPhotos={known}
+          onPhotosAdded={takePhotos}
         />
       ) : null}
 

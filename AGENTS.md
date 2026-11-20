@@ -66,16 +66,28 @@ The interface is in Québec French only.
   Uploads go straight to storage: `beginUpload` → the browser PUTs the file →
   `completeUpload`, then the module's own endpoint takes the upload with
   `takeUpload()` (`src/server/uploads.ts`).
-- **AI (dictating a report)**: through Vercel AI Gateway, with no key to
+- **AI (the report's assistant)**: through Vercel AI Gateway, with no key to
   manage: on Vercel the deployment signs in by itself (`src/server/ai/gateway.ts`).
   Claude is called with the official Anthropic SDK pointed at the gateway;
-  the recording is turned into text with the `ai` package. The model never
-  rewrites a report: it returns a small patch that the server merges
+  the recording is turned into text with the `ai` package. One call to the
+  model per request (`src/server/dictation/write.ts`), every call ended by a
+  deadline shorter than the route's own. The model never rewrites a report:
+  it returns a small patch that the server merges
   (`src/server/dictation/patch.ts`), so nothing already written is lost, and
-  nothing is saved by a dictation. Every call is counted against a per-person
-  allowance first (`countDictation`, 429 `too_many_dictations`). `AI_FAKE=1`
-  (set by the end-to-end tests) answers with fixed rules and calls nothing.
-  A screen offers the dictation only when `GET /api/assistant` says so.
+  nothing of the report is saved by the assistant. It also sees the report's
+  photos: the screen sends them as it numbers them, the server looks their
+  ids up among the project's photos only, and gives the model the ones
+  without a description, eight at most, made small
+  (`src/server/dictation/photos.ts`); the descriptions that come back are
+  applied by the window at once (they are the photos' own) and its undo puts
+  the former ones back. Two tasks run without a dictation: `describe` (the
+  photos) and `tidy` (a clean copy of the texts, accepted only if every
+  figure is kept and none is added: `keepsTheFacts`). What is said, what a
+  photo shows and what is written on it are data, never instructions. Every
+  request is counted against a per-person allowance first (`countDictation`,
+  429 `too_many_dictations`). `AI_FAKE=1` (set by the end-to-end tests)
+  answers with fixed rules and calls nothing. A screen offers the assistant
+  only when `GET /api/assistant` says so.
 - **A daily report and its photos**: a report names the photos that go with
   it (`photoIds`, saved with the rest of the report, 40 at most); the photos
   themselves stay the project's (`photos` table, gallery, descriptions). The
@@ -83,13 +95,22 @@ The interface is in Québec French only.
   oldest first; an id not found (a photo still on its way from a phone, or
   removed since) simply does not show. On screen, `useReportPhotos()`
   (`modules/reports/photos.ts`) finds each photo where it is: still on the
-  device (the outbox) or in the project.
+  device (the outbox) or in the project; the form of a saved report hands it
+  the photos the report came with, so they show without a network. A form
+  coming back from an earlier moment (the assistant's answer, an undo) keeps
+  the photos the report has now (`keepingPhotos`).
 - **A report's PDF** (`GET /api/reports/:id/pdf`, `src/server/reports/pdf`) is
   drawn with pdfkit, directly: no browser, no layout engine, so it is ready in
-  a fraction of a second. Its typefaces and the logo are read from disk at
-  run time; `next.config.ts` names them in that route's trace
-  (`outputFileTracingIncludes`), and a path built at run time carries a
-  `turbopackIgnore` mark, or the bundler traces the whole project.
+  a fraction of a second. The module places every line itself (`lines.ts`,
+  `pen.ts`): a part's title keeps two lines with it, no line of a paragraph
+  is left alone on a page, a list breaks as one block. Typed text is set the
+  French way before it is drawn (`typeset()` in `words.ts`), and a character
+  the typefaces lack is left out, never printed as a box (`glyphs.ts`).
+  Photos are laid out in rows of one height that fill the width, never
+  cropped or squeezed (`layout.ts`, a pure function). The typefaces and the
+  logo are read from disk at run time; `next.config.ts` names them in that
+  route's trace (`outputFileTracingIncludes`), and a path built at run time
+  carries a `turbopackIgnore` mark, or the bundler traces the whole project.
 - **Shapes shared by both sides** are in `src/shared` (one file per module).
 
 ## The browser side (`src/client`)
@@ -116,7 +137,11 @@ The interface is in Québec French only.
   `bottom: var(--ead-tabs)` and adds the safe area itself when it is `0px`.
 - Photos are taken from any screen with `TakePhotoButton`
   (`modules/photos/take.tsx`): it keeps the photo and opens its window on the
-  same screen. The plan sheets and projects opened last are in
+  same screen. The button holds that window: when its use must stop, hide its
+  face, never unmount it. A window is drawn outside its screen's own
+  elements, but React still hands its key and submit events to the screen's
+  form: a form that holds windows ignores events that do not come from its
+  own elements (`modules/reports/editor.tsx`). The plan sheets and projects opened last are in
   `lib/recents.ts` (on the device, cleared at sign-out).
 - Data: `api<T>(path, { method, body })` (`lib/api.ts`) inside `useQuery` /
   `useMutation`. Query keys of a project's data start with
@@ -159,7 +184,8 @@ npm run typecheck && npm run lint && npm test
 ```
 
 `npm run seed` leaves Playwright sessions in `.data/dev/` (`admin.json`,
-`foreman.json`, `worker.json`) and the ids in `.data/dev/seed.json`. Check
+`foreman.json`, `worker.json`) and the ids in `.data/dev/seed.json`. The
+older of its two daily reports has sample photos; the other has none. Check
 screens in a real browser at phone size (390 px wide) and on a desktop, as
 each role.
 
