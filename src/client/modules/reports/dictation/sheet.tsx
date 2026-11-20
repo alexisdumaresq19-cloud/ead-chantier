@@ -21,6 +21,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import {
+  ASSISTANT_CONSENT_REQUIRED,
   ASSISTANT_TASK_LABELS,
   DICTATION_FIELD_LABELS,
   DICTATION_MAX_SECONDS,
@@ -35,8 +36,10 @@ import { api, ApiFailure, errorMessage } from "../../../lib/api";
 import { cn } from "../../../lib/cn";
 import { useOnline } from "../../../lib/online";
 import { Button, Sheet, Textarea, toast } from "../../../ui";
+import { noteConsent, useAssistantConsent, useSetAssistantConsent } from "../../legal/consent-data";
 import { describePhotos } from "../../photos/describe";
 import { addPhotoIds, type ReportForm } from "../form";
+import { CONSENT_TITLE, ConsentAnswers, ConsentStep } from "./consent-step";
 import { useReportPhotos, type KnownPhotos, type ReportPhoto } from "../photos";
 import { Notice } from "../status";
 import {
@@ -183,6 +186,11 @@ export function DictationSheet({
   };
   const nextId = useRef(1);
   const end = useRef<HTMLDivElement>(null);
+  // Until the person agrees, the window only asks the question.
+  const consent = useAssistantConsent();
+  const agree = useSetAssistantConsent();
+  /** A request the server turned away for want of an agreement: sent once it is given. */
+  const waitingForConsent = useRef<Job | null>(null);
 
   /** Gives photos their descriptions; a failure is said, the report is still filled. */
   const caption = (list: { photoId: string; caption: string | null }[]) =>
@@ -256,6 +264,13 @@ export function DictationSheet({
       if (aloud) speak(spokenAnswer(result));
     },
     onError: (error, job) => {
+      // Taken back meanwhile (on another device): the question comes back,
+      // and what was asked is sent as soon as it is answered.
+      if (error instanceof ApiFailure && error.code === ASSISTANT_CONSENT_REQUIRED) {
+        waitingForConsent.current = job;
+        noteConsent({ consentAt: null });
+        return;
+      }
       setFailed({
         job,
         message: errorMessage(error),
@@ -284,7 +299,8 @@ export function DictationSheet({
   // Opened by the microphone button: the same tap starts the recording.
   const wasOpen = useRef(false);
   useEffect(() => {
-    if (open && !wasOpen.current && startRecording && canRecord() && online) void start();
+    if (open && !wasOpen.current && startRecording && canRecord() && online && consent.agreed)
+      void start();
     if (!open && wasOpen.current) {
       cancel();
       stopSpeaking();
@@ -293,7 +309,8 @@ export function DictationSheet({
       setTurns((list) => list.map((turn) => ({ ...turn, before: null })));
     }
     wasOpen.current = open;
-  }, [open, startRecording, online, start, cancel]);
+    // Agreeing in the open window does not count as opening it: accept() starts the recording.
+  }, [open, startRecording, online, start, cancel, consent.agreed]);
 
   useEffect(() => {
     if (open) end.current?.scrollIntoView({ block: "end", behavior: "smooth" });
@@ -322,6 +339,39 @@ export function DictationSheet({
     if (aloud) prepareSpeech();
     send.mutate({ text: said });
   };
+
+  const accept = () =>
+    agree.mutate(true, {
+      onSuccess: () => {
+        const job = waitingForConsent.current;
+        waitingForConsent.current = null;
+        if (job) send.mutate(job);
+        // Opened by the microphone: the tap on "J'accepte" starts the recording it asked for.
+        else if (startRecording && canRecord() && online) void start();
+      },
+    });
+
+  if (!consent.agreed)
+    return (
+      <Sheet
+        open={open}
+        onClose={onClose}
+        title={CONSENT_TITLE}
+        footer={
+          <ConsentAnswers
+            onAccept={accept}
+            onDecline={() => {
+              waitingForConsent.current = null;
+              onClose();
+            }}
+            pending={agree.isPending}
+            error={agree.error}
+          />
+        }
+      >
+        <ConsentStep />
+      </Sheet>
+    );
 
   const left = DICTATION_MAX_SECONDS - recorder.seconds;
   const status = recording
