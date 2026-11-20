@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, CircleCheck, Mic, TriangleAlert, WifiOff } from "lucide-react";
+import { CalendarDays, Camera, CircleCheck, Mic, TriangleAlert, WifiOff } from "lucide-react";
 import {
+  useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -30,9 +32,11 @@ import { navigate } from "../../lib/location";
 import { useOnline } from "../../lib/online";
 import { keys, useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
+import { TakePhotoButton } from "../photos/take";
 import {
   Badge,
   Button,
+  buttonClass,
   ButtonLink,
   Card,
   confirmAction,
@@ -66,11 +70,13 @@ import {
   formSignature,
   formTotals,
   isBlankForm,
+  removePhotoId,
   type FormProblem,
   type ReportForm,
 } from "./form";
 import { capitalize, formatFullDay, formatHours, shiftDay } from "./lib";
 import { ReportMissing } from "./missing";
+import { PhotoPart } from "./photo-part";
 import { DraftStatus, Notice } from "./status";
 import { WEATHER_ICONS } from "./weather";
 
@@ -402,6 +408,23 @@ function Editor({
   };
 
   const set = (change: Partial<ReportForm>) => setForm((current) => ({ ...current, ...change }));
+
+  // Photos come in after the camera or a window closes, from a callback made
+  // earlier: the form they join is the latest one.
+  const latest = useRef(form);
+  useEffect(() => {
+    latest.current = form;
+  });
+  const [leftOut, setLeftOut] = useState(0);
+  const takePhotos = useCallback((ids: string[]) => {
+    setLeftOut(addPhotoIds(latest.current, ids).refused);
+    setForm((current) => addPhotoIds(current, ids).form);
+  }, []);
+  const leavePhoto = useCallback((id: string) => {
+    setLeftOut(0);
+    setForm((current) => removePhotoId(current, id));
+  }, []);
+  const photosFull = form.photoIds.length >= REPORT_LIMITS.photos;
   const below = /^\s*[-−–]/.test(form.temperature);
   const flipSign = () => {
     const digits = form.temperature.trim().replace(/^[-−–+]\s*/, "");
@@ -616,6 +639,27 @@ function Editor({
           />
         </Block>
 
+        <Block
+          title="Photos"
+          hint="Elles vont dans le rapport et son PDF, et restent dans les photos du projet."
+          aside={
+            form.photoIds.length > 0 ? (
+              <span className="text-dim text-sm font-medium">
+                {count(form.photoIds.length, "photo")}
+              </span>
+            ) : null
+          }
+        >
+          <PhotoPart
+            projectId={project.id}
+            day={form.day}
+            photoIds={form.photoIds}
+            leftOut={leftOut}
+            onAdd={takePhotos}
+            onRemove={leavePhoto}
+          />
+        </Block>
+
         {savedOffline ? (
           <Notice
             tone={online ? "good" : "warn"}
@@ -634,16 +678,35 @@ function Editor({
         </FormError>
 
         <BottomBar>
+          {/* Short enough to stay whole beside the camera on a 360 px phone. */}
           <div className="min-w-0 flex-1 pl-1.5">
-            <p className="text-dim text-xs font-semibold tracking-wide uppercase">Total</p>
-            <p className="font-display truncate text-lg leading-tight font-bold">
+            <p className="text-dim text-xs font-semibold whitespace-nowrap">
+              {totals.people > 0 ? count(totals.people, "personne") : "Aucune personne"}
+            </p>
+            <p className="font-display text-lg leading-tight font-bold whitespace-nowrap">
               {formatHours(totals.hours)}
-              <span className="text-dim font-sans text-sm font-medium">
-                {" "}
-                · {totals.people > 0 ? count(totals.people, "personne") : "aucune personne"}
-              </span>
             </p>
           </div>
+          {/* The camera within one tap, wherever the foreman is in the form. */}
+          {photosFull ? null : (
+            <TakePhotoButton
+              projectId={project.id}
+              label="Prendre une photo pour le rapport"
+              onAdded={takePhotos}
+              className={buttonClass({
+                variant: "secondary",
+                size: "lg",
+                className: "relative w-14 px-0 lg:hidden [&_svg]:size-6",
+              })}
+            >
+              <Camera aria-hidden />
+              {form.photoIds.length > 0 ? (
+                <span className="bg-ead-dark absolute -top-1.5 -right-1.5 flex h-5.5 min-w-5.5 items-center justify-center rounded-full px-1.5 text-xs font-bold text-white tabular-nums ring-2 ring-white">
+                  {form.photoIds.length}
+                </span>
+              ) : null}
+            </TakePhotoButton>
+          )}
           <Button type="submit" size="lg" loading={save.isPending}>
             Enregistrer
           </Button>

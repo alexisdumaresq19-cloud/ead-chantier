@@ -16,7 +16,7 @@ export function ReportsArchived({ reportId }: { reportId?: string }) {
         icon={Archive}
         title="Les rapports ne se modifient plus"
         text={
-          "Ce projet est archivé\u00a0: ses rapports se lisent et s'impriment. Pour un changement, adressez-vous au bureau."
+          "Ce projet est archivé\u00a0: ses rapports se lisent et leur PDF se partage. Pour un changement, adressez-vous au bureau."
         }
         action={
           <ButtonLink href={back}>{reportId ? "Voir le rapport" : "Voir les rapports"}</ButtonLink>

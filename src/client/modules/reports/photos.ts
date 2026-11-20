@@ -2,6 +2,7 @@ import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import type { Photo } from "@/shared/photos";
+import { REPORT_LIMITS } from "@/shared/reports";
 
 import { api } from "../../lib/api";
 import { photoKeys } from "../photos/data";
@@ -51,6 +52,28 @@ export function reportPhotos(
     a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : a.id < b.id ? -1 : 1,
   );
 }
+
+/** The report's photos that have not reached the server yet: they are not in its PDF. */
+export const stillOnDevice = (photos: ReportPhoto[]) =>
+  photos.filter((photo) => photo.local && photo.local.state !== "sent");
+
+/** The day's photos that do not go with the report yet, oldest first, to choose from. */
+export function photosToOffer(dayPhotos: Photo[], photoIds: string[]): Photo[] {
+  const taken = new Set(photoIds);
+  return dayPhotos
+    .filter((photo) => !taken.has(photo.id))
+    .sort((a, b) => (a.takenAt < b.takenAt ? -1 : a.takenAt > b.takenAt ? 1 : 0));
+}
+
+/** Said when photos could not go with a report that already has as many as it takes. */
+export function leftOutText(refused: number): string {
+  const one = refused === 1;
+  return `${one ? "1 photo n'a pas été ajoutée" : `${refused} photos n'ont pas été ajoutées`} au rapport\u00a0: il en a déjà ${REPORT_LIMITS.photos}, le maximum. ${one ? "Elle reste" : "Elles restent"} dans les photos du projet.`;
+}
+
+/** The address of a report's PDF: shown by the browser, or kept as a file. */
+export const reportPdfUrl = (reportId: string, download = false) =>
+  `/api/reports/${reportId}/pdf${download ? "?download" : ""}`;
 
 /**
  * The photos of the report being shown or written.

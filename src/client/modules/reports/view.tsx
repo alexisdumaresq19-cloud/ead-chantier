@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ellipsis, Pencil, Printer, Trash2, type LucideIcon } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { Ellipsis, Pencil, Trash2, type LucideIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "wouter";
 
 import type { ProjectDetail } from "@/shared/api";
@@ -14,7 +14,6 @@ import { navigate } from "../../lib/location";
 import { keys, useCurrentProject } from "../../lib/session";
 import { Page, Section } from "../../shell/page";
 import {
-  Button,
   ButtonLink,
   confirmAction,
   IconButton,
@@ -34,10 +33,14 @@ import {
 } from "./data";
 import { capitalize, formatFullDay, formatHours, formatWhen } from "./lib";
 import { ReportMissing } from "./missing";
+import { PdfButton, PdfLink } from "./pdf";
+import { stillOnDevice, useReportPhotos, type ReportPhoto } from "./photos";
+import { ReportPhotoGrid, ReportPhotoSheet } from "./report-photos";
 import { WeatherLine } from "./weather";
 
-// Reading a report: laid out as the document it is, with the day's photos
-// under it. "Imprimer" gives the same document on a letter-size page.
+// Reading a report: laid out as the document it is, its photos included, with
+// the day's other photos under it. Its PDF is what leaves the site; the
+// browser's own print command still gives the document on a letter-size page.
 
 const COMPANY = "Les Entreprises Allen Dumaresq";
 
@@ -64,11 +67,21 @@ function ReportView({ reportId }: { reportId: string }) {
   const project = useCurrentProject();
   const client = useQueryClient();
   const report = useReport(project.id, reportId);
-  const photos = useDayPhotos(project.id, report.data?.day);
+  const dayPhotos = useDayPhotos(project.id, report.data?.day);
   const stillShown = useStillShown();
   const canChange = useCanChangeReports();
   const base = reportsPath(project.id);
   const [menu, setMenu] = useState(false);
+  // What came with the report, and since when: a photo still leaving this
+  // phone shows too, from the device.
+  const known = useMemo(
+    () => (report.data ? { photos: report.data.photos, at: report.dataUpdatedAt } : undefined),
+    [report.data, report.dataUpdatedAt],
+  );
+  const { photos } = useReportPhotos(project.id, report.data?.photoIds ?? NO_IDS, known);
+  const pending = stillOnDevice(photos).length;
+  const [openId, setOpenId] = useState<string | null>(null);
+  const openIndex = photos.findIndex((photo) => photo.id === openId);
 
   const remove = useMutation({
     mutationFn: () => api(`/api/reports/${reportId}`, { method: "DELETE" }),
@@ -95,11 +108,7 @@ function ReportView({ reportId }: { reportId: string }) {
 
   const shown = report.data;
   const canDelete = Boolean(shown?.canDelete && canChange);
-  const print = () => {
-    setMenu(false);
-    // Once the window has closed, or it would be printed over the report.
-    window.setTimeout(() => window.print(), 150);
-  };
+  const others = dayPhotos.data?.filter((photo) => !shown?.photoIds.includes(photo.id)) ?? [];
   return (
     <Page
       title="Rapport journalier"
@@ -118,13 +127,11 @@ function ReportView({ reportId }: { reportId: string }) {
             {/* A computer has the room for every button; a phone keeps the rare ones in a menu. */}
             <div className="hidden items-center gap-2 lg:flex">
               {canChange ? (
-                <ButtonLink href={`${base}/${reportId}/modifier`}>
+                <ButtonLink href={`${base}/${reportId}/modifier`} variant="secondary">
                   <Pencil aria-hidden /> Modifier
                 </ButtonLink>
               ) : null}
-              <Button variant="secondary" onClick={() => window.print()}>
-                <Printer aria-hidden /> Imprimer
-              </Button>
+              <PdfLink reportId={reportId} pending={pending} />
               {canDelete ? (
                 <IconButton
                   label="Supprimer le rapport"
@@ -136,13 +143,15 @@ function ReportView({ reportId }: { reportId: string }) {
                 </IconButton>
               ) : null}
             </div>
-            <IconButton
-              label="Autres actions"
-              onClick={() => setMenu(true)}
-              className="border-line bg-surface text-text -mr-1 border lg:hidden"
-            >
-              <Ellipsis aria-hidden />
-            </IconButton>
+            {canDelete ? (
+              <IconButton
+                label="Autres actions"
+                onClick={() => setMenu(true)}
+                className="border-line bg-surface text-text -mr-1 border lg:hidden"
+              >
+                <Ellipsis aria-hidden />
+              </IconButton>
+            ) : null}
           </>
         ) : null
       }
@@ -159,21 +168,44 @@ function ReportView({ reportId }: { reportId: string }) {
       >
         {(loaded) => (
           <>
-            <ReportDocument report={loaded} project={project} />
-            {photos.data?.length ? (
-              <DayPhotos photos={photos.data} project={project} day={loaded.day} />
+            <ReportDocument
+              report={loaded}
+              project={project}
+              photos={photos}
+              onOpenPhoto={setOpenId}
+            />
+            {others.length ? (
+              <DayPhotos photos={others} project={project} day={loaded.day} />
             ) : null}
-            {canChange ? (
-              <BottomBar className="no-print mt-6 lg:hidden">
-                <ButtonLink href={`${base}/${reportId}/modifier`} size="lg" block>
+            <BottomBar className="no-print mt-6 lg:hidden">
+              <PdfButton
+                reportId={reportId}
+                day={loaded.day}
+                project={project}
+                pending={pending}
+                className="flex-1"
+              />
+              {canChange ? (
+                <ButtonLink
+                  href={`${base}/${reportId}/modifier`}
+                  variant="secondary"
+                  size="lg"
+                  className="flex-1"
+                >
                   <Pencil aria-hidden /> Modifier
                 </ButtonLink>
-              </BottomBar>
-            ) : null}
+              ) : null}
+            </BottomBar>
           </>
         )}
       </QueryState>
 
+      <ReportPhotoSheet
+        projectId={project.id}
+        photo={photos[openIndex]}
+        number={openIndex + 1}
+        onClose={() => setOpenId(null)}
+      />
       <Sheet
         open={menu && shown !== undefined}
         onClose={() => setMenu(false)}
@@ -181,7 +213,6 @@ function ReportView({ reportId }: { reportId: string }) {
         description={shown ? capitalize(formatFullDay(shown.day)) : undefined}
       >
         <div className="divide-line border-line divide-y overflow-hidden rounded-2xl border">
-          <MenuChoice icon={Printer} label="Imprimer" onClick={print} />
           {canDelete && shown ? (
             <MenuChoice
               icon={Trash2}
@@ -200,7 +231,19 @@ function ReportView({ reportId }: { reportId: string }) {
   );
 }
 
-function ReportDocument({ report, project }: { report: Report; project: ProjectDetail }) {
+const NO_IDS: string[] = [];
+
+function ReportDocument({
+  report,
+  project,
+  photos,
+  onOpenPhoto,
+}: {
+  report: Report;
+  project: ProjectDetail;
+  photos: ReportPhoto[];
+  onOpenPhoto: (id: string) => void;
+}) {
   const totals = crewTotals(report.crew);
   const { weather } = report;
   const changedLater =
@@ -289,6 +332,13 @@ function ReportDocument({ report, project }: { report: Report; project: ProjectD
         <DocumentPart title="Notes">
           <Text empty="Aucune note">{report.notes}</Text>
         </DocumentPart>
+        {photos.length > 0 ? (
+          <DocumentPart title="Photos" aside={count(photos.length, "photo")}>
+            <div className="pt-1.5">
+              <ReportPhotoGrid photos={photos} onOpen={onOpenPhoto} large />
+            </div>
+          </DocumentPart>
+        ) : null}
       </div>
     </article>
   );
@@ -330,7 +380,7 @@ const Nothing = ({ children }: { children: ReactNode }) => (
   <p className="text-dim italic">{children}</p>
 );
 
-/** What was photographed that day, from the photos module. */
+/** What else was photographed that day, from the photos module. */
 function DayPhotos({
   photos,
   project,
@@ -342,9 +392,9 @@ function DayPhotos({
 }) {
   const [open, setOpen] = useState<Photo | null>(null);
   return (
-    <div role="region" aria-label="Photos du jour" className="mt-8">
+    <div role="region" aria-label="Autres photos de la journée" className="mt-8">
       <Section
-        title="Photos du jour"
+        title="Autres photos de la journée"
         // On paper, the title stays with its photos.
         className="print:break-inside-avoid"
         action={
