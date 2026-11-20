@@ -14,6 +14,7 @@ import {
 } from "@/server/dictation/photos";
 import { AI_BUDGET_MS, readDictation, transcribeDictation } from "@/server/dictation/write";
 import { badRequest, HttpError, route } from "@/server/http";
+import { assertAssistantConsent } from "@/server/legal/consent";
 import { photoRowsByIds } from "@/server/photos/queries";
 import { storage } from "@/server/storage";
 import { DICTATION_MAX_BYTES, DICTATION_MAX_TEXT, type DictationResult } from "@/shared/dictation";
@@ -34,6 +35,8 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
   const deadline = Date.now() + AI_BUDGET_MS;
   const user = await requireUser(request);
   await projectToChange(user, id);
+  // Nothing is read, let alone sent, before the person has agreed.
+  assertAssistantConsent(user);
 
   let form: FormData;
   try {
