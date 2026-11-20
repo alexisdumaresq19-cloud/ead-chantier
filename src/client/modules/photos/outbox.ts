@@ -5,13 +5,18 @@ import type { Me } from "@/shared/api";
 import type { Photo } from "@/shared/photos";
 
 import { api, errorMessage } from "../../lib/api";
-import { queryClient } from "../../lib/query";
-import { keys } from "../../lib/session";
 import { uploadFile } from "../../lib/upload";
 import { toast } from "../../ui";
 import { photoAdded, refreshProject } from "./data";
 import { EXIF_READ_BYTES, readExifDate } from "./exif";
-import { failureKind, newPhotoId, pickTakenAt, retryDelay, type LocalPhoto } from "./logic";
+import {
+  BUSY_RETRY_DELAY,
+  failureKind,
+  newPhotoId,
+  pickTakenAt,
+  retryDelay,
+  type LocalPhoto,
+} from "./logic";
 import { shrinkPhoto } from "./shrink";
 
 // Photos on their way to the server. Every photo taken or chosen goes through
@@ -40,6 +45,8 @@ type OutboxItem = {
   /** Tries that failed. */
   attempts: number;
   error: string | null;
+  /** The server will not take it: only the person sends it again. */
+  refused?: boolean;
 };
 
 const SENT_AT_ONCE = 3;
@@ -73,6 +80,7 @@ let snapshot = none;
 function stateOf(item: OutboxItem): LocalPhoto["state"] {
   if (!item.prepared) return "preparing";
   if (sending.has(item.id)) return "sending";
+  if (item.refused) return "refused";
   if (!navigator.onLine) return "waiting";
   // Next in line: just added, or about to be picked up by the pass under way.
   return fresh.has(item.id) || (passing && !tried.has(item.id)) ? "sending" : "waiting";
@@ -360,7 +368,7 @@ async function create(item: OutboxItem): Promise<Photo> {
   }
 }
 
-type Outcome = "sent" | "discarded" | "kept" | "stop";
+type Outcome = "sent" | "discarded" | "kept" | "refused" | "busy" | "stop";
 
 async function sendOne(first: OutboxItem): Promise<Outcome> {
   const id = first.id;
@@ -412,7 +420,9 @@ async function sendOne(first: OutboxItem): Promise<Outcome> {
           attempts: latest().attempts + 1,
           // Without a network there is nothing to explain: the photo simply waits.
           error: noAnswer ? null : errorMessage(error),
+          refused: kind === "refused",
         });
+        if (kind === "refused" || kind === "busy") return kind;
         return noAnswer ? "stop" : "kept";
       }
     }
@@ -431,12 +441,9 @@ async function pass(): Promise<boolean> {
   await readDevice();
   if (!items.size) return false;
 
-  // What waits is only ever sent as the person who took it. The app may
-  // already know that nobody, or somebody else, is signed in…
-  const known = queryClient.getQueryData<Me | null>(keys.me);
-  const waitsFor = (id: string) => [...items.values()].some((item) => item.ownerId === id);
-  if (known === null || (known && !waitsFor(known.id))) return false;
-  // …and before sending, the server says who it is.
+  // What waits is only ever sent as the person who took it, and only the
+  // server knows who is signed in now: what the device remembers may be
+  // someone who has since handed the phone on, or come back to it.
   let me: Me;
   try {
     me = await api<Me>("/api/me");
@@ -448,8 +455,10 @@ async function pass(): Promise<boolean> {
   let stopped = false;
   let afterWaiting = 0;
   let discarded = 0;
+  const refused: OutboxItem[] = [];
   const projects = new Set<string>();
-  const mine = () => [...items.values()].filter((item) => item.ownerId === me.id && item.prepared);
+  const mine = () =>
+    [...items.values()].filter((item) => item.ownerId === me.id && item.prepared && !item.refused);
   const next = () =>
     stopped
       ? undefined
@@ -466,11 +475,18 @@ async function pass(): Promise<boolean> {
         projects.add(item.projectId);
         if (waited) afterWaiting++;
       } else if (outcome === "discarded") discarded++;
-      else if (outcome === "stop") stopped = true;
+      else if (outcome === "refused") refused.push(items.get(item.id) ?? item);
+      else if (outcome === "busy") {
+        // The others would be refused the same way.
+        stopped = true;
+        busyUntil = Date.now() + BUSY_RETRY_DELAY;
+      } else if (outcome === "stop") stopped = true;
     }
   };
   await Promise.all(Array.from({ length: SENT_AT_ONCE }, worker));
 
+  // A refusal may come from a change to the project (archived): its screens learn of it.
+  for (const item of refused) projects.add(item.projectId);
   for (const projectId of projects) void refreshProject(projectId);
   if (afterWaiting)
     toast.success(
@@ -485,6 +501,16 @@ async function pass(): Promise<boolean> {
         : `${discarded} photos sont illisibles (fichiers abîmés). Elles ont été retirées de l'envoi.`,
       { duration: 8000 },
     );
+  if (refused.length)
+    toast.error(
+      refused.length === 1
+        ? "Une photo n'a pas été envoyée."
+        : `${refused.length} photos n'ont pas été envoyées.`,
+      {
+        description: `${refused[0].error ?? ""} Elle${refused.length > 1 ? "s restent" : " reste"} sur cet appareil.`,
+        duration: 10_000,
+      },
+    );
   return mine().length > 0;
 }
 
@@ -492,6 +518,8 @@ let running: Promise<void> | undefined;
 let again = false;
 let failures = 0;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
+/** Until then only the person starts a try (see BUSY_RETRY_DELAY). */
+let busyUntil = 0;
 
 /** Sends what waits. Safe to call at any time: one pass runs at a time. */
 function send(): Promise<void> {
@@ -528,18 +556,39 @@ function send(): Promise<void> {
     running = undefined;
     if (again) return void send();
     // Come back to what is left, a little later after each failure.
-    if (left) retryTimer = setTimeout(() => void send(), retryDelay(++failures));
+    const busyFor = busyUntil - Date.now();
+    if (left)
+      retryTimer = setTimeout(() => void send(), busyFor > 0 ? busyFor : retryDelay(++failures));
     else failures = 0;
   });
   return running;
 }
 
-/** A try asked for by the person or by the network coming back: at once, failures forgotten. */
+/** A try asked for by the person: at once, failures forgotten. */
 export function sendNow(): Promise<void> {
   failures = 0;
+  busyUntil = 0;
   if (!running) return send();
   // The pass under way finishes first, then everything is tried afresh.
   return running.then(() => send());
+}
+
+/** The network came back, the app came to the front: a try, unless the server asked to wait. */
+function wake() {
+  if (Date.now() < busyUntil) return;
+  void sendNow();
+}
+
+/** The person asks to try a refused photo again (they were put back on the project…). */
+export async function retryRefused(id: string): Promise<void> {
+  const item = items.get(id);
+  if (item?.refused) await keep({ ...item, refused: false, error: null });
+  await sendNow();
+}
+
+/** The file of a photo still on the device, for the person to keep it some other way. */
+export function localFile(id: string): Blob | null {
+  return items.get(id)?.file ?? null;
 }
 
 // --- What the person may still change -----------------------------------------------
@@ -578,7 +627,6 @@ let started = false;
 export function startPhotoOutbox() {
   if (started) return;
   started = true;
-  const wake = () => void sendNow();
   window.addEventListener("online", wake);
   window.addEventListener("offline", publish);
   // The phone slept, or the app comes back to the front.

@@ -4,6 +4,7 @@ import type { Photo } from "@/shared/photos";
 
 import { ApiFailure } from "../../lib/api";
 import {
+  BUSY_RETRY_DELAY,
   dayTitle,
   failureKind,
   fitWithin,
@@ -127,6 +128,7 @@ describe("sending again", () => {
       5_000, 15_000, 30_000, 60_000, 120_000, 300_000, 300_000, 300_000,
     ]);
     expect(retryDelay(0)).toBe(5_000);
+    expect(BUSY_RETRY_DELAY).toBeGreaterThanOrEqual(15 * 60_000);
   });
 
   it("only discards a photo the server has looked at and refused", () => {
@@ -140,6 +142,10 @@ describe("sending again", () => {
     expect(failureKind(new ApiFailure(404, "not_found", "…"))).toBe("refused");
     expect(failureKind(new ApiFailure(403, "forbidden", "…"))).toBe("refused");
     expect(failureKind(new ApiFailure(409, "conflict", "…"))).toBe("refused");
+    expect(failureKind(new ApiFailure(403, "forbidden", "Ce projet est archivé."))).toBe("refused");
+    // Too many sends: wait, never try again at once.
+    expect(failureKind(new ApiFailure(429, "too_many_uploads", "…"))).toBe("busy");
+    expect(failureKind(new ApiFailure(429, "daily_upload_limit", "…"))).toBe("busy");
     expect(failureKind(new ApiFailure(500, "server_error", "…"))).toBe("failed");
     expect(failureKind(new ApiFailure(502, "error", "…"))).toBe("failed");
     expect(failureKind(new ApiFailure(400, "bad_request", "…"))).toBe("failed");

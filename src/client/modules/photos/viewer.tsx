@@ -27,7 +27,7 @@ import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { queryClient } from "../../lib/query";
 import { Button, confirmAction, FormError, Sheet, Spinner, Textarea, toast } from "../../ui";
-import { failureOf, photoChanged, photoKeys, photoRemoved, refreshProject, usePhoto } from "./data";
+import { photoChanged, photoKeys, photoRemoved, refreshProject, usePhoto } from "./data";
 import { takenLabel } from "./logic";
 import {
   AT_REST,
@@ -273,7 +273,9 @@ function Viewer({
         </div>
       ) : (
         <Missing
-          error={lone.isError ? lone.error : failureOf(lone)}
+          error={lone.isError ? lone.error : null}
+          // Waiting for a network that is not there: say so rather than spin.
+          paused={lone.isPaused}
           onRetry={() => lone.refetch()}
           onClose={onClose}
         />
@@ -465,21 +467,23 @@ function Slide({
 /** In place of a photo that cannot be shown. */
 function Missing({
   error,
+  paused,
   onRetry,
   onClose,
 }: {
   error: unknown;
+  paused: boolean;
   onRetry: () => void;
   onClose: () => void;
 }) {
-  if (!error)
+  if (!error && !paused)
     return (
       <div className="absolute inset-0 flex items-center justify-center">
         <Spinner className="size-9 text-white" />
       </div>
     );
   const gone = error instanceof ApiFailure && error.status === 404;
-  const offline = error instanceof ApiFailure && error.offline;
+  const offline = paused || (error instanceof ApiFailure && error.offline);
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
       <ImageOff className="size-12 text-white/60" aria-hidden />
@@ -567,14 +571,6 @@ function CaptionSheet({
     setText(photo.caption ?? "");
     onClose();
   };
-  // The sheet puts the focus on its first button when it opens: the person
-  // came here to type.
-  const field = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    const textarea = open ? field.current?.querySelector("textarea") : null;
-    textarea?.focus();
-    textarea?.setSelectionRange(textarea.value.length, textarea.value.length);
-  }, [open]);
   return (
     <Sheet
       open={open}
@@ -591,8 +587,10 @@ function CaptionSheet({
         </>
       }
     >
-      <div ref={field} className="space-y-3 select-text">
+      <div className="space-y-3 select-text">
         <Textarea
+          // The person came here to type.
+          data-autofocus
           value={text}
           onChange={(event) => setText(event.target.value)}
           maxLength={PHOTO_CAPTION_MAX}

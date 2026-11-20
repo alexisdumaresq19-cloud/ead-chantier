@@ -49,6 +49,19 @@ export const PHOTO_ID_PATTERN = /^[a-hjkmnp-z2-9]{16}$/;
 /** Where a list resumes after this photo: the value of `?before=`. */
 export const photoCursor = (photo: Pick<Photo, "takenAt" | "id">) => `${photo.takenAt}_${photo.id}`;
 
+const CURSOR = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z)_([a-z0-9]{1,40})$/;
+
+/** The photo a `photoCursor()` names; null for anything else. */
+export function readPhotoCursor(cursor: string): { takenAt: Date; id: string } | null {
+  const [, takenAt, id] = CURSOR.exec(cursor) ?? [];
+  if (!takenAt) return null;
+  const at = new Date(takenAt);
+  // "2026-13-45T…" has the shape of a date and is none.
+  return Number.isNaN(at.getTime()) || at.toISOString().slice(0, 19) !== takenAt.slice(0, 19)
+    ? null
+    : { takenAt: at, id };
+}
+
 // --- The site's clock ---------------------------------------------------------
 //
 // A photo is filed under the day it was taken at the site, wherever the phone
