@@ -102,6 +102,17 @@
   }
 }
 
+/* The frame keeps a screen's content clear of the notch of an iPhone held
+ * sideways (shell.tsx). A band that still runs to the screen's edges takes
+ * this: its ground goes under the notch (a background is drawn under a
+ * transparent border), and what it holds stays clear of it. */
+@utility bleed-x {
+  margin-left: calc(-1 * env(safe-area-inset-left, 0px));
+  margin-right: calc(-1 * env(safe-area-inset-right, 0px));
+  border-left: env(safe-area-inset-left, 0px) solid transparent;
+  border-right: env(safe-area-inset-right, 0px) solid transparent;
+}
+
 /* Plan thumbnails: lines darkened, paper left white (the filter is in root.tsx). */
 @utility ink {
   filter: url("#ead-ink");

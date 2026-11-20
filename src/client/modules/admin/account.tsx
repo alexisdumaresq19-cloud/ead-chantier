@@ -19,11 +19,12 @@ import { LAST_OFFICE_TEXT, roleAndTitle, signOutFailure } from "./people";
 // the account (src/server/people/delete.ts): the office makes a new one and
 // sends its link or its code (src/shared/access.ts), or a site's QR code
 // makes one. The demonstration's number and code outlive its account: the
-// next sign-in makes a new demonstration account (src/server/access-code/demo.ts).
+// next sign-in puts a demonstration account back, the same one when it had
+// added something (src/server/access-code/demo.ts).
 const BACK_AFTER_DELETE =
   "Pour revenir, il faudra un nouveau compte\u00a0: le bureau vous envoie un lien ou un code à entrer avec votre cellulaire, ou vous scannez le code QR d'un chantier.";
 const DEMO_BACK_AFTER_DELETE =
-  "Le même cellulaire et le même code ouvrent ensuite un nouveau compte de démonstration.";
+  "Avec le même cellulaire et le même code, un compte de démonstration s'ouvre de nouveau.";
 
 /**
  * Deletes the account, then lets go of this device. The server has already

@@ -35,10 +35,15 @@ export async function shareLink(data: { title?: string; text?: string; url?: str
   }
 }
 
-// Inside the iPhone app the shell's share sheet is always there, as for the
-// site's QR code (project-team.tsx); a browser keeps its own, where it has one.
-const canShareHere = () => isNativeApp() || canShare();
-async function shareHere(data: { title?: string; text?: string; url?: string }) {
+// Inside the iPhone app the shell's share sheet is always there; a browser
+// keeps its own, where it has one. The app cannot print a page
+// (window.print() does nothing there): a poster is printed from a computer.
+
+/** Whether a share button is worth showing on this device. */
+export const canShareHere = () => isNativeApp() || canShare();
+
+/** Hands a link or a text to the share sheet: the app's own inside the iPhone app, the browser's elsewhere. */
+export async function shareHere(data: { title?: string; text?: string; url?: string }) {
   if (!isNativeApp()) return shareLink(data);
   if (!(await shareLinkInApp(data)))
     toast.error("Le partage n'a pas fonctionné. Copiez le lien à la place.");

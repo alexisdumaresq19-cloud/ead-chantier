@@ -28,16 +28,15 @@ export const canChangeDocuments = (
 /**
  * Whether to offer renaming, moving and archiving this document, on a
  * project where canChangeDocuments holds: anyone who manages the project
- * may, the demonstration account only on what it added itself. The list
- * does not name a document's author by id: the documents this device sent
- * for the demonstration account (`addedHere`, see data.ts) are the ones
- * known to be its own, and any other is left alone.
+ * may, the demonstration account only on what it added itself (the server
+ * says which with `addedByMe`). A list kept on the device from before that
+ * field existed has none: nothing is then offered to the demonstration
+ * account, never a control the server would refuse.
  */
 export const canManageDocument = (
   me: Pick<Me, "id" | "demo">,
-  document: Pick<ProjectDocument, "id">,
-  addedHere: ReadonlySet<string>,
-) => mayChangeAddedBy(me, addedHere.has(document.id) ? me.id : null);
+  document: Pick<ProjectDocument, "addedByMe">,
+) => mayChangeAddedBy(me, document.addedByMe === true ? me.id : null);
 
 /** Lowercase, without accents: "Échéancier" is found by typing "echeancier". */
 const plain = (text: string) => text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

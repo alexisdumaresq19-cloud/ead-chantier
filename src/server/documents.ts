@@ -51,22 +51,29 @@ const rows = () =>
 
 type Row = Awaited<ReturnType<typeof rows>>[number];
 
-const documentDto = ({ document, upload, author }: Row): ProjectDocument => ({
-  id: document.id,
-  title: document.title,
-  category: toCategory(document.category),
-  filename: upload.filename,
-  size: upload.size,
-  addedAt: document.createdAt.toISOString(),
-  addedBy: author,
-});
+/** A document as it is handed to the person asking (`viewerId`). */
+const documentDto =
+  (viewerId: string) =>
+  ({ document, upload, author }: Row): ProjectDocument => ({
+    id: document.id,
+    title: document.title,
+    category: toCategory(document.category),
+    filename: upload.filename,
+    size: upload.size,
+    addedAt: document.createdAt.toISOString(),
+    addedBy: author,
+    addedByMe: document.createdBy === viewerId,
+  });
 
 /** The documents the site sees (archived ones are left out), newest first. */
-export async function listDocuments(projectId: string): Promise<ProjectDocument[]> {
+export async function listDocuments(
+  projectId: string,
+  viewerId: string,
+): Promise<ProjectDocument[]> {
   const found = await rows()
     .where(and(eq(schema.documents.projectId, projectId), isNull(schema.documents.archivedAt)))
     .orderBy(desc(schema.documents.createdAt));
-  return found.map(documentDto);
+  return found.map(documentDto(viewerId));
 }
 
 const gone = () => notFound("Ce document n'est plus disponible.");
@@ -95,7 +102,7 @@ async function withAccess(
     if (error instanceof HttpError && error.status === 404) throw gone();
     throw error;
   }
-  return { row, document: documentDto(row) };
+  return { row, document: documentDto(user.id)(row) };
 }
 
 /** A document this person may read: they are on its project, or at the office. */
@@ -154,16 +161,17 @@ export async function createDocument(
     return created;
   });
   // A document archived since then stays archived: the answer is that it is gone.
-  return documentDto(await findDocument(id));
+  return documentDto(user.id)(await findDocument(id));
 }
 
 export async function updateDocument(
+  viewerId: string,
   id: string,
   input: { title?: string; category?: DocumentCategory },
 ): Promise<ProjectDocument> {
   if (input.title !== undefined || input.category !== undefined)
     await db.update(schema.documents).set(input).where(eq(schema.documents.id, id));
-  return documentDto(await findDocument(id));
+  return documentDto(viewerId)(await findDocument(id));
 }
 
 /** Takes the document off the project. The record and its file are kept. */

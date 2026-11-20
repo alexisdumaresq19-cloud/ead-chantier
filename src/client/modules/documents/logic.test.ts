@@ -25,6 +25,7 @@ const doc = (
   size: 1000,
   addedAt,
   addedBy: "Julie Cyr",
+  addedByMe: false,
 });
 
 describe("canChangeDocuments", () => {
@@ -173,19 +174,18 @@ describe("addDrafts", () => {
 describe("canManageDocument", () => {
   const visitor = { id: "demo", demo: true };
   const foreman = { id: "julie", demo: false };
-  const theirs = doc("Devis", "contrat");
-  const mine = doc("Photo du ponceau", "autre");
-  const added = new Set([mine.id]);
+  const theirs = { addedByMe: false };
+  const mine = { addedByMe: true };
 
-  it("lets the demonstration account manage only what this device sent for it", () => {
-    expect(canManageDocument(visitor, mine, added)).toBe(true);
-    expect(canManageDocument(visitor, theirs, added)).toBe(false);
-    // Nothing known (another device, a private window): nothing offered.
-    expect(canManageDocument(visitor, mine, new Set())).toBe(false);
+  it("lets the demonstration account manage only what it added itself", () => {
+    expect(canManageDocument(visitor, mine)).toBe(true);
+    expect(canManageDocument(visitor, theirs)).toBe(false);
+    // A list kept on the device from before the server said so: nothing offered.
+    expect(canManageDocument(visitor, {} as { addedByMe: boolean })).toBe(false);
   });
 
   it("changes nothing for anyone else", () => {
-    expect(canManageDocument(foreman, theirs, new Set())).toBe(true);
-    expect(canManageDocument({ id: "marc" }, theirs, added)).toBe(true);
+    expect(canManageDocument(foreman, theirs)).toBe(true);
+    expect(canManageDocument({ id: "marc" }, theirs)).toBe(true);
   });
 });

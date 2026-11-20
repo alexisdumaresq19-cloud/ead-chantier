@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useSyncExternalStore } from "react";
 
-import type { Me } from "@/shared/api";
 import type { ProjectDocument } from "@/shared/documents";
 
 import { api } from "../../lib/api";
@@ -66,15 +65,12 @@ export const uploads = createUploadQueue({
       onProgress,
       signal,
     }),
-  save: async (item, uploadId, signal) => {
-    const added = await api<ProjectDocument>(`/api/projects/${item.projectId}/documents`, {
+  save: (item, uploadId, signal) =>
+    api(`/api/projects/${item.projectId}/documents`, {
       method: "POST",
       body: { uploadId, title: item.title, category: item.category },
       signal,
-    });
-    noteAddedHere(added.id);
-    return added;
-  },
+    }),
   onAdded: (projectId) => void refreshProject(projectId),
   onActivity(active) {
     if (active) {
@@ -110,36 +106,4 @@ export function useUploads(projectId: string): UploadsState {
     }),
     [state, projectId],
   );
-}
-
-// The documents this device sent for the demonstration account. The list
-// names a document's author by name only, and the demonstration account may
-// change only what it added (src/shared/demo.ts): what it sent from here is
-// what the screens know to be its own. Under "ead:recents:", so a sign-out
-// forgets it with the rest (session.ts); kept per account, since a new
-// demonstration account is made when a visitor deletes this one.
-
-const ADDED_MAX = 200;
-const addedKey = (userId: string) => `ead:recents:documents-added:${userId}`;
-
-/** The ids of the documents this device sent for this person (the demonstration account only). */
-export function documentsAddedHere(userId: string): ReadonlySet<string> {
-  try {
-    const kept: unknown = JSON.parse(window.localStorage.getItem(addedKey(userId)) ?? "[]");
-    return new Set(Array.isArray(kept) ? kept.filter((id) => typeof id === "string") : []);
-  } catch {
-    return new Set();
-  }
-}
-
-function noteAddedHere(documentId: string) {
-  const me = queryClient.getQueryData<Me | null>(keys.me);
-  if (!me?.demo) return;
-  try {
-    const ids = [documentId, ...[...documentsAddedHere(me.id)].filter((id) => id !== documentId)];
-    window.localStorage.setItem(addedKey(me.id), JSON.stringify(ids.slice(0, ADDED_MAX)));
-  } catch {
-    // Local storage can be closed to the page (private mode): its documents
-    // then show no controls, and nothing is offered that would be refused.
-  }
 }

@@ -44,14 +44,7 @@ import {
   toast,
 } from "../../ui";
 import { DocumentActions } from "./actions";
-import {
-  documentsAddedHere,
-  documentsKey,
-  refreshProject,
-  uploads,
-  useDocuments,
-  useUploads,
-} from "./data";
+import { documentsKey, refreshProject, uploads, useDocuments, useUploads } from "./data";
 import { FileIcon } from "./file-icon";
 import { canChangeDocuments, canManageDocument, formatAdded, groupDocuments } from "./logic";
 import { NO_NETWORK, ReadyDocumentSheet, useDocumentOpener } from "./open";
@@ -63,13 +56,7 @@ export function DocumentsScreen() {
   const me = useCurrentUser();
   const canChange = canChangeDocuments(project, me.role);
   const documents = useDocuments(project.id);
-  // Read again with each list: a document just sent joins it with its own.
-  const addedHere = useMemo(
-    () => (me.demo && documents.data ? documentsAddedHere(me.id) : NONE),
-    [me.demo, me.id, documents.data],
-  );
-  const manages = (document: ProjectDocument) =>
-    canChange && canManageDocument(me, document, addedHere);
+  const manages = (document: ProjectDocument) => canChange && canManageDocument(me, document);
   const online = useOnline();
   const sending = useUploads(project.id);
   const opener = useDocumentOpener(project.id);
@@ -318,8 +305,6 @@ function DocumentRow({
     </li>
   );
 }
-
-const NONE: ReadonlySet<string> = new Set();
 
 const part = "relative max-w-full pl-3 before:absolute before:left-1 before:content-['·']";
 

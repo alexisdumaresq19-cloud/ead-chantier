@@ -19,7 +19,7 @@ import { api, errorMessage } from "../../lib/api";
 import { count, formatWeekday } from "../../lib/format";
 import { queryClient } from "../../lib/query";
 import { useCurrentProject, useCurrentUser } from "../../lib/session";
-import { isNativeApp, shareLinkInApp } from "../../native";
+import { isNativeApp } from "../../native";
 import { Page } from "../../shell/page";
 import {
   Avatar,
@@ -40,7 +40,7 @@ import {
   toast,
 } from "../../ui";
 import { adminKeys, refreshPeople, useMembers, useNow, usePeople } from "./data";
-import { canShare, LinkField, shareLink } from "./invite-link";
+import { canShareHere, LinkField, shareHere } from "./invite-link";
 import {
   formatPhone,
   matchesPerson,
@@ -57,15 +57,6 @@ import { QrCode } from "./qr";
 import { ShownError } from "./shown-error";
 import { hasRunOut, storeSiteCode, useStoredSiteCode } from "./site-code";
 import { ToConfirm } from "./to-confirm";
-
-// The iPhone app always has the share sheet. It cannot print a page
-// (window.print() does nothing there): the poster is printed from a computer.
-const canShareHere = () => isNativeApp() || canShare();
-async function shareHere(data: { title?: string; text?: string; url: string }) {
-  if (!isNativeApp()) return shareLink(data);
-  if (!(await shareLinkInApp(data)))
-    toast.error("Le partage n'a pas fonctionné. Copiez le lien à la place.");
-}
 
 // A project's people and its way in: the QR code shown at the site, which
 // workers scan to join.

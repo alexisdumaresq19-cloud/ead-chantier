@@ -308,8 +308,8 @@ export function ProjectHomeScreen() {
 
   return (
     <div className="animate-fade">
-      {/* The black of the bar runs down into the project's card. */}
-      <div className="bg-ink px-4 pt-2 pb-16 text-white sm:px-6 lg:bg-transparent lg:px-10 lg:pt-8 lg:pb-0">
+      {/* The black of the bar runs down into the project's card, edge to edge. */}
+      <div className="bleed-x bg-ink px-4 pt-2 pb-16 text-white sm:px-6 lg:bg-transparent lg:px-10 lg:pt-8 lg:pb-0">
         <div className="lg:bg-ink mx-auto max-w-6xl lg:rounded-3xl lg:px-8 lg:pt-8 lg:pb-20">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {project.number ? (

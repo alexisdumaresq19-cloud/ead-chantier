@@ -363,10 +363,10 @@ test("the visitor deletes the account, and the next visitor still gets in", asyn
   expect(written.status).toBe(200);
   const reportId = written.body.report.id as string;
   await page.goto("/moi");
-  // What is true for it: the same number and code let it back in, and make a
-  // new account once this one is deleted.
+  // What is true for it: the same number and code let it back in, also once
+  // this account is deleted.
   const comeBack =
-    "Le même cellulaire et le même code ouvrent ensuite un nouveau compte de démonstration.";
+    "Avec le même cellulaire et le même code, un compte de démonstration s'ouvre de nouveau.";
   await expect(page.getByText(comeBack)).toBeVisible();
   await page.getByRole("button", { name: "Se déconnecter" }).click();
   await expect(page.getByRole("dialog")).toContainText(

@@ -16,7 +16,7 @@ import { takeUpload } from "@/server/uploads";
 export const GET = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
   await projectFor(user, id);
-  return listDocuments(id);
+  return listDocuments(id, user.id);
 });
 
 const input = z.object({
