@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "../lib/cn";
+import { LegalLinks } from "../modules/legal/links";
 import { LogoFull } from "../ui/logo";
 
 /**
@@ -26,11 +27,8 @@ export function PublicLayout({ children, compact }: { children: ReactNode; compa
       >
         {children}
       </main>
-      <p
-        className={cn("text-xs font-medium tracking-wide text-white/45", compact ? "mt-4" : "mt-6")}
-      >
-        EAD Chantier
-      </p>
+      <LegalLinks onDark className={compact ? "mt-4" : "mt-6"} />
+      <p className="mt-1 text-xs font-medium tracking-wide text-white/45">EAD Chantier</p>
     </div>
   );
 }

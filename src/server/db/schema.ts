@@ -47,6 +47,19 @@ export const users = pgTable("users", {
    * plans): it keeps the name, nothing else, and never signs in again.
    */
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  /**
+   * The demonstration account: the one the office hands to someone who must
+   * see the app without being on the team (Apple's reviewer). It is a worker
+   * like another, on the projects the office puts it on; its access code
+   * lasts and serves more than once.
+   */
+  demo: boolean("demo").notNull().default(false),
+  /**
+   * When the person agreed that the report's assistant sends their voice,
+   * their texts and the report's photos to an AI service. Null: never asked,
+   * or taken back; the assistant then stays closed for them.
+   */
+  assistantConsentAt: timestamp("assistant_consent_at", { withTimezone: true }),
 });
 
 /** One per signed-in device. The cookie holds the token; only its hash is kept. */
@@ -78,6 +91,12 @@ export const invites = pgTable(
     id: id(),
     tokenHash: text("token_hash").notNull(),
     kind: text("kind").$type<"personal" | "project">().notNull(),
+    /**
+     * A personal invitation can also be typed: the person's cell number and
+     * this code, for a device where a link cannot be opened (the app from the
+     * App Store). Kept as a keyed digest; null for a link without a code.
+     */
+    codeHash: text("code_hash"),
     userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
     projectId: text("project_id").references(() => projects.id, { onDelete: "cascade" }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -87,7 +106,7 @@ export const invites = pgTable(
     createdBy: text("created_by"),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex("invites_token_hash").on(t.tokenHash)],
+  (t) => [uniqueIndex("invites_token_hash").on(t.tokenHash), index("invites_user").on(t.userId)],
 );
 
 /**

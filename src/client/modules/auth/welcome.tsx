@@ -10,6 +10,7 @@ import { useMe } from "../../lib/session";
 import { PublicLayout } from "../../shell/public-layout";
 import { Splash } from "../../shell/splash";
 import { buttonClass, ButtonLink, LogoFull } from "../../ui";
+import { LegalLinks } from "../legal/links";
 import { Heading } from "./parts";
 
 // The first screen of the app, and the ways in for someone who already has
@@ -90,7 +91,8 @@ export function WelcomeScreen() {
           </Link>
           <SetupLink onDark />
         </div>
-        <p className="mt-6 text-center text-xs font-medium tracking-wide text-white/45">
+        <LegalLinks onDark className="mt-6" />
+        <p className="mt-1 text-center text-xs font-medium tracking-wide text-white/45">
           EAD Chantier
         </p>
       </main>

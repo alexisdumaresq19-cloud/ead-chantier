@@ -23,6 +23,13 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.11.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/file-viewer": "2.0.4",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/ios": "8.6.2",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2",
     "@hyzyla/pdfium": "^3.0.0",
     "@supabase/supabase-js": "^2.119.2",
     "@tanstack/react-query": "^5.108.1",
@@ -49,6 +56,7 @@
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@capacitor/cli": "8.6.2",
     "@playwright/test": "^1.65.1",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^22.20.5",

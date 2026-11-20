@@ -8,6 +8,8 @@ import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
 import { Avatar, Button, Card, confirmAction, FormError } from "../../ui";
+import { AssistantConsentSetting } from "../legal/assistant-consent";
+import { LegalLinks } from "../legal/links";
 import { usePeople } from "./data";
 import { DeviceList } from "./devices";
 import { Meta } from "./meta";
@@ -90,6 +92,9 @@ export function AccountScreen() {
         </p>
       </Section>
 
+      {/* The setting decides by itself whether it has something to show. */}
+      <AssistantConsentSetting />
+
       <div className="mt-8 space-y-3">
         <Button
           variant="secondary"
@@ -134,7 +139,8 @@ export function AccountScreen() {
         </Card>
       </Section>
 
-      <p className="text-dim mt-10 text-center text-xs font-medium tracking-wide">EAD Chantier</p>
+      <LegalLinks className="mt-10" />
+      <p className="text-dim mt-2 text-center text-xs font-medium tracking-wide">EAD Chantier</p>
     </Page>
   );
 }

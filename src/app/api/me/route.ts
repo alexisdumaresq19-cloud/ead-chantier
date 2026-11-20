@@ -15,6 +15,8 @@ export const GET = route(async (request) => {
     role: user.role,
     title: user.title,
     unreviewed: user.unreviewed,
+    demo: user.demo,
+    assistantConsent: user.assistantConsentAt !== null,
   };
   const response = NextResponse.json(me);
   // The cookie follows the session: pushed back with it on a device in

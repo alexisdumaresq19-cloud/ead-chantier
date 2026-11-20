@@ -4,3 +4,5 @@ drizzle
 package-lock.json
 public
 .data
+ios
+ios-shell/dist

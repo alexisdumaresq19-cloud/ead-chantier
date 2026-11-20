@@ -25,6 +25,8 @@ import {
 } from "../../ui";
 import { refreshPeople, usePeople } from "./data";
 import { CompanyCodeCard } from "./company-code";
+import { CompanyProfileCard } from "./company-profile";
+import { DemoAccessCard } from "./demo-access";
 import { InviteLinkPanel } from "./invite-link";
 import { Meta } from "./meta";
 import { OfficeOnly } from "./office-only";
@@ -225,6 +227,9 @@ function Everyone({ people, onOpen }: { people: Person[]; onOpen: () => void }) 
           ) : null}
         </div>
       ) : null}
+      {/* What concerns the company as a whole comes last, after the people. */}
+      <CompanyProfileCard className="mt-8" />
+      <DemoAccessCard className="mt-4" />
     </div>
   );
 }

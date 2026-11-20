@@ -15,6 +15,14 @@ export type Me = {
    * few days. Missing from what a device stored before it was sent.
    */
   unreviewed?: boolean;
+  /** The demonstration account (see users.demo). Missing means no. */
+  demo?: boolean;
+  /**
+   * The person agreed that the report's assistant sends their voice, their
+   * texts and the report's photos to an AI service. Missing (a device that
+   * stored an older answer) means not yet.
+   */
+  assistantConsent?: boolean;
 };
 
 /** How someone made their own account: "company_code", the company's code. */
@@ -66,6 +74,8 @@ export type Member = {
    * still to confirm, to those who may confirm them. Missing means null.
    */
   joinedWith?: JoinedWith | null;
+  /** The demonstration account (see users.demo). Missing means no. */
+  demo?: boolean;
 };
 
 /** A member as GET /api/projects/:id/members gives them. */

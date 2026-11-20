@@ -45,6 +45,7 @@ export const GET = route(async (request) => {
     active: u.active,
     unreviewed: u.unreviewed,
     joinedWith: u.joinedWith,
+    demo: u.demo,
     projectIds: projectIds.get(u.id) ?? [],
     deviceCount: deviceCount.get(u.id) ?? 0,
     lastSeenAt: u.lastSeenAt?.toISOString() ?? null,

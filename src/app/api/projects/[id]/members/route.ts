@@ -31,6 +31,7 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
       title: u.title,
       phone: u.phone,
       unreviewed,
+      demo: u.demo,
       // Someone to confirm got their account when they scanned the site's
       // code, or made it themselves with the company's code. How and when
       // is for those who confirm, like the rest.
