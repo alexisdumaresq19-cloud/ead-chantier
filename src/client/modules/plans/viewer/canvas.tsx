@@ -134,8 +134,43 @@ const options: OpenSeadragon.Options = {
   smoothTileEdgesMinZoom: Infinity,
 };
 
-/** The sheet's pyramid, as OpenSeadragon asks for it. */
+/** What OpenSeadragon hands a tile source to fetch one tile; its typings do not describe it. */
+type TileJob = {
+  src: string;
+  finish: (image: HTMLImageElement, request: null, dataType: "image") => void;
+  fail: (message: string, request: null) => void;
+};
+
+/**
+ * The sheet's pyramid, as OpenSeadragon asks for it. It fetches its tiles
+ * itself, the way OpenSeadragon would, to be able to drop the ones still on
+ * their way when the sheet is left: OpenSeadragon lets them finish, and on a
+ * weak signal they hold back the tiles of the sheet turned to.
+ */
 function tileSource(tiles: Tiles) {
+  const underWay = new Map<TileJob, HTMLImageElement>();
+  let closed = false;
+
+  const stop = (job: TileJob) => {
+    const image = underWay.get(job);
+    if (!image) return;
+    underWay.delete(job);
+    image.onload = image.onerror = null;
+    // Emptying the address is what makes the browser give up the request.
+    image.src = "";
+  };
+  /**
+   * Ends the download of a tile nobody is waiting for. OpenSeadragon cannot be
+   * told so (a failure would be logged as an error and tried again): it is
+   * handed the emptied image, which it sets aside as it does any tile that
+   * arrives for a sheet it has closed.
+   */
+  const drop = (job: TileJob) => {
+    const image = underWay.get(job) ?? new Image();
+    stop(job);
+    job.finish(image, null, "image");
+  };
+
   return {
     width: tiles.width,
     height: tiles.height,
@@ -144,6 +179,36 @@ function tileSource(tiles: Tiles) {
     minLevel: tiles.minLevel,
     maxLevel: tiles.maxLevel,
     getTileUrl: (level: number, column: number, row: number) => tileUrl(tiles, level, column, row),
+    downloadTileStart(job: TileJob) {
+      // A tile of a sheet already left, due for another try.
+      if (closed) return drop(job);
+      const image = new Image();
+      const end = () => {
+        underWay.delete(job);
+        image.onload = image.onerror = null;
+      };
+      image.onload = () => {
+        end();
+        job.finish(image, null, "image");
+      };
+      image.onerror = () => {
+        end();
+        job.fail("The tile could not be fetched.", null);
+      };
+      // With CORS, as the service worker needs to keep it.
+      image.crossOrigin = "anonymous";
+      underWay.set(job, image);
+      image.src = job.src;
+    },
+    /** OpenSeadragon gives up on a tile that takes too long. */
+    downloadTileAbort: stop,
+    /** OpenSeadragon has closed the sheet: another one is opened, or the screen is left. */
+    destroy(viewer: OpenSeadragon.Viewer) {
+      closed = true;
+      // Those waiting their turn first, or each tile dropped would start one of them.
+      viewer.imageLoader.clear();
+      for (const job of [...underWay.keys()]) drop(job);
+    },
   };
 }
 

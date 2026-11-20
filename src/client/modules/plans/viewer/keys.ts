@@ -40,8 +40,9 @@ export function keyCommand(
   event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey">,
 ): KeyCommand | null {
   // On a Canadian French keyboard the brackets are typed with AltGr, which
-  // Windows reports as Ctrl and Alt held together.
+  // Windows reports as Ctrl and Alt held together; on a Mac, with Option.
   const altGr = event.ctrlKey && event.altKey;
-  if (event.metaKey || ((event.ctrlKey || event.altKey) && !altGr)) return null;
+  const option = event.altKey && (event.key === "[" || event.key === "]");
+  if (event.metaKey || ((event.ctrlKey || event.altKey) && !altGr && !option)) return null;
   return Object.hasOwn(commands, event.key) ? commands[event.key] : null;
 }

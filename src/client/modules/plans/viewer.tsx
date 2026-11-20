@@ -95,8 +95,10 @@ export function SheetViewerScreen() {
   const [revisionsOpen, setRevisionsOpen] = useState(false);
   const [tileReport, setTileReport] = useState<{ of: string; state: TileState } | null>(null);
   const tiles: TileState = shown && tileReport?.of === shown.id ? tileReport.state : "loading";
-  // Without a plan to look at there is nothing for the bars to get out of the way of.
-  const barsVisible = bars || !shown;
+  // Without a plan to look at there is nothing for the bars to get out of the
+  // way of, and a tap on the empty screen must not take the way back with it.
+  const noPlan = !shown || tiles === "missing";
+  const barsVisible = bars || noPlan;
 
   useWakeLock(shown !== null);
 
@@ -240,12 +242,20 @@ export function SheetViewerScreen() {
 
   const topInset = barsVisible ? sizes.top : sizes.safe.top;
   const bottomInset = barsVisible ? sizes.controls : sizes.safe.bottom;
+  const room: Margins = {
+    top: topInset + sizes.banner + AIR,
+    right: sizes.safe.right + AIR,
+    bottom: bottomInset + AIR,
+    left: sizes.safe.left + AIR,
+  };
   // OpenSeadragon turns its drawing about the middle of the screen but
-  // reckons positions about the middle of the room. The two only agree when
-  // the room is centred, so facing margins both take the larger of the two.
-  const above = Math.max(topInset + sizes.banner, bottomInset) + AIR;
-  const beside = Math.max(sizes.safe.left, sizes.safe.right) + AIR;
-  const margins: Margins = { top: above, right: beside, bottom: above, left: beside };
+  // reckons positions about the middle of the room. For a sheet that has been
+  // turned the two only agree when the room is centred, so facing margins
+  // then both take the larger of the two.
+  const above = Math.max(room.top, room.bottom);
+  const beside = Math.max(room.left, room.right);
+  const margins: Margins =
+    quarterTurns % 4 === 0 ? room : { top: above, right: beside, bottom: above, left: beside };
 
   // --- What fills the screen ------------------------------------------------
 
@@ -270,7 +280,9 @@ export function SheetViewerScreen() {
         revision={shown}
         margins={margins}
         quarterTurns={quarterTurns}
-        onTap={() => setBars((visible) => !visible)}
+        onTap={() => {
+          if (!noPlan) setBars((visible) => !visible);
+        }}
         onTileState={(state) => setTileReport({ of: shown.id, state })}
         onZoomRoom={setZoomRoom}
       />

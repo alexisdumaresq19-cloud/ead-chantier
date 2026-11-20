@@ -48,6 +48,12 @@ describe("the viewer's keyboard", () => {
     expect(press("]", { ctrl: true, alt: true })).toBe("next");
   });
 
+  it("takes brackets typed with Option, as on a Mac's French keyboards", () => {
+    expect(press("[", { alt: true })).toBe("previous");
+    expect(press("]", { alt: true })).toBe("next");
+    expect(press("]", { alt: true, meta: true })).toBeNull();
+  });
+
   it("ignores every other key, including names objects have", () => {
     expect(press("a")).toBeNull();
     expect(press("Enter")).toBeNull();

@@ -62,16 +62,18 @@ export function RevisionsSheet({
                         loading="lazy"
                         className="border-line h-12 w-17 shrink-0 rounded-md border bg-white object-cover"
                       />
+                      {/* Names and dates are read to pick the right one: on a
+                          narrow phone they take a second line, never an ellipsis. */}
                       <span className="min-w-0 flex-1">
-                        <span className="flex items-center gap-2">
-                          <span className="font-display truncate font-bold">
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-display leading-snug font-bold wrap-anywhere">
                             {revisionName(revision) ?? "Révision"}
                           </span>
                           {revision.id === sheet.current?.id ? (
                             <Badge tone="good">En vigueur</Badge>
                           ) : null}
                         </span>
-                        <span className="text-dim mt-0.5 block truncate text-sm">
+                        <span className="text-dim mt-0.5 block text-sm leading-snug">
                           {revision.issuedOn
                             ? `Émise le ${formatDay(revision.issuedOn)}`
                             : `Ajoutée le ${formatDay(revision.addedAt)}`}
