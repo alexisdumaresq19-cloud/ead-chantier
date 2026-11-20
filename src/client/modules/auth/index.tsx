@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { TriangleAlert } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useParams } from "wouter";
 
@@ -6,14 +7,17 @@ import type { InvitePreview } from "@/shared/api";
 
 import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { enterApp, signOut, useMe } from "../../lib/session";
+import { isNativeApp } from "../../native";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 import { focusField, Heading, NAME_MISSING, nameMissing } from "./parts";
 
 // The screens seen before signing in. Nobody has a password: a person comes
-// in with the personal link the office sent, with a site's QR code, or makes
-// their own account with the company's code (signup.tsx).
+// in with the personal link the office sent (or its code, typed: code.tsx),
+// with a site's QR code, or makes their own account with the company's code
+// (signup.tsx).
 
+export { AccessCodeScreen } from "./code";
 export { SignUpScreen } from "./signup";
 export { WaysInScreen, WelcomeScreen } from "./welcome";
 
@@ -96,6 +100,13 @@ export function SetupScreen() {
     </PublicLayout>
   );
 }
+
+/**
+ * An iPhone's browser, outside the app: where a link tapped in Messages
+ * opens, even when the app is installed. Signing in here would use up the
+ * code that the app needs.
+ */
+const onIphoneBrowser = () => !isNativeApp() && /iPhone|iPod/.test(navigator.userAgent);
 
 /** What a personal link (/i/…) or a site QR code (/j/…) opens. */
 export function InviteScreen() {
@@ -232,6 +243,23 @@ export function InviteScreen() {
           Ce lien ouvre l&apos;application sur cet appareil. Vous y resterez connecté, sans mot de
           passe.
         </Heading>
+        {onIphoneBrowser() && preview.codeWorks ? (
+          // Said before the button, which uses the code up: read first.
+          // Only when a code came with the link (the person has a cell number).
+          <div
+            className="bg-warn-tint mt-6 flex items-start gap-2.5 rounded-xl px-3.5 py-3 text-[15px] text-pretty"
+            role="note"
+          >
+            <TriangleAlert className="text-warn mt-0.5 size-5 shrink-0" aria-hidden />
+            <p>
+              <span className="font-semibold">
+                Vous avez l&apos;application EAD sur cet iPhone?
+              </span>{" "}
+              N&apos;entrez pas ici&nbsp;: ouvrez l&apos;application et tapez le code reçu avec ce
+              lien. Si vous entrez ici, le code ne marchera plus dans l&apos;application.
+            </p>
+          </div>
+        ) : null}
         <form onSubmit={submit} className="mt-6 space-y-4">
           <FormError>{accept.isError ? errorMessage(accept.error) : null}</FormError>
           <Button type="submit" size="lg" block loading={busy}>

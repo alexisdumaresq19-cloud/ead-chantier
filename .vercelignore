@@ -1,0 +1,4 @@
+# The iPhone app's Xcode project and the pages it carries are built on a Mac
+# (docs/ios/MAC.md), never by the site's deployment.
+/ios
+/ios-shell

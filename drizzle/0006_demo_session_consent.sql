@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "assistant_consent_at" timestamp with time zone;

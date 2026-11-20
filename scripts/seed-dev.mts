@@ -122,6 +122,12 @@ const people = await admin.call("GET", "/api/users");
 const marc = people.find((person: any) => person.name === "Marc Lévesque");
 await admin.call("PATCH", `/api/users/${marc.id}`, { unreviewed: false });
 
+// The two sample people who write reports have agreed to the assistant, as
+// they would at its first use: the screens and tests that dictate start from
+// there. The question itself is tried on a person of its own (e2e/legal.spec.ts).
+await admin.call("PUT", "/api/me/assistant-consent", { agreed: true });
+await foreman.call("PUT", "/api/me/assistant-consent", { agreed: true });
+
 admin.save("admin");
 foreman.save("foreman");
 worker.save("worker");
@@ -206,7 +212,7 @@ await foreman.call("POST", `/api/projects/${main.id}/reports`, {
   crew: crew.slice(0, 2),
   equipment: "Pelle 320, pompe 3 po",
   workDone:
-    "Remblayage et compaction de la tranchée posée la veille. Essai de pression en préparation.",
+    "Remblayage et compaction de la conduite posée la veille. Essai de pression en préparation.",
   notes: "Arrêt à 14 h 30 à cause de la pluie. Visite de l'ingénieur de la Ville en matinée.",
 });
 

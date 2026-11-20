@@ -1,6 +1,7 @@
 import { and, eq, isNull, notInArray } from "drizzle-orm";
 import type { NextRequest } from "next/server";
 
+import { appStoreUrl } from "@/server/app-store";
 import { createPersonalInvite } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { originOf } from "@/server/http";
@@ -12,8 +13,16 @@ import type { InviteLink } from "@/shared/api";
 
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+/** Why the office's person screen does not change the demonstration account. */
+export const DEMO_MANAGED =
+  "Le compte de démonstration se gère dans la carte Accès de démonstration, au bas de l'écran Équipe.";
+
+/** What the demonstration account may not do: anything to the team. */
+export const DEMO_REFUSED = "Le compte de démonstration ne gère pas l'équipe.";
+
 /**
- * A new personal link for someone, as the office will send it. The office
+ * A new personal link for someone, as the office will send it, with the code
+ * that does the same when typed (shown once, like the link). The office
  * vouches for whoever it sends a link to: someone who came in by a site's QR
  * code is confirmed by it.
  */
@@ -26,7 +35,7 @@ export async function personalLink(
     .update(schema.users)
     .set({ unreviewed: false })
     .where(and(eq(schema.users.id, userId), eq(schema.users.unreviewed, true)));
-  const token = await createPersonalInvite(userId, createdBy);
+  const { token, code } = await createPersonalInvite(userId, createdBy);
   // The end date is read back rather than computed again, so the screen
   // never promises more days than the server gives.
   const [invite] = await db
@@ -34,7 +43,12 @@ export async function personalLink(
     .from(schema.invites)
     .where(eq(schema.invites.tokenHash, hashToken(token)))
     .limit(1);
-  return { url: `${originOf(request)}/i/${token}`, expiresAt: invite.expiresAt.toISOString() };
+  return {
+    url: `${originOf(request)}/i/${token}`,
+    expiresAt: invite.expiresAt.toISOString(),
+    code,
+    appStoreUrl: appStoreUrl(),
+  };
 }
 
 /**
@@ -75,7 +89,7 @@ export async function settleSiteCodes(tx: Tx, userId: string) {
 
 /**
  * Switches someone's access off: every device is signed out at once, and
- * the links they have not opened yet stay dead, even after a reactivation
+ * the links (and their codes) they have not used yet stay dead, even after a reactivation
  * (the office then sends a new one). Their QR codes end as well.
  */
 export async function endAccess(tx: Tx, userId: string) {

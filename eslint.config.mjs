@@ -24,6 +24,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Local data and scratch scripts, never committed.
     ".data/**",
+    // The iPhone app's Xcode project and the built copy of its fallback pages.
+    "ios/**",
+    "ios-shell/dist/**",
   ]),
 ]);
 

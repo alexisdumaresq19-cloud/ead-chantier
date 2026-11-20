@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { currentUser, SESSION_COOKIE, setSessionCookie } from "@/server/auth";
 import { route, unauthorized } from "@/server/http";
+import { consentInForce } from "@/server/legal/consent";
 import { deleteOwnAccount } from "@/server/people/delete";
 import type { Me } from "@/shared/api";
 
@@ -15,6 +16,8 @@ export const GET = route(async (request) => {
     role: user.role,
     title: user.title,
     unreviewed: user.unreviewed,
+    demo: user.demo,
+    assistantConsent: consentInForce(user.assistantConsentAt) !== null,
   };
   const response = NextResponse.json(me);
   // The cookie follows the session: pushed back with it on a device in

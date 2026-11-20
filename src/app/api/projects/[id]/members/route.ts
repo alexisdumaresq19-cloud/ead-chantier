@@ -14,8 +14,12 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
   const project = await projectFor(user, id);
   // Who is still to confirm is for those who may confirm them: the office,
   // and the project's foremen while it is open.
+  // The demonstration account confirms nobody, and its visitor, who is not
+  // of the team, is not handed the team's cell numbers.
   const reviews =
-    canManageProject(user.role) && (project.status !== "archive" || user.role === "admin");
+    canManageProject(user.role) &&
+    !user.demo &&
+    (project.status !== "archive" || user.role === "admin");
   const rows = await db
     .select({ user: schema.users })
     .from(schema.projectMembers)
@@ -29,8 +33,10 @@ export const GET = route<{ id: string }>(async (request, { id }) => {
       name: u.name,
       role: u.role,
       title: u.title,
-      phone: u.phone,
+      // The demonstration account's number is fiction: nobody is called on it.
+      phone: u.demo || (user.demo && u.id !== user.id) ? null : u.phone,
       unreviewed,
+      demo: u.demo,
       // Someone to confirm got their account when they scanned the site's
       // code, or made it themselves with the company's code. How and when
       // is for those who confirm, like the rest.
@@ -52,10 +58,17 @@ export const POST = route<{ id: string }>(async (request, { id }) => {
     z.object({ userIds: z.array(z.string().max(40)).min(1).max(500) }),
   );
   // Deactivated people stay off the lists until the office reactivates them.
+  // The demonstration account is on the projects its own card says.
   const known = await db
     .select({ id: schema.users.id })
     .from(schema.users)
-    .where(and(inArray(schema.users.id, userIds), eq(schema.users.active, true)));
+    .where(
+      and(
+        inArray(schema.users.id, userIds),
+        eq(schema.users.active, true),
+        eq(schema.users.demo, false),
+      ),
+    );
   if (known.length) {
     await db
       .insert(schema.projectMembers)

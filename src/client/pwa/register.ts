@@ -1,3 +1,4 @@
+import { isNativeApp } from "../native";
 import { preloadScreens } from "../routes";
 import { canStore, SHELL_CACHE, STATIC_CACHE } from "./caches";
 import { watchInstallOffer } from "./install-offer";
@@ -12,7 +13,9 @@ let started = false;
 export function registerPwa() {
   if (started) return;
   started = true;
-  watchInstallOffer();
+  // Inside the iPhone app the shell has its own means; a browser never loads them.
+  if (isNativeApp()) void import("../native/start").then((native) => native.startNativeApp());
+  else watchInstallOffer();
 
   if (process.env.NODE_ENV !== "production") {
     void retireWorker();
@@ -57,7 +60,12 @@ function whenIdle(task: () => void) {
  * Without a network it changes nothing and tries again when it returns.
  */
 async function makeReadyForOffline() {
-  const screens = await preloadScreens();
+  // In the app, the share sheet's and the viewer's code too: the worker
+  // keeps only what went through it.
+  const native = isNativeApp()
+    ? import("../native/start").then((start) => start.warmPlugins())
+    : undefined;
+  const [screens] = await Promise.all([preloadScreens(), native]);
   const complete = screens.every((screen) => screen.status === "fulfilled");
   const stored = complete && (await serverVersion().then(storeShell, () => false));
   if (!stored) window.addEventListener("online", () => whenIdle(makeReadyForOffline), ONCE);

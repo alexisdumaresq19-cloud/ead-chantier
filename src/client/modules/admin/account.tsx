@@ -8,10 +8,23 @@ import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
 import { Avatar, Button, Card, confirmAction, FormError } from "../../ui";
+import { AssistantConsentSetting } from "../legal/assistant-consent";
+import { LegalLinks } from "../legal/links";
 import { usePeople } from "./data";
 import { DeviceList } from "./devices";
 import { Meta } from "./meta";
 import { LAST_OFFICE_TEXT, roleAndTitle, signOutFailure } from "./people";
+
+// Coming back after a deletion. The person's links and codes are gone with
+// the account (src/server/people/delete.ts): the office makes a new one and
+// sends its link or its code (src/shared/access.ts), or a site's QR code
+// makes one. The demonstration's number and code outlive its account: the
+// next sign-in puts a demonstration account back, the same one when it had
+// added something (src/server/access-code/demo.ts).
+const BACK_AFTER_DELETE =
+  "Pour revenir, il faudra un nouveau compte\u00a0: le bureau vous envoie un lien ou un code à entrer avec votre cellulaire, ou vous scannez le code QR d'un chantier.";
+const DEMO_BACK_AFTER_DELETE =
+  "Avec le même cellulaire et le même code, un compte de démonstration s'ouvre de nouveau.";
 
 /**
  * Deletes the account, then lets go of this device. The server has already
@@ -47,7 +60,9 @@ export function AccountScreen() {
   const askToRemove = async () => {
     const ok = await confirmAction({
       title: "Supprimer votre compte?",
-      text: "C'est immédiat et définitif. Vos appareils sont déconnectés, et votre numéro, vos liens et vos accès aux chantiers sont effacés. Les rapports, les photos et les documents que vous avez ajoutés restent à l'entreprise, avec votre nom.",
+      text: me.demo
+        ? `C'est immédiat. Vos appareils sont déconnectés et ce compte est effacé. Ce qu'il a ajouté aux chantiers reste à l'entreprise. ${DEMO_BACK_AFTER_DELETE}`
+        : `C'est immédiat et définitif. Vos appareils sont déconnectés, et votre numéro, vos liens et vos accès aux chantiers sont effacés. Les rapports, les photos et les documents que vous avez ajoutés restent à l'entreprise, avec votre nom. ${BACK_AFTER_DELETE}`,
       confirmLabel: "Supprimer mon compte",
       danger: true,
     });
@@ -57,7 +72,9 @@ export function AccountScreen() {
   const askToLeave = async () => {
     const ok = await confirmAction({
       title: "Se déconnecter de cet appareil?",
-      text: "Pour revenir, il faudra un nouveau lien du bureau ou le code QR d'un chantier.",
+      text: me.demo
+        ? "Pour revenir, entrez de nouveau le même cellulaire et le même code."
+        : "Pour revenir, il faudra un nouveau lien du bureau, un code du bureau à entrer avec votre cellulaire, ou le code QR d'un chantier.",
       confirmLabel: "Se déconnecter",
       danger: true,
     });
@@ -90,6 +107,9 @@ export function AccountScreen() {
         </p>
       </Section>
 
+      {/* The setting decides by itself whether it has something to show. */}
+      <AssistantConsentSetting />
+
       <div className="mt-8 space-y-3">
         <Button
           variant="secondary"
@@ -111,9 +131,9 @@ export function AccountScreen() {
           ) : (
             <>
               <p className="text-dim text-[15px] text-pretty">
-                Vous n&apos;utilisez plus l&apos;application? Supprimez votre compte. Ce que vous
-                avez ajouté aux chantiers reste à l&apos;entreprise, avec votre nom. Pour revenir,
-                il faudra un nouveau compte.
+                {me.demo
+                  ? `Ce compte sert à essayer l'application. Ce qu'il a ajouté aux chantiers reste à l'entreprise. ${DEMO_BACK_AFTER_DELETE}`
+                  : `Vous n'utilisez plus l'application? Supprimez votre compte. Ce que vous avez ajouté aux chantiers reste à l'entreprise, avec votre nom. ${BACK_AFTER_DELETE}`}
               </p>
               <Button
                 variant="secondary"
@@ -134,7 +154,8 @@ export function AccountScreen() {
         </Card>
       </Section>
 
-      <p className="text-dim mt-10 text-center text-xs font-medium tracking-wide">EAD Chantier</p>
+      <LegalLinks className="mt-8" />
+      <p className="text-dim mt-2 text-center text-xs font-medium tracking-wide">EAD Chantier</p>
     </Page>
   );
 }

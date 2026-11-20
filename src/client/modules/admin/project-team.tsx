@@ -19,6 +19,7 @@ import { api, errorMessage } from "../../lib/api";
 import { count, formatWeekday } from "../../lib/format";
 import { queryClient } from "../../lib/query";
 import { useCurrentProject, useCurrentUser } from "../../lib/session";
+import { isNativeApp } from "../../native";
 import { Page } from "../../shell/page";
 import {
   Avatar,
@@ -39,7 +40,7 @@ import {
   toast,
 } from "../../ui";
 import { adminKeys, refreshPeople, useMembers, useNow, usePeople } from "./data";
-import { canShare, LinkField, shareLink } from "./invite-link";
+import { canShareHere, LinkField, shareHere } from "./invite-link";
 import {
   formatPhone,
   matchesPerson,
@@ -66,7 +67,8 @@ export function ProjectTeamScreen() {
   const office = isAdmin(me.role);
   // An archived project admits nobody new: it has no code to show.
   const open = project.status !== "archive";
-  const showsCode = project.canChange && open;
+  // Nor does the demonstration account let anyone in.
+  const showsCode = project.canChange && open && !me.demo;
   const [codeOpen, setCodeOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const members = useMembers(project.id, { watch: codeOpen });
@@ -259,7 +261,7 @@ function MemberRow({
   // A foreman or the office carries a badge (in their own words when their
   // title says the same): the line under the name is for the job title.
   const { role, title } = roleAndTitle(member);
-  const badge = member.role === "travailleur" ? null : role;
+  const badge = member.demo ? "Démonstration" : member.role === "travailleur" ? null : role;
   const detail = badge ? title : (title ?? role);
   const name = <span className="font-semibold wrap-anywhere">{member.name}</span>;
   return (
@@ -367,7 +369,8 @@ function AddPeopleSheet({
         {(all) => {
           const onProject = new Set(members.map((member) => member.id));
           const available = sortByName(
-            all.filter((person) => person.active && !onProject.has(person.id)),
+            // The demonstration account's projects are on its own card.
+            all.filter((person) => person.active && !person.demo && !onProject.has(person.id)),
           );
           if (available.length === 0) {
             return (
@@ -545,11 +548,11 @@ function SiteCodeSheet({
             <LinkField key={code.link.url} url={code.link.url} label="Lien du code QR" />
             {/* Side by side where both fit, one under the other on a narrow phone. */}
             <div className="flex flex-wrap gap-2 *:flex-1">
-              {canShare() ? (
+              {canShareHere() ? (
                 <Button
                   variant="secondary"
                   onClick={() =>
-                    shareLink({
+                    shareHere({
                       title: project.name,
                       text: `Pour voir les plans du chantier ${project.name} dans EAD Chantier, ouvrez ce lien et inscrivez votre nom.`,
                       url: code.link.url,
@@ -559,9 +562,11 @@ function SiteCodeSheet({
                   <Share2 aria-hidden /> Partager
                 </Button>
               ) : null}
-              <Button variant="secondary" onClick={() => window.print()}>
-                <Printer aria-hidden /> Imprimer l&apos;affiche
-              </Button>
+              {isNativeApp() ? null : (
+                <Button variant="secondary" onClick={() => window.print()}>
+                  <Printer aria-hidden /> Imprimer l&apos;affiche
+                </Button>
+              )}
             </div>
             <Button variant="ghost" block onClick={renew}>
               <RefreshCw aria-hidden /> Créer un nouveau code

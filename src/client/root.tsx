@@ -61,6 +61,9 @@ export function AppRoot() {
         <Toaster
           className="no-print"
           position="top-center"
+          // Below the status bar and the camera, where the page runs under them.
+          offset={{ top: "max(24px, calc(env(safe-area-inset-top) + 8px))" }}
+          mobileOffset={{ top: "max(16px, calc(env(safe-area-inset-top) + 8px))" }}
           richColors
           toastOptions={{ style: { fontFamily: "var(--font-sans)" } }}
         />

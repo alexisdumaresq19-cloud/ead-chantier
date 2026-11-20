@@ -178,7 +178,8 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
 
       {/* Phone: the top bar */}
       <header className="no-print bg-ink sticky top-0 z-30 pt-[env(safe-area-inset-top)] text-white lg:hidden">
-        <div className="flex h-14 items-center gap-1 pr-2 pl-1">
+        {/* An iPhone held sideways has its notch at one end: the bar's ends keep clear of it. */}
+        <div className="flex h-14 items-center gap-1 pr-[calc(0.5rem+env(safe-area-inset-right))] pl-[calc(0.25rem+env(safe-area-inset-left))]">
           {project || back ? (
             <>
               <Link
@@ -232,8 +233,11 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
         </div>
       </header>
 
-      {/* Room under the content for the tabs, or for the home indicator without them. */}
-      <main className="pb-[calc(max(var(--ead-tabs,0px),env(safe-area-inset-bottom))+0.75rem)] lg:pb-0">
+      {/*
+        Room under the content for the tabs, or for the home indicator without
+        them; on its sides, for the notch of an iPhone held sideways.
+      */}
+      <main className="pr-[env(safe-area-inset-right)] pb-[calc(max(var(--ead-tabs,0px),env(safe-area-inset-bottom))+0.75rem)] pl-[env(safe-area-inset-left)] lg:pb-0">
         {children}
       </main>
 
@@ -241,7 +245,7 @@ export function Shell({ project, children }: { project?: ProjectDetail; children
       <nav
         aria-label="Navigation"
         hidden={!showTabs}
-        className="no-print border-line bg-surface/95 fixed inset-x-0 bottom-0 z-30 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="no-print border-line bg-surface/95 fixed inset-x-0 bottom-0 z-30 border-t pr-[env(safe-area-inset-right)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] backdrop-blur lg:hidden"
       >
         <ul className="mx-auto flex max-w-lg">
           {tabs.map((item) => {

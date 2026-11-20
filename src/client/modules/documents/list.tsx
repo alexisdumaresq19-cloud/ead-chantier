@@ -46,15 +46,17 @@ import {
 import { DocumentActions } from "./actions";
 import { documentsKey, refreshProject, uploads, useDocuments, useUploads } from "./data";
 import { FileIcon } from "./file-icon";
-import { canChangeDocuments, formatAdded, groupDocuments } from "./logic";
+import { canChangeDocuments, canManageDocument, formatAdded, groupDocuments } from "./logic";
 import { NO_NETWORK, ReadyDocumentSheet, useDocumentOpener } from "./open";
 import { summarize, type UploadsState } from "./upload-queue";
 
 /** A project's documents, by category. Tapping one opens it. */
 export function DocumentsScreen() {
   const project = useCurrentProject();
-  const canChange = canChangeDocuments(project, useCurrentUser().role);
+  const me = useCurrentUser();
+  const canChange = canChangeDocuments(project, me.role);
   const documents = useDocuments(project.id);
+  const manages = (document: ProjectDocument) => canChange && canManageDocument(me, document);
   const online = useOnline();
   const sending = useUploads(project.id);
   const opener = useDocumentOpener(project.id);
@@ -70,7 +72,8 @@ export function DocumentsScreen() {
     [documents.data, search],
   );
   // Read from the list, so the menu always shows the document as it is now.
-  const menuDocument = documents.data?.find((document) => document.id === menuId) ?? null;
+  const menuDocument =
+    documents.data?.find((document) => document.id === menuId && manages(document)) ?? null;
 
   // Files that made it are in the list below: nothing more to say about them.
   const sent = summarize(sending.items);
@@ -216,7 +219,7 @@ export function DocumentsScreen() {
                               document={document}
                               opening={opener.opening.has(document.id)}
                               onOpen={() => opener.open(document)}
-                              onMenu={canChange ? () => setMenuId(document.id) : undefined}
+                              onMenu={manages(document) ? () => setMenuId(document.id) : undefined}
                             />
                           ))}
                         </ul>

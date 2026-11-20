@@ -1,6 +1,7 @@
 // Dictating the daily report: the foreman talks, the report fills itself.
 //
-//   GET  /api/assistant                                   { dictation: boolean }
+//   GET  /api/assistant                                   AssistantStatus
+//   PUT  /api/me/assistant-consent                        { agreed: boolean } → AssistantStatus
 //   POST /api/projects/:id/reports/dictation              multipart form:
 //          audio    a recording (webm, mp4, ogg, wav or mp3; 4 MB at most), or
 //          text     what was said, typed or dictated with the keyboard
@@ -13,16 +14,27 @@
 //                   description one) or "tidy" (rewrite the texts cleanly)
 //        → DictationResult
 //
-// For foremen and the office, like the reports themselves. The report is not
-// saved: the screen shows the result and the person saves it as usual. The
-// photos' descriptions are the project's: the screen gives them at once.
+// For foremen and the office, like the reports themselves, once the person
+// has agreed (consentAt); until then the dictation is refused with
+// ASSISTANT_CONSENT_REQUIRED. The report is not saved: the screen shows the
+// result and the person saves it as usual. The photos' descriptions are the
+// project's: the screen gives them at once.
 
 import type { ReportContent } from "./reports";
 
 export type AssistantStatus = {
   /** Whether reports can be dictated here (the AI service is reachable). */
   dictation: boolean;
+  /**
+   * When the person agreed that the assistant sends their voice, the
+   * report's text and its photos to an AI service; null while they have not.
+   * Missing from an answer a device stored before it was sent.
+   */
+  consentAt?: string | null;
 };
+
+/** The error code of a request to the assistant from someone who has not agreed. */
+export const ASSISTANT_CONSENT_REQUIRED = "assistant_consent_required";
 
 export type DictationField = "weather" | "crew" | "equipment" | "workDone" | "notes";
 

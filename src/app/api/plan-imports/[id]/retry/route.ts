@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { after } from "next/server";
 
 import { projectToChange } from "@/server/access";
+import { refuseDemoOnPlans } from "@/server/access-code/rules";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { notFound, route } from "@/server/http";
@@ -13,6 +14,7 @@ export const maxDuration = 300;
 /** Tries again the pages that could not be converted. */
 export const POST = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
+  refuseDemoOnPlans(user);
   const [current] = await db
     .select()
     .from(schema.planImports)

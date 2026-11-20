@@ -26,6 +26,7 @@ import { PHOTO_CAPTION_MAX, type Photo } from "@/shared/photos";
 import { api, ApiFailure, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { queryClient } from "../../lib/query";
+import { isNativeApp } from "../../native";
 import { Button, confirmAction, FormError, Sheet, Spinner, Textarea, toast } from "../../ui";
 import { photoChanged, photoKeys, photoRemoved, refreshProject, usePhoto } from "./data";
 import { takenLabel } from "./logic";
@@ -283,7 +284,7 @@ function Viewer({
 
       <header
         className={cn(
-          "absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-linear-to-b from-black/70 to-transparent px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-10 transition-opacity duration-200",
+          "absolute inset-x-0 top-0 flex items-center justify-between gap-3 bg-linear-to-b from-black/70 to-transparent pt-[max(0.75rem,env(safe-area-inset-top))] pr-[max(0.75rem,env(safe-area-inset-right))] pb-10 pl-[max(0.75rem,env(safe-area-inset-left))] transition-opacity duration-200",
           ASIDE,
           !bars && hidden,
         )}
@@ -333,7 +334,10 @@ function Viewer({
                 onClick={() => turn(direction)}
                 className={cn(
                   "absolute top-1/2 hidden size-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/45 backdrop-blur-sm transition hover:bg-black/70 sm:flex",
-                  direction === 1 ? "right-4" : "left-4",
+                  // Clear of the notch of an iPhone held sideways.
+                  direction === 1
+                    ? "right-[max(1rem,env(safe-area-inset-right))]"
+                    : "left-[max(1rem,env(safe-area-inset-left))]",
                   ASIDE,
                   !bars && hidden,
                 )}
@@ -345,7 +349,7 @@ function Viewer({
 
           <footer
             className={cn(
-              "absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 via-black/60 to-transparent px-4 pt-12 pb-[max(1rem,env(safe-area-inset-bottom))] transition-opacity duration-200",
+              "absolute inset-x-0 bottom-0 bg-linear-to-t from-black/85 via-black/60 to-transparent pt-12 pr-[max(1rem,env(safe-area-inset-right))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] transition-opacity duration-200",
               ASIDE,
               !bars && hidden,
             )}
@@ -623,6 +627,8 @@ function CaptionSheet({
 
 /** A phone that can hand an image to its other apps (messages, email…). */
 function canShareImages() {
+  // The iPhone app has the share sheet, which also saves to Photos.
+  if (isNativeApp()) return true;
   try {
     return (
       window.matchMedia("(pointer: coarse)").matches &&
@@ -673,6 +679,16 @@ function useSharing(photo: Photo | undefined, displayed: boolean) {
     try {
       const blob = held.current?.id === photo.id ? held.current.blob : await fetchImage(photo.url);
       const file = new File([blob], name, { type: "image/jpeg" });
+      if (isNativeApp()) {
+        // The image is in hand: what fails from here is the sheet, never the network.
+        try {
+          const { shareFile } = await import("../../native/files");
+          await shareFile(file, { text: photo.caption ?? undefined });
+        } catch {
+          toast.error("Le partage n'a pas abouti. Réessayez.");
+        }
+        return;
+      }
       if (native && navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({ files: [file], text: photo.caption ?? undefined });

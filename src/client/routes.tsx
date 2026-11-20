@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { Redirect, Route, Router, Switch, useLocation, useParams, useRoute } from "wouter";
 
+import { ACCESS_CODE_PATH } from "@/shared/access";
 import { SIGNUP_PATH } from "@/shared/signup";
 
 import { ApiFailure } from "./lib/api";
@@ -17,8 +18,9 @@ import { ErrorState } from "./ui/states";
 
 // Every address of the app.
 //
-//   /bienvenue, /bienvenue/compte, /inscription,
+//   /bienvenue, /bienvenue/compte, /bienvenue/code, /inscription,
 //   /demarrer, /i/:token, /j/:token                  before signing in
+//   /diagnostic                                      the iPhone app's check, for support
 //   /                                                the projects
 //   /projets/nouveau, /equipe, /moi                  office and account
 //   /projets/:projectId                              a project's home
@@ -40,6 +42,7 @@ const loaders = {
   photos: () => import("./modules/photos/routes"),
   reports: () => import("./modules/reports/routes"),
   admin: () => import("./modules/admin"),
+  diagnostic: () => import("./modules/diagnostic"),
 };
 
 /** Downloads every screen, so that all of them open without a network. */
@@ -54,6 +57,7 @@ function screen<Module, Name extends keyof Module>(load: () => Promise<Module>, 
 const WelcomeScreen = screen(loaders.auth, "WelcomeScreen");
 const WaysInScreen = screen(loaders.auth, "WaysInScreen");
 const SignUpScreen = screen(loaders.auth, "SignUpScreen");
+const AccessCodeScreen = screen(loaders.auth, "AccessCodeScreen");
 const SetupScreen = screen(loaders.auth, "SetupScreen");
 const InviteScreen = screen(loaders.auth, "InviteScreen");
 const ProjectsScreen = screen(loaders.projects, "ProjectsScreen");
@@ -68,6 +72,7 @@ const ProjectSettingsScreen = screen(loaders.admin, "ProjectSettingsScreen");
 const ProjectTeamScreen = screen(loaders.admin, "ProjectTeamScreen");
 const TeamScreen = screen(loaders.admin, "TeamScreen");
 const AccountScreen = screen(loaders.admin, "AccountScreen");
+const DiagnosticScreen = screen(loaders.diagnostic, "DiagnosticScreen");
 
 export function AppRoutes() {
   return (
@@ -84,10 +89,12 @@ function Screens() {
       <Switch>
         <Route path="/bienvenue" component={WelcomeScreen} />
         <Route path="/bienvenue/compte" component={WaysInScreen} />
+        <Route path={ACCESS_CODE_PATH} component={AccessCodeScreen} />
         <Route path={SIGNUP_PATH} component={SignUpScreen} />
         <Route path="/demarrer" component={SetupScreen} />
         <Route path="/i/:token" component={InviteScreen} />
         <Route path="/j/:token" component={InviteScreen} />
+        <Route path="/diagnostic" component={DiagnosticScreen} />
         <Route component={SignedIn} />
       </Switch>
     </Suspense>

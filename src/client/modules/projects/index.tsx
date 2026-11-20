@@ -30,6 +30,7 @@ import { cn } from "../../lib/cn";
 import { count, formatWeekday } from "../../lib/format";
 import { projectsOpenedAt, recentSheetIds } from "../../lib/recents";
 import { keys, useCurrentProject, useCurrentUser, useProjects } from "../../lib/session";
+import { directionsUrl } from "../../native";
 import { planPaths, usePlans, warmSheet } from "../plans/data";
 import { TakePhotoButton } from "../photos/take";
 import { PlanThumb } from "../plans/parts";
@@ -307,8 +308,8 @@ export function ProjectHomeScreen() {
 
   return (
     <div className="animate-fade">
-      {/* The black of the bar runs down into the project's card. */}
-      <div className="bg-ink px-4 pt-2 pb-16 text-white sm:px-6 lg:bg-transparent lg:px-10 lg:pt-8 lg:pb-0">
+      {/* The black of the bar runs down into the project's card, edge to edge. */}
+      <div className="bleed-x bg-ink px-4 pt-2 pb-16 text-white sm:px-6 lg:bg-transparent lg:px-10 lg:pt-8 lg:pb-0">
         <div className="lg:bg-ink mx-auto max-w-6xl lg:rounded-3xl lg:px-8 lg:pt-8 lg:pb-20">
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {project.number ? (
@@ -335,10 +336,10 @@ export function ProjectHomeScreen() {
                 <MapPin className="text-ead size-4 shrink-0" aria-hidden /> {address}
               </p>
               <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`}
+                href={directionsUrl(address)}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/10 px-3 text-sm font-semibold transition-colors hover:bg-white/20"
+                className="inline-flex h-11 items-center gap-1.5 rounded-lg bg-white/10 px-3.5 text-sm font-semibold transition-colors hover:bg-white/20"
               >
                 <Navigation className="size-4" aria-hidden /> Itinéraire
               </a>
@@ -383,7 +384,8 @@ export function ProjectHomeScreen() {
               <ManageLink
                 href={`${base}/equipe`}
                 icon={Users}
-                label="Équipe et code QR"
+                // The demonstration account shows no QR code.
+                label={me.demo ? "Équipe" : "Équipe et code QR"}
                 detail={count(project.memberCount, "personne")}
               />
               <ManageLink href={`${base}/reglages`} icon={Settings} label="Réglages du projet" />

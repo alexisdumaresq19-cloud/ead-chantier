@@ -4,6 +4,7 @@ import { after } from "next/server";
 import { z } from "zod";
 
 import { projectToChange, projectToManage } from "@/server/access";
+import { refuseDemoOnPlans } from "@/server/access-code/rules";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, notFound, route } from "@/server/http";
@@ -22,6 +23,7 @@ async function importFor(request: NextRequest, id: string, change: boolean) {
     .where(eq(schema.planImports.id, id))
     .limit(1);
   if (!current) throw notFound("Import introuvable.");
+  if (change) refuseDemoOnPlans(user);
   await (change ? projectToChange : projectToManage)(user, current.projectId);
   return current;
 }

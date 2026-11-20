@@ -2,17 +2,50 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 
-import { opensInBrowser, type DocumentLink, type ProjectDocument } from "@/shared/documents";
+import {
+  downloadName,
+  opensInBrowser,
+  type DocumentLink,
+  type ProjectDocument,
+} from "@/shared/documents";
 
 import { api, ApiFailure, errorMessage } from "../../lib/api";
+import { isNativeApp } from "../../native";
 import { buttonClass, Sheet, toast } from "../../ui";
 import { documentsKey, download, refreshProject } from "./data";
 
 // Opening a document: its link is asked for at that moment, used once and
 // never kept. PDFs and images go to a new tab, where the phone's own viewer
-// shows them; other files are saved on the device.
+// shows them; other files are saved on the device. In the iPhone app, where
+// a new tab goes to Safari and a download does nothing, every file opens in
+// the system's viewer (which shares, prints and saves it too).
 
 export const NO_NETWORK = "Pas de réseau. Les documents s'ouvrent seulement avec une connexion.";
+
+/**
+ * Up to this size the page fetches the file and hands it over under its
+ * title; a larger one the viewer downloads itself, from the signed link,
+ * rather than through the page's memory.
+ */
+const FETCHED_IN_PAGE = 25 * 1024 * 1024;
+
+/** In the iPhone app: the file in the system's viewer. */
+async function openInApp(document: ProjectDocument, url: string) {
+  const files = await import("../../native/files");
+  const address = new URL(url, window.location.origin).href;
+  if (document.size <= FETCHED_IN_PAGE) {
+    let file: Blob | null = null;
+    try {
+      // The link is signed: it needs no session, and storage allows any page to read it.
+      const response = await fetch(address, { credentials: "omit" });
+      if (response.ok) file = await response.blob();
+    } catch {
+      // Unreadable from the page: the viewer fetches it below.
+    }
+    if (file) return files.openFile(file, downloadName(document.title, document.filename));
+  }
+  return files.openFileAt(address);
+}
 
 /**
  * A tab opened during the tap itself: once the link has arrived, phones no
@@ -56,7 +89,8 @@ export function useDocumentOpener(projectId: string) {
         return;
       }
       busy.current.add(document.id);
-      const inTab = opensInBrowser(document.filename);
+      const inApp = isNativeApp();
+      const inTab = !inApp && opensInBrowser(document.filename);
       const tab = inTab ? openWaitingTab() : null;
       setOpening((ids) => new Set(ids).add(document.id));
       try {
@@ -68,7 +102,11 @@ export function useDocumentOpener(projectId: string) {
           gcTime: 0,
           retry: false,
         });
-        if (!inTab) {
+        if (inApp) {
+          await openInApp(document, url).catch(() =>
+            toast.error("Le document n'a pas pu s'ouvrir. Réessayez."),
+          );
+        } else if (!inTab) {
           download(url);
           toast.success("Téléchargement lancé");
         } else if (tab && !tab.closed) {

@@ -187,6 +187,32 @@ const RETRY_MIN_MS = 15_000;
 /** Time for the next call: what is left before `deadline`, 45 s at most. */
 const timeLeft = (deadline: number) => Math.max(0, Math.min(CALL_MAX_MS, deadline - Date.now()));
 
+// The privacy policy and the assistant's question name the services that
+// receive what is said and written. Without `only`, the gateway may hand a
+// call to another company that serves the same model (Google, Amazon), so
+// each call is held to the one it names; when that one is down, the call
+// fails and the report is written by hand.
+/** The only provider the gateway may route the Claude call to. */
+export const CLAUDE_PROVIDERS = ["anthropic"];
+/** The only provider the gateway may route the transcription to. */
+export const TRANSCRIPTION_PROVIDERS = ["openai"];
+
+/** What the transcription is told: where it may go, the language, the words to expect. */
+export function transcriptionOptions(members: KnownPerson[]) {
+  return {
+    gateway: { only: TRANSCRIPTION_PROVIDERS },
+    openai: {
+      language: "fr",
+      // Names and trade words the recognition should expect.
+      prompt: `Rapport journalier d'un chantier de génie civil au Québec. ${members
+        .map((member) => member.name)
+        .join(
+          ", ",
+        )}. Regard, puisard, aqueduc, égout pluvial, ponceau, MG-20, compaction, remblai, pelle, rouleau, niveleuse.`,
+    },
+  };
+}
+
 /** The words spoken in a recording. */
 export async function transcribeDictation(
   audio: Uint8Array,
@@ -202,17 +228,7 @@ export async function transcribeDictation(
       maxRetries: 1,
       // Retries included: the timer runs for the whole call.
       abortSignal: AbortSignal.timeout(timeLeft(deadline)),
-      providerOptions: {
-        openai: {
-          language: "fr",
-          // Names and trade words the recognition should expect.
-          prompt: `Rapport journalier d'un chantier de génie civil au Québec. ${members
-            .map((member) => member.name)
-            .join(
-              ", ",
-            )}. Regard, puisard, aqueduc, égout pluvial, ponceau, MG-20, compaction, remblai, pelle, rouleau, niveleuse.`,
-        },
-      },
+      providerOptions: transcriptionOptions(members),
     });
     return result.text.trim();
   } catch (error) {
@@ -234,6 +250,8 @@ export function assistantRequest(input: DictationInput) {
     messages: [{ role: "user" as const, content: assistantContent(input) }],
     // A quick, bounded reading task: low effort keeps the wait short.
     output_config: { effort: "low" as const, format: zodOutputFormat(dictationPatch) },
+    // The gateway's own field, beside the Messages API's (absent from the SDK's types).
+    providerOptions: { gateway: { only: CLAUDE_PROVIDERS } },
   };
 }
 

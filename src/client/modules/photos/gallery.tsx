@@ -19,6 +19,7 @@ import { cn } from "../../lib/cn";
 import { count } from "../../lib/format";
 import { navigate } from "../../lib/location";
 import { useOnline } from "../../lib/online";
+import { isNativeApp } from "../../native";
 import { useCurrentProject, useCurrentUser } from "../../lib/session";
 import { Page } from "../../shell/page";
 import {
@@ -681,12 +682,23 @@ function LocalSheet({ local, onClose }: { local: LocalPhoto | undefined; onClose
   }
 
   /** What the server would not take is not lost: the person keeps it on the phone. */
-  function save() {
+  async function save() {
     const file = local ? localFile(local.id) : null;
     if (!local || !file) return;
+    const name = `photo-${siteDay(local.takenAt)}-${local.id.slice(0, 6)}.jpg`;
+    if (isNativeApp()) {
+      // A download does nothing in the app: the share sheet saves it to Photos or Fichiers.
+      try {
+        const { shareFile } = await import("../../native/files");
+        await shareFile(new File([file], name, { type: file.type || "image/jpeg" }));
+      } catch {
+        toast.error("La copie n'a pas pu être faite. Réessayez.");
+      }
+      return;
+    }
     const link = document.createElement("a");
     link.href = URL.createObjectURL(file);
-    link.download = `photo-${siteDay(local.takenAt)}-${local.id.slice(0, 6)}.jpg`;
+    link.download = name;
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 60_000);
   }

@@ -1,9 +1,10 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
 
+import { DEMO_PHONE_TAKEN, isDemoPhone } from "@/server/access-code/demo";
 import { requireAdmin } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
 import { badRequest, body, forbidden, notFound, route } from "@/server/http";
-import { endAccess, settleSiteCodes } from "@/server/people/links";
+import { DEMO_MANAGED, endAccess, settleSiteCodes } from "@/server/people/links";
 import { officeLockout, personChange, personProblem } from "@/server/people/rules";
 
 /** The office changes someone's details, role, state or projects. */
@@ -12,6 +13,8 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
   const { projectIds, ...fields } = await body(request, personChange);
   const problem = personProblem(fields);
   if (problem) throw badRequest(problem);
+  // The demonstration's number belongs to no one: a person never shares it.
+  if (await isDemoPhone(fields.phone)) throw badRequest(DEMO_PHONE_TAKEN, "demo_phone");
   const changesAccess = fields.role !== undefined || fields.active !== undefined;
 
   await db.transaction(async (tx) => {
@@ -30,6 +33,9 @@ export const PATCH = route<{ id: string }>(async (request, { id }) => {
     const [user] = await tx.select().from(schema.users).where(eq(schema.users.id, id)).limit(1);
     // A deleted account is not brought back: the person makes a new one.
     if (!user || user.deletedAt) throw notFound("Personne introuvable.");
+    // Never a role, a number or projects other than the access gives it:
+    // the demonstration account is managed from its own card.
+    if (user.demo) throw forbidden(DEMO_MANAGED);
     if (office) {
       if (!office.some((account) => account.id === admin.id)) throw forbidden("Réservé au bureau.");
       const refusal = officeLockout({

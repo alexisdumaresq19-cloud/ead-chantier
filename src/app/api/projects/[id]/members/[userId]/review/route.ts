@@ -4,8 +4,8 @@ import { z } from "zod";
 import { projectToChange } from "@/server/access";
 import { requireUser } from "@/server/auth";
 import { db, schema } from "@/server/db/client";
-import { body, HttpError, route } from "@/server/http";
-import { endAccess } from "@/server/people/links";
+import { body, forbidden, HttpError, route } from "@/server/http";
+import { DEMO_REFUSED, endAccess } from "@/server/people/links";
 import { reviewRefusal } from "@/server/people/rules";
 
 /**
@@ -17,6 +17,7 @@ import { reviewRefusal } from "@/server/people/rules";
 export const POST = route<{ id: string; userId: string }>(async (request, { id, userId }) => {
   const user = await requireUser(request);
   await projectToChange(user, id);
+  if (user.demo) throw forbidden(DEMO_REFUSED);
   const { decision } = await body(request, z.object({ decision: z.enum(["confirm", "refuse"]) }));
 
   const deactivated = await db.transaction(async (tx) => {

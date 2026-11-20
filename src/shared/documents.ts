@@ -47,6 +47,12 @@ export type ProjectDocument = {
   addedAt: string;
   /** Name of the person who added it, if they are still known. */
   addedBy: string | null;
+  /**
+   * Whether the person asking added it. The demonstration account changes
+   * only what it added itself (src/shared/demo.ts); for anyone else the
+   * screens do not look at it.
+   */
+  addedByMe: boolean;
 };
 
 /** What GET /api/documents/:id/link answers. Never kept: it stops working within minutes. */

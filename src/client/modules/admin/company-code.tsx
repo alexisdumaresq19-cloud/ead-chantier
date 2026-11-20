@@ -18,8 +18,9 @@ import { api, errorMessage } from "../../lib/api";
 import { cn } from "../../lib/cn";
 import { count, formatDay } from "../../lib/format";
 import { queryClient } from "../../lib/query";
+import { isNativeApp } from "../../native";
 import { Badge, Button, Card, confirmAction, LogoFull, Sheet, Skeleton, toast } from "../../ui";
-import { canShare, LinkField, shareLink } from "./invite-link";
+import { canShareHere, LinkField, shareHere } from "./invite-link";
 import { pauseText } from "./people";
 import { QrCode } from "./qr";
 import { ShownError } from "./shown-error";
@@ -39,7 +40,7 @@ const useCompanyCode = () =>
     meta: { persist: false },
   });
 
-/** "Changé par Camille Roy le 20 novembre 2026." */
+/** "Code créé par Camille Roy le 20 novembre 2026." */
 const changedText = (code: CompanyCode) =>
   code.changedAt
     ? [
@@ -262,17 +263,19 @@ function CodeSheet({ code, open, onClose }: { code: string; open: boolean; onClo
       <div className="mt-4 space-y-2">
         <LinkField url={url} label="Lien pour créer son compte" />
         <div className="flex flex-wrap gap-2 *:flex-1">
-          {canShare() ? (
+          {canShareHere() ? (
             <Button
               variant="secondary"
-              onClick={() => shareLink({ title: "EAD Chantier", text: SHARE_TEXT(code), url })}
+              onClick={() => shareHere({ title: "EAD Chantier", text: SHARE_TEXT(code), url })}
             >
               <Share2 aria-hidden /> Partager
             </Button>
           ) : null}
-          <Button variant="secondary" onClick={() => window.print()}>
-            <Printer aria-hidden /> Imprimer l&apos;affiche
-          </Button>
+          {isNativeApp() ? null : (
+            <Button variant="secondary" onClick={() => window.print()}>
+              <Printer aria-hidden /> Imprimer l&apos;affiche
+            </Button>
+          )}
         </div>
       </div>
     </Sheet>

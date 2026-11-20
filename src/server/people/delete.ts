@@ -85,6 +85,7 @@ export async function deleteOwnAccount(userId: string): Promise<"kept" | "remove
         phone: null,
         email: null,
         joinedWith: null,
+        assistantConsentAt: null,
         lastSeenAt: null,
         deletedAt: new Date(),
       })

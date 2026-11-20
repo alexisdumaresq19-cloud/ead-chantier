@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { isProjectMember } from "@/server/access";
+import { isDemoPhone } from "@/server/access-code/demo";
 import {
   consumeInvite,
   currentUser,
@@ -19,6 +20,10 @@ import { db, schema } from "@/server/db/client";
 import { badRequest, body, forbidden, HttpError, route } from "@/server/http";
 import { newId } from "@/server/ids";
 import type { InvitePreview } from "@/shared/api";
+
+/** Said to a newcomer who typed the demonstration's number as their own. */
+const DEMO_PHONE_OWN =
+  "Ce numéro est celui de l'accès de démonstration. Entrez votre propre cellulaire, ou laissez le champ vide.";
 
 const expired = () =>
   new HttpError(
@@ -73,6 +78,7 @@ export const GET = route<{ token: string }>(async (request, { token }) => {
       kind: "personal",
       name: user.name,
       signedInAs: me && me.id !== user.id ? me.name : null,
+      codeWorks: Boolean(invite.codeHash && user.phone),
     } satisfies InvitePreview;
   }
   const [project] = await db
@@ -186,6 +192,8 @@ export const POST = route<{ token: string }>(async (request, { token }) => {
   // Someone new. A place is taken before the account exists, in one
   // statement, so a code never lets in more people than it has places.
   if (!name || name.length < 2) throw badRequest("Entrez votre prénom et votre nom.");
+  // Nobody of the team is given the demonstration's number (demo.ts).
+  if (phone && (await isDemoPhone(phone))) throw badRequest(DEMO_PHONE_OWN, "demo_phone");
   const session = await db.transaction(async (tx) => {
     if (!(await consumeInvite(invite, tx))) throw noPlace(invite);
     const userId = newId();

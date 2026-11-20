@@ -91,9 +91,17 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
-/** Every address is a screen of the app, except the API, files and code. */
+/**
+ * Every address is a screen of the app, except the API, files and code, and
+ * the pages the server writes itself for anyone to read (the privacy policy,
+ * the support page, what Apple reads under /.well-known).
+ */
 function isAppAddress(pathname) {
-  return !/^\/(api|files|_next)\//.test(pathname) && !/\.[a-z0-9]+$/i.test(pathname);
+  return (
+    !/^\/(api|files|_next|\.well-known)\//.test(pathname) &&
+    !/^\/(confidentialite|soutien)\/?$/.test(pathname) &&
+    !/\.[a-z0-9]+$/i.test(pathname)
+  );
 }
 
 /** The tab's icon, the home screen's and the manifest: the page asks for them at every launch. */

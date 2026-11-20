@@ -5,6 +5,7 @@ import type { DocumentCategory, ProjectDocument } from "@/shared/documents";
 import {
   addDrafts,
   canChangeDocuments,
+  canManageDocument,
   formatAdded,
   groupDocuments,
   matchesSearch,
@@ -24,6 +25,7 @@ const doc = (
   size: 1000,
   addedAt,
   addedBy: "Julie Cyr",
+  addedByMe: false,
 });
 
 describe("canChangeDocuments", () => {
@@ -166,5 +168,24 @@ describe("addDrafts", () => {
       "Devis signé",
       "Permis",
     ]);
+  });
+});
+
+describe("canManageDocument", () => {
+  const visitor = { id: "demo", demo: true };
+  const foreman = { id: "julie", demo: false };
+  const theirs = { addedByMe: false };
+  const mine = { addedByMe: true };
+
+  it("lets the demonstration account manage only what it added itself", () => {
+    expect(canManageDocument(visitor, mine)).toBe(true);
+    expect(canManageDocument(visitor, theirs)).toBe(false);
+    // A list kept on the device from before the server said so: nothing offered.
+    expect(canManageDocument(visitor, {} as { addedByMe: boolean })).toBe(false);
+  });
+
+  it("changes nothing for anyone else", () => {
+    expect(canManageDocument(foreman, theirs)).toBe(true);
+    expect(canManageDocument({ id: "marc" }, theirs)).toBe(true);
   });
 });

@@ -16,7 +16,7 @@ const patch = z.object({ title: documentTitle, category: documentCategory }).par
 export const PATCH = route<{ id: string }>(async (request, { id }) => {
   const user = await requireUser(request);
   await documentToChange(user, id);
-  return updateDocument(id, await body(request, patch));
+  return updateDocument(user.id, id, await body(request, patch));
 });
 
 /** Archives the document: the site no longer sees it. The project must be open. */

@@ -15,6 +15,14 @@ export type Me = {
    * few days. Missing from what a device stored before it was sent.
    */
   unreviewed?: boolean;
+  /** The demonstration account (see users.demo). Missing means no. */
+  demo?: boolean;
+  /**
+   * The person agreed that the report's assistant sends their voice, their
+   * texts and the report's photos to an AI service. Missing (a device that
+   * stored an older answer) means not yet.
+   */
+  assistantConsent?: boolean;
 };
 
 /** How someone made their own account: "company_code", the company's code. */
@@ -66,6 +74,8 @@ export type Member = {
    * still to confirm, to those who may confirm them. Missing means null.
    */
   joinedWith?: JoinedWith | null;
+  /** The demonstration account (see users.demo). Missing means no. */
+  demo?: boolean;
 };
 
 /** A member as GET /api/projects/:id/members gives them. */
@@ -101,6 +111,12 @@ export type InvitePreview =
        * before the link can be used (it is refused until then).
        */
       signedInAs: string | null;
+      /**
+       * A code for the iPhone app came with this link and can be typed
+       * there: the person has a cell number on file, which the code goes
+       * with. Opening the link uses that code up.
+       */
+      codeWorks: boolean;
     }
   | {
       kind: "project";
@@ -119,7 +135,20 @@ export type InvitePreview =
       projectId: string | null;
     };
 
-export type InviteLink = { url: string; expiresAt: string };
+export type InviteLink = {
+  url: string;
+  expiresAt: string;
+  /**
+   * A personal link's code: typed with the person's cell number, it does
+   * what the link does, once (src/shared/access.ts). A site's QR code has none.
+   */
+  code?: string;
+  /**
+   * With a code: the link that installs the iPhone app, which no search in
+   * the App Store finds (src/server/app-store.ts); null while none is set.
+   */
+  appStoreUrl?: string | null;
+};
 
 export type UploadTicket = {
   uploadId: string;

@@ -1,0 +1,184 @@
+<!doctype html>
+<!--
+  Shown by the iPhone app when a page of the site cannot be loaded at all
+  (capacitor.config.ts, server.errorPath). Carried by the app itself, so it
+  stands alone: no request, no file of the site. ios-shell/build.mjs fills in
+  the site's address and the logo.
+-->
+<html lang="fr-CA">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>EAD</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        background: #0b0d10;
+        color: #ffffff;
+        font-family: -apple-system, system-ui, sans-serif;
+        -webkit-text-size-adjust: 100%;
+        -webkit-font-smoothing: antialiased;
+      }
+      body {
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+          max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      img {
+        width: 168px;
+        height: auto;
+      }
+      h1 {
+        margin: 48px 0 12px;
+        font-size: 34px;
+        line-height: 1.15;
+        font-weight: 700;
+      }
+      p {
+        margin: 0;
+        max-width: 22em;
+        font-size: 19px;
+        line-height: 1.45;
+        color: #b9c1cc;
+      }
+      footer {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+      }
+      button {
+        width: 100%;
+        max-width: 420px;
+        min-height: 60px;
+        border: 0;
+        border-radius: 14px;
+        background: #226995;
+        color: #ffffff;
+        font: inherit;
+        font-size: 21px;
+        font-weight: 600;
+        -webkit-tap-highlight-color: transparent;
+      }
+      button:active {
+        background: #1b5378;
+      }
+      button:disabled {
+        opacity: 0.6;
+      }
+      #status {
+        min-height: 1.5em;
+        margin: 14px 0 0;
+        font-size: 17px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <img src="__EAD_LOGO__" width="752" height="560" alt="Les Entreprises Allen Dumaresq" />
+      <h1>Pas de connexion</h1>
+      <p>
+        L'app n'arrive pas à joindre le serveur. Vérifiez le Wi-Fi ou le réseau cellulaire, puis
+        réessayez.
+      </p>
+    </main>
+    <footer>
+      <button id="retry" type="button">Réessayer</button>
+      <p id="status" role="status"></p>
+    </footer>
+    <script>
+      const SITE = "__EAD_SITE__";
+      const button = document.getElementById("retry");
+      const status = document.getElementById("status");
+      let trying = false;
+
+      // The page that failed, as the app passes it after "#" (EADViewController's
+      // NavigationFilter), e.g. #/i/abc: once the network is back, the person
+      // lands where the link was going. Only a path of the site is taken.
+      function returnPath() {
+        let from = "/";
+        try {
+          from = decodeURIComponent(location.hash.slice(1)) || "/";
+        } catch {}
+        return /^\/(?![\/\\])[^\s\\#]*$/.test(from) ? from : "/";
+      }
+
+      // The app's launch logo stays until a page says it is drawn.
+      try {
+        window.Capacitor?.nativePromise?.("SplashScreen", "hide", {}).catch(() => {});
+      } catch {}
+
+      // Any answer from the server, even one this page may not read, means the
+      // network is back. A request that hangs counts as no network.
+      async function reachable() {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        try {
+          await fetch(SITE + "/api/version", {
+            mode: "no-cors",
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          return true;
+        } catch {
+          return false;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function retry(quiet) {
+        if (trying) return;
+        trying = true;
+        if (!quiet) {
+          button.disabled = true;
+          button.textContent = "Connexion…";
+          status.textContent = "";
+        }
+        if (await reachable()) {
+          // Replaced, so a swipe back never lands on this page again.
+          location.replace(SITE + returnPath());
+          return;
+        }
+        trying = false;
+        button.disabled = false;
+        button.textContent = "Réessayer";
+        if (!quiet) status.textContent = "Toujours pas de connexion. Réessayez dans un moment.";
+      }
+
+      button.addEventListener("click", () => retry(false));
+      window.addEventListener("online", () => retry(true));
+
+      // This page also comes up when a load only stumbled while the network
+      // was fine: then it goes straight back, at most once in 30 seconds, so
+      // a site that keeps failing cannot bounce between the two.
+      const KEY = "ead-offline-returned-at";
+      let returnedAt = 0;
+      try {
+        returnedAt = Number(sessionStorage.getItem(KEY)) || 0;
+      } catch {}
+      if (Date.now() - returnedAt > 30000) {
+        try {
+          sessionStorage.setItem(KEY, String(Date.now()));
+        } catch {}
+        retry(true);
+      }
+    </script>
+  </body>
+</html>

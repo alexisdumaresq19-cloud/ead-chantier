@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Ellipsis, Pencil, Trash2, type LucideIcon } from "lucide-react";
+import { Ellipsis, Eye, Pencil, Trash2, type LucideIcon } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "wouter";
 
@@ -24,10 +24,12 @@ import {
 } from "../../ui";
 import { BottomBar } from "./bar";
 import {
+  DEMO_REPORT_TEXT,
   reportKeys,
   reportsPath,
   useCanChangeReports,
   useDayPhotos,
+  useMayChangeReport,
   useReport,
   useStillShown,
 } from "./data";
@@ -36,6 +38,7 @@ import { ReportMissing } from "./missing";
 import { PdfButton, PdfLink } from "./pdf";
 import { stillOnDevice, useReportPhotos, type ReportPhoto } from "./photos";
 import { ReportPhotoGrid, ReportPhotoSheet } from "./report-photos";
+import { Notice } from "./status";
 import { WeatherLine } from "./weather";
 
 // Reading a report: laid out as the document it is, its photos included, with
@@ -70,6 +73,7 @@ function ReportView({ reportId }: { reportId: string }) {
   const dayPhotos = useDayPhotos(project.id, report.data?.day);
   const stillShown = useStillShown();
   const canChange = useCanChangeReports();
+  const mayChange = useMayChangeReport(report.data);
   const base = reportsPath(project.id);
   const [menu, setMenu] = useState(false);
   // What came with the report, and since when: a photo still leaving this
@@ -107,7 +111,11 @@ function ReportView({ reportId }: { reportId: string }) {
   if (report.error instanceof ApiFailure && report.error.status === 404) return <ReportMissing />;
 
   const shown = report.data;
-  const canDelete = Boolean(shown?.canDelete && canChange);
+  // The project takes changes, but this report is not the demonstration
+  // account's own: it reads it and shares its PDF, and the page says why
+  // there is nothing more.
+  const readOnly = canChange && shown !== undefined && !mayChange;
+  const canDelete = Boolean(shown?.canDelete && mayChange);
   const others = dayPhotos.data?.filter((photo) => !shown?.photoIds.includes(photo.id)) ?? [];
   return (
     <Page
@@ -126,7 +134,7 @@ function ReportView({ reportId }: { reportId: string }) {
           <>
             {/* A computer has the room for every button; a phone keeps the rare ones in a menu. */}
             <div className="hidden items-center gap-2 lg:flex">
-              {canChange ? (
+              {mayChange ? (
                 <ButtonLink href={`${base}/${reportId}/modifier`} variant="secondary">
                   <Pencil aria-hidden /> Modifier
                 </ButtonLink>
@@ -168,6 +176,13 @@ function ReportView({ reportId }: { reportId: string }) {
       >
         {(loaded) => (
           <>
+            {readOnly ? (
+              <div className="no-print mb-3">
+                <Notice tone="neutral" icon={<Eye aria-hidden />}>
+                  {DEMO_REPORT_TEXT}
+                </Notice>
+              </div>
+            ) : null}
             <ReportDocument
               report={loaded}
               project={project}
@@ -185,7 +200,7 @@ function ReportView({ reportId }: { reportId: string }) {
                 pending={pending}
                 className="flex-1"
               />
-              {canChange ? (
+              {mayChange ? (
                 <ButtonLink
                   href={`${base}/${reportId}/modifier`}
                   variant="secondary"

@@ -45,3 +45,14 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 !.env.example
+
+# the iPhone app (ios/): what a build makes, and what signs it. Apple's keys
+# never go in the repository.
+/ios-shell/dist/
+/ios/App/build/
+*.xcarchive
+*.ipa
+*.p8
+*.p12
+*.mobileprovision
+private_keys/
