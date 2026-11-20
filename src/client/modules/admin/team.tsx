@@ -4,7 +4,7 @@ import { useId, useLayoutEffect, useRef, useState, type FormEvent } from "react"
 import { Link, useSearchParams } from "wouter";
 
 import type { InviteLink, Person, ProjectSummary } from "@/shared/api";
-import { isAdmin, ROLE_LABELS } from "@/shared/roles";
+import { isAdmin } from "@/shared/roles";
 
 import { api } from "../../lib/api";
 import { cn } from "../../lib/cn";
@@ -25,9 +25,24 @@ import {
 } from "../../ui";
 import { refreshPeople, usePeople } from "./data";
 import { InviteLinkPanel } from "./invite-link";
+import { Meta } from "./meta";
 import { OfficeOnly } from "./office-only";
-import { firstName, lastSeenText, matchesPerson, sortPeople, UNREVIEWED_RULE } from "./people";
-import { NEW_PERSON, personBody, PersonFields, type PersonForm } from "./person-fields";
+import {
+  firstName,
+  lastSeenText,
+  matchesPerson,
+  roleAndTitle,
+  sortPeople,
+  UNREVIEWED_RULE,
+} from "./people";
+import {
+  focusName,
+  NEW_PERSON,
+  nameProblem,
+  personBody,
+  PersonFields,
+  type PersonForm,
+} from "./person-fields";
 import { PersonView } from "./person";
 import { ShownError } from "./shown-error";
 
@@ -248,6 +263,7 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
         : "Aucun projet";
   const devices = person.deviceCount > 0 ? count(person.deviceCount, "appareil") : "Aucun appareil";
   const seen = lastSeenText(person.lastSeenAt);
+  const { role, title } = roleAndTitle(person);
   return (
     <Link
       href={`/equipe?personne=${person.id}`}
@@ -270,23 +286,18 @@ function PersonRow({ person, onOpen }: { person: Person; onOpen: () => void }) {
             ) : null}
             {person.active ? null : <Badge>Accès désactivé</Badge>}
           </span>
-          <span className="text-dim block text-sm wrap-anywhere lg:hidden">
-            {[ROLE_LABELS[person.role], person.title].filter(Boolean).join(" · ")}
-          </span>
-          <span className="text-dim block text-sm lg:hidden">
-            {/* "Jamais connecté" already says there is no device. On a narrow
-                phone the line breaks between two facts, never inside one. */}
-            {[projects, person.lastSeenAt ? devices : null, seen]
-              .filter((fact) => fact !== null)
-              .map((fact) => fact.replaceAll(" ", "\u00a0"))
-              .join(" · ")}
-          </span>
-          {person.title ? (
-            <span className="text-dim hidden text-sm wrap-anywhere lg:block">{person.title}</span>
+          <Meta items={[role, title]} className="text-dim text-sm wrap-anywhere lg:hidden" />
+          {/* "Jamais connecté" already says there is no device. */}
+          <Meta
+            items={[projects, person.lastSeenAt ? devices : null, seen]}
+            className="text-dim text-sm lg:hidden"
+          />
+          {title ? (
+            <span className="text-dim hidden text-sm wrap-anywhere lg:block">{title}</span>
           ) : null}
         </span>
       </span>
-      <span className="hidden text-sm lg:block">{ROLE_LABELS[person.role]}</span>
+      <span className="hidden text-sm lg:block">{role}</span>
       <span className="text-dim hidden text-sm lg:block">{projects}</span>
       <span className="text-dim hidden text-sm lg:block">{devices}</span>
       <span className="text-dim hidden text-sm lg:block">{seen}</span>
@@ -307,6 +318,7 @@ function AddPersonSheet({
 }) {
   const formId = useId();
   const [form, setForm] = useState<PersonForm>(NEW_PERSON);
+  const [checked, setChecked] = useState(false);
   // The link lives here only: closing the window lets go of it for good.
   const [invited, setInvited] = useState<{ person: PersonForm; link: InviteLink } | null>(null);
   const create = useMutation({
@@ -326,6 +338,7 @@ function AddPersonSheet({
 
   const startOver = () => {
     setForm(NEW_PERSON);
+    setChecked(false);
     setInvited(null);
     create.reset();
   };
@@ -333,8 +346,10 @@ function AddPersonSheet({
     startOver();
     onClose();
   };
-  const submit = (event: FormEvent) => {
+  const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setChecked(true);
+    if (nameProblem(form)) return focusName(event.currentTarget);
     create.mutate();
   };
 
@@ -383,9 +398,15 @@ function AddPersonSheet({
         </>
       }
     >
-      <form id={formId} onSubmit={submit} className="space-y-4">
+      <form id={formId} onSubmit={submit} noValidate className="space-y-4">
         {/* The name is what the office is about to type, for the first person and the next. */}
-        <PersonFields form={form} onChange={setForm} projects={projects} focusName />
+        <PersonFields
+          form={form}
+          onChange={setForm}
+          projects={projects}
+          focusName
+          nameError={checked ? nameProblem(form) : null}
+        />
         <ShownError error={create.error} />
       </form>
     </Sheet>

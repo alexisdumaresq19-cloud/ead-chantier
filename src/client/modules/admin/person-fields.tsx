@@ -34,6 +34,16 @@ const ROLE_HINTS: Record<Role, string> = {
   admin: "Voit tous les projets et gère les personnes.",
 };
 
+/** Why the form cannot be sent yet, said under the name; null when it can. */
+export const nameProblem = (form: PersonForm) =>
+  form.name.trim().length < 2 ? "Inscrivez le nom de la personne." : null;
+
+/** Sends the cursor to the name, whose message is under it. */
+export function focusName(form: HTMLFormElement) {
+  const field = form.elements.namedItem("person-name");
+  if (field instanceof HTMLElement) field.focus();
+}
+
 /** What the server receives: the office sees every project, so it is given none. */
 export const personBody = (form: PersonForm) => ({
   name: form.name,
@@ -50,6 +60,7 @@ export function PersonFields({
   projects,
   roleLocked,
   focusName,
+  nameError,
 }: {
   form: PersonForm;
   onChange: (form: PersonForm) => void;
@@ -58,18 +69,20 @@ export function PersonFields({
   roleLocked?: string;
   /** The name field takes the focus when the form appears. */
   focusName?: boolean;
+  /** Shown under the name once the form was sent without one. */
+  nameError?: string | null;
 }) {
   const set =
     (key: "name" | "title" | "phone" | "email") => (event: { target: { value: string } }) =>
       onChange({ ...form, [key]: event.target.value });
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      <Field label="Prénom et nom" className="sm:col-span-2">
+      <Field label="Prénom et nom" error={nameError} className="sm:col-span-2">
         <Input
+          name="person-name"
           value={form.name}
           onChange={set("name")}
-          required
-          minLength={2}
+          aria-invalid={Boolean(nameError) || undefined}
           maxLength={80}
           autoComplete="off"
           autoCapitalize="words"
@@ -79,7 +92,11 @@ export function PersonFields({
           autoFocus={focusName}
         />
       </Field>
-      <Field label="Rôle" hint={roleLocked ?? ROLE_HINTS[form.role]} className="sm:col-span-2">
+      <Field
+        label="Accès dans l'application"
+        hint={roleLocked ?? ROLE_HINTS[form.role]}
+        className="sm:col-span-2"
+      >
         <Select
           value={form.role}
           onChange={(event) => onChange({ ...form, role: event.target.value as Role })}
@@ -92,14 +109,13 @@ export function PersonFields({
           ))}
         </Select>
       </Field>
-      <Field label="Titre" optional className="sm:col-span-2">
-        <Input
-          value={form.title}
-          onChange={set("title")}
-          placeholder="Opérateur de pelle"
-          maxLength={80}
-          autoComplete="off"
-        />
+      <Field
+        label="Métier ou poste"
+        optional
+        hint={"Affiché à l'équipe. Ex.\u00a0: Opérateur de pelle"}
+        className="sm:col-span-2"
+      >
+        <Input value={form.title} onChange={set("title")} maxLength={80} autoComplete="off" />
       </Field>
       <Field label="Cellulaire" optional>
         <Input

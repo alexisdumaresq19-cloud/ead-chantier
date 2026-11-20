@@ -135,10 +135,14 @@ test("a worker adds a photo from the screen and finds it under today", async ({ 
   await expect(page.getByRole("heading", { name: "Aucune photo pour l'instant" })).toBeVisible();
 
   await pickPhoto(page);
-  await expect(page.getByRole("textbox", { name: /^Photo ajoutée/ })).toBeVisible();
-  await page.locator("#batch-caption").fill("Regard 3, côté nord");
-  await page.getByRole("button", { name: "OK" }).click();
+  // A window over the gallery, which stays where it is.
+  const added = page.getByRole("dialog", { name: "Photo ajoutée" });
+  await expect(added).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`/projets/${project.id}/photos$`));
+  await added.getByLabel("Description").fill("Regard 3, côté nord");
+  await answer(page, "Photo ajoutée", "Terminé");
   await expect(page.getByText("Description ajoutée.")).toBeVisible();
+  await expect(added).toHaveCount(0);
 
   const group = page.getByRole("region", { name: "Aujourd'hui" });
   await expect(group.getByRole("button", { name: "Regard 3, côté nord" })).toBeVisible();
@@ -156,6 +160,46 @@ test("a worker adds a photo from the screen and finds it under today", async ({ 
   const [used] =
     await sql`select id from uploads where project_id = ${project.id} and kind = 'photo'`;
   expect(existsSync(`${STORAGE}/private/u/${used.id}`)).toBe(false);
+  await project.close();
+});
+
+test("photos come in bursts: the next one is taken from the window, each with its own description", async ({
+  browser,
+}) => {
+  const project = await newProject(browser, "rafale");
+  const page = await project.foreman.newPage();
+  await page.goto(`/projets/${project.id}/photos`);
+  await expect(page.getByRole("button", { name: "Calendrier" })).toHaveCount(0);
+  if (test.info().project.name === "phone")
+    await expect(page.getByText("De la galerie", { exact: true })).toBeVisible();
+
+  await pickPhoto(page, "IMG_1.jpg");
+  const added = page.getByRole("dialog", { name: "Photo ajoutée" });
+  await expect(added).toBeVisible();
+  await added.getByLabel("Description").fill("Tranchée, côté est");
+  // The window's own button takes the next photo (the camera on a phone).
+  await page.waitForTimeout(450);
+  await added
+    .getByLabel(/Une autre photo|D'autres photos/)
+    .setInputFiles({ name: "IMG_2.jpg", mimeType: "image/jpeg", buffer: await jpeg() });
+  await expect(page.getByText("Description ajoutée.")).toBeVisible();
+  // Still the same window, for the new photo, with an empty field.
+  await expect(added).toBeVisible();
+  await expect(added.getByLabel("Description")).toHaveValue("");
+  await answer(page, "Photo ajoutée", "Terminé");
+  await expect(added).toHaveCount(0);
+
+  const today = page.getByRole("region", { name: "Aujourd'hui" });
+  await expect(today.getByText("2 photos", { exact: true })).toBeVisible();
+  await expect(today.getByRole("button", { name: "Tranchée, côté est" })).toBeVisible();
+  await expect
+    .poll(async () =>
+      (await photosOf(project.foreman, project.id)).map((photo) => photo.caption ?? "").sort(),
+    )
+    .toEqual(["", "Tranchée, côté est"]);
+  // With photos, the days are reached through the calendar.
+  await page.getByRole("button", { name: "Calendrier" }).click();
+  await expect(page.getByRole("dialog", { name: "Photos par jour" })).toBeVisible();
   await project.close();
 });
 
@@ -195,13 +239,27 @@ test("the large view closes with the back button where the grid was; its author 
   // Its author describes it, then removes it.
   await page.goto(`/projets/${project.id}/photos?photo=${own.id}`);
   await expect(viewer(page)).toBeVisible();
-  await viewer(page).getByRole("button", { name: "Description" }).click();
+  // Without a description, the photo invites one, in passing; the actions keep
+  // their order, removing last.
+  await expect(
+    viewer(page).getByRole("button", { name: "Ajouter une description…" }),
+  ).toBeVisible();
+  await expect(viewer(page).locator("footer button")).toHaveText([
+    "Ajouter une description…",
+    "Description",
+    /Télécharger|Partager/,
+    "Supprimer",
+  ]);
+  await viewer(page).getByRole("button", { name: "Ajouter une description…" }).click();
   const sheet = page.getByRole("dialog", { name: "Description de la photo" });
   await expect(sheet.getByRole("textbox")).toBeFocused();
   await page.keyboard.type("Fissure dans la dalle");
   await answer(page, "Description de la photo", "Enregistrer");
   await expect(page.getByText("Description enregistrée.")).toBeVisible();
   await expect(viewer(page).getByText("Fissure dans la dalle")).toBeVisible();
+  await expect(viewer(page).getByRole("button", { name: "Ajouter une description…" })).toHaveCount(
+    0,
+  );
   expect((await call(project.foreman.request, "GET", `/api/photos/${own.id}`)).body.caption).toBe(
     "Fissure dans la dalle",
   );
@@ -241,7 +299,10 @@ test("a worker cannot change someone else's photo; the foreman can remove it", a
   await expect(viewer(page).getByText("Coffrage avant coulée")).toBeVisible();
   await expect(viewer(page).getByRole("button", { name: /Télécharger|Partager/ })).toBeVisible();
   await expect(viewer(page).getByRole("button", { name: "Supprimer" })).toHaveCount(0);
-  await expect(viewer(page).getByRole("button", { name: "Description" })).toHaveCount(0);
+  await expect(viewer(page).getByRole("button", { name: "Description", exact: true })).toHaveCount(
+    0,
+  );
+  await expect(viewer(page).getByText("Ajouter une description…")).toHaveCount(0);
 
   const desk = await project.foreman.newPage();
   await desk.goto(`/projets/${project.id}/photos?photo=${theirs.id}`);
@@ -453,8 +514,9 @@ async function takeOffline(page: Page, context: BrowserContext, caption: string)
   await expect(page.locator('input[type="file"]').first()).toBeAttached();
   await context.setOffline(true);
   await pickPhoto(page);
-  await page.locator("#batch-caption").fill(caption);
-  await page.getByRole("button", { name: "OK" }).click();
+  await expect(page.getByRole("dialog", { name: "Photo ajoutée" })).toContainText("Pas de réseau");
+  await page.getByRole("dialog").getByLabel("Description").fill(caption);
+  await answer(page, "Photo ajoutée", "Terminé");
   await expect(page.getByText("1 photo en attente d'envoi")).toBeVisible();
   await expect(
     page.getByText("partira dès que le réseau reviendra", { exact: false }),

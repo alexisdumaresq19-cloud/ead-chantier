@@ -10,6 +10,16 @@ import { enterApp, signOut, useMe } from "../../lib/session";
 import { PublicLayout } from "../../shell/public-layout";
 import { Button, ButtonLink, Field, FormError, Input, Spinner } from "../../ui";
 
+/** What a name needs before it is sent: the server asks for two letters at least. */
+const NAME_MISSING = "Inscrivez votre prénom et votre nom.";
+const nameMissing = (name: string) => name.trim().length < 2;
+
+/** Puts the cursor in the field that needs something, with its message under it. */
+function focusField(event: FormEvent<HTMLFormElement>, name: string) {
+  const field = event.currentTarget.elements.namedItem(name);
+  if (field instanceof HTMLElement) field.focus();
+}
+
 // The screens seen before signing in. Nobody has a password: a person comes
 // in with the personal link the office sent, or with a site's QR code.
 
@@ -78,6 +88,7 @@ function Way({ icon, title, children }: { icon: ReactNode; title: string; childr
 export function SetupScreen() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [checked, setChecked] = useState(false);
   const setup = useQuery({
     queryKey: ["setup"],
     queryFn: () => api<{ needed: boolean }>("/api/setup"),
@@ -103,8 +114,13 @@ export function SetupScreen() {
     );
   }
 
-  const submit = (event: FormEvent) => {
+  const nameError = checked && nameMissing(name) ? "Inscrivez votre nom." : null;
+  const codeError = checked && !code.trim() ? "Inscrivez le code de démarrage." : null;
+  const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setChecked(true);
+    if (nameMissing(name)) return focusField(event, "name");
+    if (!code.trim()) return focusField(event, "code");
     create.mutate();
   };
   return (
@@ -113,25 +129,30 @@ export function SetupScreen() {
         Créez le premier compte du bureau. Vous inviterez ensuite votre équipe à partir de
         l&apos;application.
       </Heading>
-      <form onSubmit={submit} className="mt-6 space-y-4">
-        <Field label="Votre nom">
+      <form onSubmit={submit} noValidate className="mt-6 space-y-4">
+        <Field label="Votre nom" error={nameError}>
           <Input
+            name="name"
             value={name}
             onChange={(event) => setName(event.target.value)}
             autoComplete="name"
-            required
-            minLength={2}
             maxLength={80}
+            aria-invalid={Boolean(nameError) || undefined}
           />
         </Field>
-        <Field label="Code de démarrage" hint="Le code fourni à l'installation de l'application.">
+        <Field
+          label="Code de démarrage"
+          hint="Le code fourni à l'installation de l'application."
+          error={codeError}
+        >
           <Input
+            name="code"
             value={code}
             onChange={(event) => setCode(event.target.value)}
             autoComplete="off"
             autoCapitalize="none"
             spellCheck={false}
-            required
+            aria-invalid={Boolean(codeError) || undefined}
           />
         </Field>
         <FormError>{create.isError ? errorMessage(create.error) : null}</FormError>
@@ -146,8 +167,10 @@ export function SetupScreen() {
 /** What a personal link (/i/…) or a site QR code (/j/…) opens. */
 export function InviteScreen() {
   const { token } = useParams<{ token: string }>();
+  const me = useMe();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [checked, setChecked] = useState(false);
   const invite = useQuery({
     queryKey: ["invite", token],
     queryFn: () => api<InvitePreview>(`/api/invites/${token}`),
@@ -163,8 +186,13 @@ export function InviteScreen() {
     onSuccess: (result) => enterApp(result.projectId ? `/projets/${result.projectId}` : "/"),
   });
   const busy = accept.isPending || accept.isSuccess;
-  const submit = (event: FormEvent) => {
+  // Only a site's code asks for a name, and only of someone not signed in.
+  const asksName = invite.data?.kind === "project" && !invite.data.signedInAs;
+  const nameError = asksName && checked && nameMissing(name) ? NAME_MISSING : null;
+  const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setChecked(true);
+    if (asksName && nameMissing(name)) return focusField(event, "name");
     accept.mutate();
   };
   // Signing out comes back to this same link, which then offers to enter.
@@ -184,29 +212,48 @@ export function InviteScreen() {
     // A link the server refused stays refused: trying again is only offered
     // when the answer did not come (no network, a server error).
     const dead = failure !== null && failure.status === 410;
-    const title = failure?.offline
-      ? "Pas de réseau"
-      : failure?.code === "invite_full"
-        ? "Ce code QR est complet"
-        : dead
-          ? "Ce lien ne fonctionne plus"
-          : "Ce lien n'a pas pu s'ouvrir";
+    const full = failure?.code === "invite_full";
+    // A site's code (/j/…) and a personal link (/i/…) are not asked for again
+    // from the same person: each says whom to ask.
+    const siteCode = window.location.pathname.startsWith("/j/");
+    const [title, text] = failure?.offline
+      ? [
+          "Pas de réseau",
+          "Ce lien a besoin du réseau pour s'ouvrir. Réessayez quand la connexion revient.",
+        ]
+      : full
+        ? ["Ce code QR est complet", errorMessage(invite.error)]
+        : dead && siteCode
+          ? [
+              "Ce code QR ne fonctionne plus",
+              "Demandez à votre contremaître d'afficher le code de la semaine.",
+            ]
+          : dead
+            ? [
+                "Ce lien ne fonctionne plus",
+                "Il a déjà servi ou il a expiré. Demandez un nouveau lien au bureau.",
+              ]
+            : ["Ce lien n'a pas pu s'ouvrir", errorMessage(invite.error)];
+    // The app only opens for a device that is signed in; anyone else learns the ways in.
+    const signedIn = Boolean(me.data);
     return (
       <PublicLayout>
-        <Heading title={title}>
-          {failure?.offline
-            ? "Ce lien a besoin du réseau pour s'ouvrir. Réessayez quand la connexion revient."
-            : errorMessage(invite.error)}
-        </Heading>
+        <Heading title={title}>{text}</Heading>
         <div className="mt-6 flex flex-col gap-2">
           {dead ? null : (
             <Button size="lg" block loading={invite.isFetching} onClick={() => invite.refetch()}>
               Réessayer
             </Button>
           )}
-          <ButtonLink href="/" variant={dead ? "primary" : "ghost"} size="lg" block>
-            Ouvrir l&apos;application
-          </ButtonLink>
+          {signedIn ? (
+            <ButtonLink href="/" variant={dead ? "primary" : "ghost"} size="lg" block>
+              Ouvrir l&apos;application
+            </ButtonLink>
+          ) : (
+            <ButtonLink href="/bienvenue" variant={dead ? "secondary" : "ghost"} size="lg" block>
+              Comment entrer?
+            </ButtonLink>
+          )}
         </div>
       </PublicLayout>
     );
@@ -305,18 +352,18 @@ export function InviteScreen() {
           ? `Vous êtes connecté sous le nom de ${preview.signedInAs}. Ajoutez ce projet à votre liste.`
           : "Inscrivez votre nom pour voir les plans et les documents de ce chantier."}
       </Heading>
-      <form onSubmit={submit} className="mt-6 space-y-4">
+      <form onSubmit={submit} noValidate className="mt-6 space-y-4">
         {preview.signedInAs ? null : (
           <>
-            <Field label="Prénom et nom">
+            <Field label="Prénom et nom" error={nameError}>
               <Input
+                name="name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 autoComplete="name"
                 autoCapitalize="words"
-                required
-                minLength={2}
                 maxLength={80}
+                aria-invalid={Boolean(nameError) || undefined}
               />
             </Field>
             <Field label="Cellulaire" optional>

@@ -48,6 +48,19 @@ const formOf = (project: ProjectDetail): ProjectForm => ({
   description: project.description ?? "",
 });
 
+/** The only field a project needs; said under it, in place of the browser's own bubble. */
+const nameProblem = (form: ProjectForm) =>
+  form.name.trim().length < 2 ? "Inscrivez le nom du projet." : null;
+
+/** Sends the form, or points at the name when it is missing. */
+function checkName(event: FormEvent<HTMLFormElement>, form: ProjectForm): boolean {
+  event.preventDefault();
+  if (!nameProblem(form)) return true;
+  const field = event.currentTarget.elements.namedItem("project-name");
+  if (field instanceof HTMLElement) field.focus();
+  return false;
+}
+
 const sameForm = (a: ProjectForm, b: ProjectForm) =>
   (Object.keys(a) as (keyof ProjectForm)[]).every((key) => a[key].trim() === b[key].trim());
 
@@ -55,34 +68,40 @@ function ProjectFields({
   form,
   onChange,
   autoFocus,
+  checked,
 }: {
   form: ProjectForm;
   onChange: (form: ProjectForm) => void;
   autoFocus?: boolean;
+  /** The form was sent once: what is missing is said. */
+  checked: boolean;
 }) {
+  const nameError = checked ? nameProblem(form) : null;
   const set = (key: keyof ProjectForm) => (event: { target: { value: string } }) =>
     onChange({ ...form, [key]: event.target.value });
   return (
+    // The name first: it is all a new project needs.
     <div className="grid gap-4 sm:grid-cols-3">
+      <Field label="Nom du projet" error={nameError} className="sm:col-span-2">
+        <Input
+          name="project-name"
+          value={form.name}
+          onChange={set("name")}
+          aria-invalid={Boolean(nameError) || undefined}
+          maxLength={120}
+          autoComplete="off"
+          data-autofocus={autoFocus || undefined}
+          autoFocus={autoFocus}
+        />
+      </Field>
       <Field label="Numéro" optional>
         <Input
           value={form.number}
           onChange={set("number")}
-          placeholder="24-118"
+          placeholder={"Ex.\u00a0: 25-012"}
           maxLength={40}
           autoComplete="off"
           autoCapitalize="characters"
-          autoFocus={autoFocus}
-        />
-      </Field>
-      <Field label="Nom du projet" className="sm:col-span-2">
-        <Input
-          value={form.name}
-          onChange={set("name")}
-          required
-          minLength={2}
-          maxLength={120}
-          autoComplete="off"
         />
       </Field>
       <Field label="Client" optional className="sm:col-span-3">
@@ -114,6 +133,7 @@ function ProjectFields({
 export function NewProjectScreen() {
   const me = useCurrentUser();
   const [form, setForm] = useState(EMPTY);
+  const [checked, setChecked] = useState(false);
   const create = useMutation({
     mutationFn: () => api<ProjectSummary>("/api/projects", { method: "POST", body: form }),
     onSuccess: async (project) => {
@@ -126,9 +146,9 @@ export function NewProjectScreen() {
   });
   if (!isAdmin(me.role)) return <OfficeOnly title="Nouveau projet" />;
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    create.mutate();
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    setChecked(true);
+    if (checkName(event, form)) create.mutate();
   };
   return (
     <Page
@@ -137,9 +157,9 @@ export function NewProjectScreen() {
       back={{ href: "/", label: "Projets" }}
       narrow
     >
-      <form onSubmit={submit} className="space-y-5">
+      <form onSubmit={submit} noValidate className="space-y-5">
         <Card className="p-4 sm:p-5">
-          <ProjectFields form={form} onChange={setForm} autoFocus />
+          <ProjectFields form={form} onChange={setForm} checked={checked} autoFocus />
         </Card>
         <ShownError error={create.error} />
         <Button type="submit" size="lg" block loading={create.isPending || create.isSuccess}>
@@ -173,6 +193,7 @@ export function ProjectSettingsScreen() {
 
 function ProjectEditor({ project }: { project: ProjectDetail }) {
   const [form, setForm] = useState(() => formOf(project));
+  const [checked, setChecked] = useState(false);
   const archived = project.status === "archive";
 
   /** What the server answered goes straight to every screen of the project. */
@@ -203,9 +224,9 @@ function ProjectEditor({ project }: { project: ProjectDetail }) {
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    save.mutate();
+  const submit = (event: FormEvent<HTMLFormElement>) => {
+    setChecked(true);
+    if (checkName(event, form)) save.mutate();
   };
   const archive = async () => {
     const ok = await confirmAction({
@@ -227,9 +248,9 @@ function ProjectEditor({ project }: { project: ProjectDetail }) {
   const dirty = !sameForm(form, formOf(project));
   return (
     <>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} noValidate className="space-y-4">
         <Card className="p-4 sm:p-5">
-          <ProjectFields form={form} onChange={setForm} />
+          <ProjectFields form={form} onChange={setForm} checked={checked} />
         </Card>
         <ShownError error={save.error} />
         <Button type="submit" size="lg" block disabled={!dirty} loading={save.isPending}>

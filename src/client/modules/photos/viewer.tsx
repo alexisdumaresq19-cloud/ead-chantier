@@ -357,25 +357,40 @@ function Viewer({
                   <p className="max-h-[26dvh] touch-pan-y overflow-y-auto overscroll-contain text-[15px] leading-snug whitespace-pre-line select-text sm:text-base">
                     {photo.caption}
                   </p>
+                ) : photo.canEdit ? (
+                  // A site photo without a word is hard to use later: an invitation, in passing.
+                  <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="-my-2.5 inline-flex min-h-11 cursor-pointer items-center text-[15px] text-white/60 italic transition-colors hover:text-white/85"
+                  >
+                    Ajouter une description…
+                  </button>
                 ) : null}
                 <p className="mt-1.5 text-sm text-white/75">
                   {photo.authorName ?? "Auteur inconnu"} · {takenLabel(photo, today)}
                 </p>
               </div>
+              {/* The harmless actions first; removing, in red, last. */}
               <div className="mt-3 flex shrink-0 gap-2 sm:mt-0">
+                {photo.canEdit ? (
+                  <ViewerButton onClick={() => setEditing(true)}>
+                    <Pencil aria-hidden /> Description
+                  </ViewerButton>
+                ) : null}
                 <ViewerButton loading={sharing.busy} onClick={sharing.run}>
                   {sharing.native ? <Share2 aria-hidden /> : <Download aria-hidden />}
                   {sharing.native ? "Partager" : "Télécharger"}
                 </ViewerButton>
                 {photo.canEdit ? (
-                  <>
-                    <ViewerButton onClick={() => setEditing(true)}>
-                      <Pencil aria-hidden /> Description
-                    </ViewerButton>
-                    <ViewerButton loading={remove.isPending} onClick={askRemove}>
-                      <Trash2 aria-hidden /> Supprimer
-                    </ViewerButton>
-                  </>
+                  <ViewerButton
+                    loading={remove.isPending}
+                    onClick={askRemove}
+                    // The app's red, lifted enough to read on black.
+                    className="text-[color-mix(in_oklab,var(--color-bad),white_38%)]"
+                  >
+                    <Trash2 aria-hidden /> Supprimer
+                  </ViewerButton>
                 ) : null}
               </div>
             </div>

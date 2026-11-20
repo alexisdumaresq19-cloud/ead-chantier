@@ -3,7 +3,6 @@ import { Link2, ShieldAlert, ShieldCheck, UserRoundCheck, UserRoundX, UserX } fr
 import { useState, type FormEvent } from "react";
 
 import type { InviteLink, Person, ProjectSummary } from "@/shared/api";
-import { ROLE_LABELS } from "@/shared/roles";
 
 import { api, errorMessage } from "../../lib/api";
 import { queryClient } from "../../lib/query";
@@ -24,8 +23,16 @@ import {
 import { adminKeys, refreshPeople, usePeople } from "./data";
 import { DeviceList } from "./devices";
 import { InviteLinkPanel } from "./invite-link";
-import { firstName, formatPhone, lastSeenText, telHref, UNREVIEWED_RULE } from "./people";
-import { personBody, PersonFields, type PersonForm } from "./person-fields";
+import { Meta } from "./meta";
+import {
+  firstName,
+  formatPhone,
+  lastSeenText,
+  roleAndTitle,
+  telHref,
+  UNREVIEWED_RULE,
+} from "./people";
+import { focusName, nameProblem, personBody, PersonFields, type PersonForm } from "./person-fields";
 import { ShownError } from "./shown-error";
 
 // One person, for the office: their details, role and projects, their
@@ -84,6 +91,7 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
   const me = useCurrentUser();
   const [form, setForm] = useState(() => formOf(person));
   const [link, setLink] = useState<InviteLink | null>(null);
+  const [checked, setChecked] = useState(false);
   const self = person.id === me.id;
   const first = firstName(person.name);
   const path = `/api/users/${person.id}`;
@@ -135,8 +143,10 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
     onError: (error) => toast.error(errorMessage(error)),
   });
 
-  const submit = async (event: FormEvent) => {
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setChecked(true);
+    if (nameProblem(form)) return focusName(event.currentTarget);
     if (form.role === "admin" && person.role !== "admin") {
       const ok = await confirmAction({
         title: `Donner à ${first} l'accès du bureau?`,
@@ -159,24 +169,29 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
 
   const tel = person.phone ? telHref(person.phone) : null;
   const pending = change.isPending ? change.variables : null;
+  const { role, title } = roleAndTitle(person);
   return (
     <Page
       title={person.name}
       subtitle={
         <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
-          <Badge tone="blue">{ROLE_LABELS[person.role]}</Badge>
+          <Badge tone="blue">{role}</Badge>
           {person.active ? null : <Badge>Accès désactivé</Badge>}
-          {person.title ? <span>{person.title}</span> : null}
-          <span>{lastSeenText(person.lastSeenAt)}</span>
-          {tel && person.phone ? (
-            <a
-              href={tel}
-              // A thumb-sized target around a line of text.
-              className="text-ead-dark -my-3 inline-block py-3 font-semibold underline-offset-2 hover:underline"
-            >
-              {formatPhone(person.phone)}
-            </a>
-          ) : null}
+          <Meta
+            items={[
+              title,
+              lastSeenText(person.lastSeenAt),
+              tel && person.phone ? (
+                <a
+                  href={tel}
+                  // A thumb-sized target around a line of text.
+                  className="text-ead-dark -my-3 inline-block py-3 font-semibold underline-offset-2 hover:underline"
+                >
+                  {formatPhone(person.phone)}
+                </a>
+              ) : null,
+            ]}
+          />
         </span>
       }
       back={BACK}
@@ -217,12 +232,13 @@ function PersonPage({ person, projects }: { person: Person; projects: ProjectSum
       )}
 
       <div className="grid gap-x-8 gap-y-8 lg:grid-cols-[minmax(0,1fr)_23rem] lg:items-start">
-        <form onSubmit={submit} className="space-y-4">
+        <form onSubmit={submit} noValidate className="space-y-4">
           <Card className="p-4 sm:p-5">
             <PersonFields
               form={form}
               onChange={setForm}
               projects={projects}
+              nameError={checked ? nameProblem(form) : null}
               roleLocked={
                 self
                   ? "C'est votre compte. Pour changer votre rôle, demandez à une autre personne du bureau."

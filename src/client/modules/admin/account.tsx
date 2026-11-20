@@ -1,18 +1,18 @@
 import { useMutation } from "@tanstack/react-query";
 import { LogOut } from "lucide-react";
 
-import { ROLE_LABELS } from "@/shared/roles";
-
 import { signOut, useCurrentUser } from "../../lib/session";
 import { InstallApp } from "../../pwa/install";
 import { Page, Section } from "../../shell/page";
 import { Avatar, Button, Card, confirmAction, FormError } from "../../ui";
 import { DeviceList } from "./devices";
-import { signOutFailure } from "./people";
+import { Meta } from "./meta";
+import { roleAndTitle, signOutFailure } from "./people";
 
 /** Who is signed in on this device, their other devices, and the way out. */
 export function AccountScreen() {
   const me = useCurrentUser();
+  const { role, title } = roleAndTitle(me);
   // signOut() changes nothing until the server has ended the session: on a
   // failure the device is still signed in, and the screen says so.
   const leave = useMutation({ mutationFn: () => signOut() });
@@ -33,9 +33,7 @@ export function AccountScreen() {
         <Avatar name={me.name} className="size-14 text-lg" />
         <div className="min-w-0">
           <p className="font-display text-xl leading-tight font-bold wrap-anywhere">{me.name}</p>
-          <p className="text-dim mt-1 text-[15px]">
-            {[ROLE_LABELS[me.role], me.title].filter(Boolean).join(" · ")}
-          </p>
+          <Meta items={[role, title]} className="text-dim mt-1 text-[15px]" />
         </div>
       </Card>
       <p className="text-dim mt-2 px-1 text-sm">

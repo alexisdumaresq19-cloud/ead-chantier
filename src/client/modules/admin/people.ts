@@ -2,7 +2,7 @@ import type { Person } from "@/shared/api";
 import { ROLE_LABELS, type Role } from "@/shared/roles";
 
 import { ApiFailure, errorMessage } from "../../lib/api";
-import { formatAgo, formatTime, formatWeekday, todayKey } from "../../lib/format";
+import { formatAgo, formatTime, formatWeekday } from "../../lib/format";
 
 // Words and links about people: phone numbers as written in Québec, what an
 // invitation says, how the office's list is sorted and searched. No React
@@ -78,16 +78,13 @@ export function inviteMessage(name: string, url: string, days: number): string {
   return `Bonjour ${firstName(name)}, voici votre lien personnel pour ouvrir EAD Chantier sur votre téléphone.\n${url}\nIl sert une seule fois, ${length}.`;
 }
 
-/** Until when a link or a QR code works, in words: "Valide jusqu'à demain, 14 h 05". */
-export function validUntilText(expiresAt: string, now: Date): string {
-  const end = new Date(expiresAt);
-  const days = Math.round(
-    (new Date(todayKey(end)).getTime() - new Date(todayKey(now)).getTime()) / 86_400_000,
-  );
-  if (days <= 0) return `Valide aujourd'hui jusqu'à ${formatTime(end)}`;
-  if (days === 1) return `Valide jusqu'à demain, ${formatTime(end)}`;
-  return `Valide jusqu'au ${formatWeekday(end)}`;
-}
+/** How long a site's QR code works (PROJECT_INVITE_DAYS on the server). */
+export const SITE_CODE_DAYS = 7;
+
+/** "Ce code fonctionne 7 jours, jusqu'au jeudi 26 novembre.": said plainly beside the code. */
+export const siteCodeText = (expiresAt: string) =>
+  // The date is read as one piece: it never breaks between the day and the month.
+  `Ce code fonctionne ${SITE_CODE_DAYS}\u00a0jours, jusqu'au ${formatWeekday(expiresAt).replaceAll(" ", "\u00a0")}.`;
 
 // --- People to confirm ------------------------------------------------------
 
@@ -113,6 +110,30 @@ export function accessEndText(scannedAt: string): string {
 }
 
 // --- The office's list ------------------------------------------------------
+
+/**
+ * A title that only says the role again, perhaps in the person's own form
+ * ("Contremaîtresse" for a foreman): the same first eight letters, whatever
+ * the accents and capitals.
+ */
+export function titleIsRole(title: string | null, role: Role): boolean {
+  const own = plain(title?.trim() ?? "");
+  return own.length > 0 && own.slice(0, 8) === plain(ROLE_LABELS[role]).slice(0, 8);
+}
+
+/**
+ * What to show of someone's role and title, never the same word twice: a
+ * title that repeats the role takes the role's place, in the person's own words.
+ */
+export function roleAndTitle(person: { title: string | null; role: Role }): {
+  role: string;
+  title: string | null;
+} {
+  const title = person.title?.trim() || null;
+  return titleIsRole(title, person.role)
+    ? { role: title as string, title: null }
+    : { role: ROLE_LABELS[person.role], title };
+}
 
 /** "Opérateur" if a title was given, otherwise the role: "Travailleur". */
 export const titleOrRole = (person: { title: string | null; role: Role }) =>

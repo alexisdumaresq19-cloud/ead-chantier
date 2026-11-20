@@ -57,6 +57,35 @@ test("a personal link signs a device in once", async ({ browser, baseURL }) => {
 
   await page.goto(link);
   await expect(page.getByRole("heading", { name: "Ce lien ne fonctionne plus" })).toBeVisible();
+  await expect(
+    page.getByText("Il a déjà servi ou il a expiré. Demandez un nouveau lien au bureau."),
+  ).toBeVisible();
+  // This device is signed in: the app is one tap away.
+  await page.getByRole("link", { name: "Ouvrir l'application" }).click();
+  await expect(page.getByRole("heading", { name: "Projets" })).toBeVisible();
+  await device.close();
+});
+
+test("a code or link that no longer works says whom to ask, and how to get in", async ({
+  browser,
+  baseURL,
+}) => {
+  const device = await browser.newContext({ baseURL });
+  const page = await device.newPage();
+  await page.goto("/j/ce-code-n-existe-plus");
+  await expect(page.getByRole("heading", { name: "Ce code QR ne fonctionne plus" })).toBeVisible();
+  await expect(
+    page.getByText("Demandez à votre contremaître d'afficher le code de la semaine."),
+  ).toBeVisible();
+  // Nobody is signed in here: no way into the app, only the ways in.
+  await expect(page.getByRole("link", { name: "Ouvrir l'application" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Comment entrer?" }).click();
+  await expect(page.getByRole("heading", { name: "Bienvenue" })).toBeVisible();
+
+  await page.goto("/i/ce-lien-n-existe-plus");
+  await expect(page.getByRole("heading", { name: "Ce lien ne fonctionne plus" })).toBeVisible();
+  await expect(page.getByText(/Demandez un nouveau lien au bureau/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Comment entrer?" })).toBeVisible();
   await device.close();
 });
 
@@ -72,6 +101,11 @@ test("the site's QR code lets a new worker in, straight into the project", async
   const page = await device.newPage();
   await page.goto(new URL(qr.url).pathname);
   await expect(page.getByRole("heading", { name: "Réfection de la rue Principale" })).toBeVisible();
+  // Sent without a name: asked for in French under the field, the cursor in it.
+  await page.getByRole("button", { name: "Entrer sur le chantier" }).click();
+  await expect(page.getByText("Inscrivez votre prénom et votre nom.")).toBeVisible();
+  await expect(page.getByLabel("Prénom et nom")).toBeFocused();
+  await expect(page).toHaveURL(/\/j\//);
   await page.getByLabel("Prénom et nom").fill(`Essai QR ${test.info().project.name}`);
   await page.getByRole("button", { name: "Entrer sur le chantier" }).click();
   await expect(page).toHaveURL(new RegExp(`/projets/${seed.projectId}$`));

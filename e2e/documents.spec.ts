@@ -95,6 +95,12 @@ test("a foreman adds two files, opens them, renames, moves and archives one", as
   await expect(row(page, "Programme de prévention (exemple)")).toBeVisible();
   await expect(page.getByRole("button", { name: /Santé et sécurité/ })).toBeVisible();
 
+  // A search that finds nothing says so, with the way back to the list.
+  await page.getByRole("searchbox").fill("zzqx");
+  await expect(page.getByRole("heading", { name: "Aucun document trouvé" })).toBeVisible();
+  await page.getByRole("button", { name: "Effacer la recherche" }).last().click();
+  await expect(row(page, "Programme de prévention (exemple)")).toBeVisible();
+
   // Two files, picked together, in one category.
   await addButton(page).click();
   await expect(page).toHaveURL(`${list}/ajouter`);
@@ -105,7 +111,12 @@ test("a foreman adds two files, opens them, renames, moves and archives one", as
   await expect(page.getByRole("heading", { name: "2 fichiers" })).toBeVisible();
   const pdfTitle = `Devis signé ${tag}`;
   const pngTitle = `Croquis ${tag}`;
+  // A file without a title is pointed out, in French, before anything leaves.
+  await page.getByLabel(`Titre de Devis ${tag}.pdf`).fill("");
+  await page.getByRole("button", { name: "Envoyer 2 documents" }).click();
+  await expect(page.getByText("Inscrivez le titre du document.")).toBeVisible();
   await page.getByLabel(`Titre de Devis ${tag}.pdf`).fill(pdfTitle);
+  await expect(page.getByText("Inscrivez le titre du document.")).toHaveCount(0);
   await expect(page.getByLabel(`Titre de Croquis_${tag}.png`)).toHaveValue(pngTitle);
 
   // Without a category, nothing leaves: the field says why.
@@ -149,6 +160,10 @@ test("a foreman adds two files, opens them, renames, moves and archives one", as
   await menuOf(page, pngTitle).click();
   await tapInWindow(page, "Gérer le document", "Renommer");
   const field = page.getByRole("dialog").getByLabel("Titre");
+  await expect(field).toBeFocused();
+  await field.fill("");
+  await page.getByRole("dialog").getByRole("button", { name: "Enregistrer" }).click();
+  await expect(page.getByRole("dialog").getByText("Inscrivez le titre du document.")).toBeVisible();
   await expect(field).toBeFocused();
   await field.fill(renamed);
   await page.getByRole("dialog").getByRole("button", { name: "Enregistrer" }).click();
