@@ -9,11 +9,16 @@ Tout ce qu'il faut coller ou téléverser dans App Store Connect (appstoreconnec
 | `screenshots/6.3/`       | Les mêmes captures pour iPhone 6,3 po (1206 × 2622)                     |
 | `review-notes.en.md`     | Les informations pour la personne d'Apple qui vérifie l'app, en anglais |
 | `unlisted-request.en.md` | Les réponses au formulaire de distribution non répertoriée, en anglais  |
+| `sample-photos/`         | Les photos de chantier des captures, avec leurs sources                 |
 
 ## Avant de commencer
 
-- Le compte de démonstration&nbsp;: dans l'application, connecté comme bureau, ouvrez **Équipe**, carte **Compte de démonstration**. Créez-le et choisissez les projets qu'il voit. Choisissez un projet qui peut être montré à Apple, avec des plans, des photos et au moins un rapport. Notez le numéro de cellulaire et le code affichés&nbsp;: ce sont l'identifiant et le mot de passe à donner à Apple.
+- L'app pour iPhone seulement&nbsp;: dans Xcode, la cible «&nbsp;App&nbsp;» doit viser l'iPhone seul (Targeted Device Family = iPhone). Si elle accepte aussi l'iPad, App Store Connect exige des captures pour iPad, qui n'existent pas, et il faut envoyer un nouveau build. Vérifiez-le avant l'archive.
+- Les phrases d'autorisation&nbsp;: dans le fichier Info.plist de l'app, il faut une phrase pour la caméra et une pour le microphone (par exemple «&nbsp;Pour prendre les photos du chantier.&nbsp;» et «&nbsp;Pour dicter le rapport journalier.&nbsp;»). Sans elles, l'app se ferme dès qu'on prend une photo ou qu'on dicte, et Apple la refuse. Vérifiez-les avant l'archive.
+- Le chiffrement&nbsp;: Info.plist dit aussi que l'app n'utilise pas d'autre chiffrement que celui d'iOS (clé ITSAppUsesNonExemptEncryption à NO). Alors App Store Connect ne pose pas la question à chaque build.
+- Le compte de démonstration&nbsp;: dans l'application, connecté comme bureau, ouvrez **Équipe**, carte **Compte de démonstration**. Créez-le et choisissez les projets qu'il voit. Choisissez un projet qui peut être montré à Apple, avec des plans, des photos et au moins un rapport. Le compte doit en être le **contremaître**&nbsp;: les rapports et la dictée sont réservés aux contremaîtres et au bureau, et Apple doit pouvoir essayer le microphone. Connectez-vous une fois avec ce compte sur un téléphone et vérifiez que l'onglet **Rapports** et «&nbsp;Dicter le rapport du jour&nbsp;» paraissent. Notez le numéro de cellulaire et le code affichés&nbsp;: ce sont l'identifiant et le mot de passe à donner à Apple. <!-- verify at integration: the demo account's role on its projects -->
 - Le build&nbsp;: l'app doit avoir été envoyée depuis Xcode (Product, puis Archive, puis Distribute App). Elle apparaît dans App Store Connect après quelques minutes.
+- Les pages d'aide et de confidentialité (https://ead-chantier.vercel.app/soutien et /confidentialite) doivent s'ouvrir&nbsp;: Apple les visite.
 
 ## 1. Créer l'app
 
@@ -46,7 +51,7 @@ Menu de gauche, **Confidentialité de l'app**.
 
 - Prix&nbsp;: gratuit
 - Disponibilité&nbsp;: au moins le Canada
-- Distribution&nbsp;: laissez «&nbsp;Publique&nbsp;» tant qu'Apple n'a pas accepté la demande de distribution non répertoriée (étape 6). Une fois acceptée, choisissez **Non répertoriée**&nbsp;: l'app ne paraît plus dans les recherches, et seul le lien direct permet de l'installer.
+- Distribution&nbsp;: laissez «&nbsp;Publique&nbsp;». Quand Apple accepte la demande de distribution non répertoriée (étape 6), il change lui-même ce choix pour **App non répertoriée** (Unlisted App)&nbsp;: l'app ne paraît alors dans aucune recherche ni liste, et seul le lien direct permet de l'installer. Ce choix vaut aussi pour les versions suivantes.
 
 ## 5. La version 1.0
 
@@ -57,30 +62,16 @@ Menu de gauche, **App iOS**, version **1.0**.
 - URL d'assistance&nbsp;: `listing.fr-CA.md`, «&nbsp;Adresses&nbsp;» (l'URL marketing reste vide)
 - Droits d'auteur&nbsp;: `listing.fr-CA.md`, «&nbsp;Droits d'auteur&nbsp;»
 - Nouveautés&nbsp;: `listing.fr-CA.md`, «&nbsp;Nouveautés&nbsp;», si le champ est affiché
-- Build&nbsp;: bouton **+** à côté de «&nbsp;Build&nbsp;», choisissez celui envoyé depuis Xcode
+- Build&nbsp;: bouton **+** à côté de «&nbsp;Build&nbsp;», choisissez celui envoyé depuis Xcode. Si App Store Connect pose des questions sur le chiffrement&nbsp;: l'app n'utilise que le chiffrement standard d'iOS (HTTPS). Choisissez la réponse qui dit qu'elle n'utilise aucun des algorithmes nommés («&nbsp;None of the algorithms mentioned above&nbsp;» en anglais).
 - Informations pour la vérification de l'app&nbsp;: `review-notes.en.md`. Cochez «&nbsp;Connexion requise&nbsp;», puis le numéro de cellulaire du compte de démonstration comme nom d'utilisateur et son code comme mot de passe. Vos coordonnées. Les notes&nbsp;: tout le texte de la section «&nbsp;Notes&nbsp;».
-- Publication de la version&nbsp;: «&nbsp;Publier manuellement cette version&nbsp;», pour garder la main sur la date.
+- Publication de la version&nbsp;: «&nbsp;Publier manuellement cette version&nbsp;». Ne la publiez qu'une fois la demande de l'étape 6 acceptée&nbsp;: sinon l'app paraîtrait d'abord à tout le monde dans l'App Store.
 
 Puis **Ajouter pour vérification**, et **Soumettre à la vérification de l'app**.
 
 ## 6. La demande de distribution non répertoriée
 
-Sur le site d'Apple pour les développeurs, page «&nbsp;Unlisted app distribution&nbsp;» (developer.apple.com/support/unlisted-app-distribution), connecté comme titulaire du compte. Le formulaire demande le numéro Apple de l'app (App Store Connect, **Informations sur l'app**, «&nbsp;Identifiant Apple&nbsp;»)&nbsp;: envoyez-le une fois l'app créée à l'étape 1. Les réponses sont dans `unlisted-request.en.md`&nbsp;; remplacez le nombre d'employés et les coordonnées entre crochets.
-
-## Si App Store Connect demande des captures pour iPad
-
-C'est que le projet Xcode accepte encore l'iPad. L'application est faite pour l'iPhone&nbsp;: demandez qu'on la limite à l'iPhone dans Xcode, puis envoyez un nouveau build. Sur un iPad, elle s'ouvrira quand même, dans le format d'un iPhone.
+Une fois la version 1.0 soumise (étape 5)&nbsp;: Apple refuse la demande d'une app qui n'a pas encore été soumise à la vérification. Formulaire&nbsp;: developer.apple.com/contact/request/unlisted-app/ (expliqué à developer.apple.com/support/unlisted-app-distribution), connecté comme titulaire du compte. Le formulaire demande le numéro Apple de l'app (App Store Connect, **Informations sur l'app**, «&nbsp;Identifiant Apple&nbsp;»). Les réponses sont dans `unlisted-request.en.md`&nbsp;; remplacez le nombre d'employés et les coordonnées entre crochets. Les notes pour Apple (`review-notes.en.md`) disent déjà que l'app sera non répertoriée, comme Apple le demande.
 
 ## Refaire les captures d'écran
 
-Après un changement d'écran, sur un ordinateur de développement, avec la base de données de développement vidée&nbsp;:
-
-```sh
-npm run db:fresh
-npx next build && node_modules/.bin/next start -p 3265   # avec l'environnement de scripts/e2e.sh
-BASE=http://localhost:3265 npm run seed
-BASE=http://localhost:3265 npx tsx scripts/store-sample.mts
-BASE=http://localhost:3265 npx tsx scripts/store-screenshots.mts
-```
-
-Les captures montrent seulement les données d'exemple (projet, personnes, plans, photos et documents fictifs, marqués «&nbsp;EXEMPLE&nbsp;»), vues par la contremaîtresse d'exemple.
+Après un changement d'écran, demandez à Claude Code de refaire les captures d'écran avec `scripts/store-sample.mts` et `scripts/store-screenshots.mts` (la marche à suivre est dans AGENTS.md). Les captures montrent seulement des données d'exemple&nbsp;: projet, personnes, plans et documents fictifs, marqués «&nbsp;EXEMPLE&nbsp;», vus par la contremaîtresse d'exemple. Les photos de chantier sont de vraies photos d'autres chantiers, libres de droits, marquées «&nbsp;EXEMPLE&nbsp;» (leurs sources sont dans `sample-photos/SOURCES.md`). Des photos des chantiers d'EAD, sans visage ni plaque lisible, les remplaceraient avantageusement&nbsp;: déposez-les dans `sample-photos/` sous les mêmes noms.

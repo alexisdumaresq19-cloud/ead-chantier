@@ -5,7 +5,8 @@
  * bar over the app's black header, the home indicator at the bottom, no frame.
  *
  *   npm run db:fresh, then a server on that database (a production build:
- *   the development one draws its own badge), then
+ *   the development one draws its own badge; with the environment
+ *   scripts/e2e.sh sets, and the same SETUP_CODE given to the seed), then
  *   BASE=http://localhost:3265 npm run seed
  *   BASE=http://localhost:3265 npx tsx scripts/store-sample.mts
  *   BASE=http://localhost:3265 npx tsx scripts/store-screenshots.mts
@@ -98,6 +99,43 @@ async function drawPhoneBands(page: Page, device: Device, bands: Bands) {
   );
 }
 
+/**
+ * The bars at the bottom (the tabs, a screen's own action bar) are 95 %
+ * opaque over a blur, as on iOS: what scrolls beneath them shows through as a
+ * faint smudge, which on a still picture reads as a flaw (a ghost row of text
+ * under the tabs). What lies wholly beneath them cannot be read on the phone
+ * anyway: it is hidden, and the bars keep their own look. `cut` names the
+ * parts of a document that are hidden whole when the bars cut them, so that
+ * a page does not end on half a heading.
+ */
+async function clearUnderBars(page: Page, cut?: string) {
+  await page.evaluate((cut) => {
+    // The sidebar's list bears the same name: the tabs are the one fixed to the bottom.
+    const tabs = [...document.querySelectorAll<HTMLElement>('nav[aria-label="Navigation"]')].find(
+      (nav) => getComputedStyle(nav).position === "fixed" && nav.getBoundingClientRect().height > 0,
+    );
+    if (!tabs) return;
+    const tabsTop = tabs.getBoundingClientRect().top;
+    // A screen's own bar sits on the tabs (bottom: var(--ead-tabs)), fixed or stuck there.
+    const bars = [...document.querySelectorAll<HTMLElement>("main *")].filter((element) => {
+      const box = element.getBoundingClientRect();
+      return (
+        ["fixed", "sticky"].includes(getComputedStyle(element).position) &&
+        box.height > 0 &&
+        box.height < 200 &&
+        Math.abs(box.bottom - tabsTop) < 2
+      );
+    });
+    const top = Math.min(tabsTop, ...bars.map((bar) => bar.getBoundingClientRect().top));
+    for (const element of document.querySelectorAll<HTMLElement>("main *")) {
+      if (bars.some((bar) => bar.contains(element))) continue;
+      const box = element.getBoundingClientRect();
+      const cutPart = cut !== undefined && element.matches(cut) && box.bottom > top;
+      if (box.top >= top || cutPart) element.style.visibility = "hidden";
+    }
+  }, cut);
+}
+
 async function settle(page: Page) {
   await page.waitForLoadState("networkidle");
   // Images (plan tiles, photos) decoded, fonts in, animations over.
@@ -110,13 +148,40 @@ async function settle(page: Page) {
   await page.waitForTimeout(700);
 }
 
-async function save(page: Page, device: Device, name: string) {
+async function save(page: Page, device: Device, name: string, plainBand: boolean) {
   const png = await page.screenshot({ animations: "disabled", caret: "hide" });
   const file = `${OUT}/${device.folder}/${name}.png`;
   // App Store Connect refuses an image with an alpha channel.
   await sharp(png).removeAlpha().png({ compressionLevel: 9 }).toFile(file);
   const meta = await sharp(file).metadata();
+  if (meta.width !== device.width * 3 || meta.height !== device.height * 3 || meta.channels !== 3)
+    throw new Error(`${file}\u00a0: ${meta.width}x${meta.height}, ${meta.channels} canaux`);
+  if (plainBand) await assertPlainHomeBand(file, device);
   console.log(`${file}  ${meta.width}x${meta.height}  ${meta.channels} canaux`);
+}
+
+/**
+ * Beside the home indicator, the band at the bottom shows only the bar's own
+ * colour: anything else is the page showing through (the ghost row a review
+ * found once, 5 to 7 levels off). The indicator itself, in the middle, is
+ * left out, and so are screens with a see-through bar of their own (the plan).
+ */
+async function assertPlainHomeBand(file: string, device: Device) {
+  const top = (device.height - device.bottom + 4) * 3;
+  const { data, info } = await sharp(file)
+    .extract({ left: 0, top, width: device.width * 3, height: device.height * 3 - top })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const middle = [(device.width / 2 - 90) * 3, (device.width / 2 + 90) * 3];
+  let worst = 0;
+  for (let y = 0; y < info.height; y++)
+    for (let x = 0; x < info.width; x++) {
+      if (x > middle[0] && x < middle[1]) continue;
+      const at = (y * info.width + x) * info.channels;
+      for (let c = 0; c < 3; c++) worst = Math.max(worst, Math.abs(data[at + c] - data[c]));
+    }
+  if (worst > 2)
+    throw new Error(`${file}\u00a0: la page paraît sous la barre du bas (écart ${worst})`);
 }
 
 /** The colours of the status bar's glyphs and of the home indicator, as iOS picks them. */
@@ -124,7 +189,7 @@ type Bands = { status: string; indicator: string };
 const OVER_HEADER_AND_TABS: Bands = { status: "#fff", indicator: "#000" };
 const OVER_DARK: Bands = { status: "#fff", indicator: "#fff" };
 
-type Shot = { name: string; take: (page: Page) => Promise<Bands> };
+type Shot = { name: string; take: (page: Page) => Promise<Bands>; cut?: string };
 
 const api = async (page: Page, path: string) =>
   (await (await page.request.get(BASE + path)).json()) as any;
@@ -132,17 +197,6 @@ const sheetNumbered = async (page: Page, number: string) =>
   (await api(page, `/api/projects/${projectId}/plans`)).sheets.find(
     (sheet: any) => sheet.number === number,
   ).id as string;
-
-/** Puts an element's top just under the app's black header. */
-async function scrollUnderHeader(page: Page, text: string) {
-  await page
-    .getByText(text, { exact: true })
-    .first()
-    .evaluate((element) => {
-      const header = document.querySelector("header")?.getBoundingClientRect().bottom ?? 0;
-      window.scrollBy(0, element.getBoundingClientRect().top - header - 16);
-    });
-}
 
 const SHOTS: Shot[] = [
   {
@@ -184,8 +238,9 @@ const SHOTS: Shot[] = [
   },
   {
     // Yesterday's report (scripts/store-sample.mts gave it the day's photos),
-    // from the work done down to its photos.
+    // from its top: the day, the weather and the crew say what it is.
     name: "4-rapport",
+    cut: "article section",
     take: async (page) => {
       const reports = await api(page, `/api/projects/${projectId}/reports`);
       const yesterday = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto" }).format(
@@ -194,8 +249,10 @@ const SHOTS: Shot[] = [
       const report = reports.find((one: any) => one.day === yesterday) ?? reports[0];
       await page.goto(`${BASE}/projets/${projectId}/rapports/${report.id}`);
       await settle(page);
-      await scrollUnderHeader(page, "Travaux réalisés");
-      await settle(page);
+      // The page says which day's report it is: its title and date are in view.
+      const title = await page.getByRole("heading", { name: "Rapport journalier" }).boundingBox();
+      if (!title || title.y > 200)
+        throw new Error("4-rapport\u00a0: le titre du rapport est hors de vue");
       return OVER_HEADER_AND_TABS;
     },
   },
@@ -218,7 +275,24 @@ const SHOTS: Shot[] = [
       await page.waitForTimeout(2000);
       await stop.click();
       await page.getByText("C'est noté").waitFor({ timeout: 30_000 });
+      // The draft's notice would sit half under the window's top edge: the
+      // form behind is scrolled past it, as after a look at the first parts.
+      await page.evaluate(() => {
+        const notice = [...document.querySelectorAll("main *")].find(
+          (element) =>
+            element.children.length === 0 && element.textContent?.startsWith("Brouillon gardé"),
+        );
+        const header = document.querySelector("header")?.getBoundingClientRect().bottom ?? 0;
+        const box = notice?.closest("div")?.parentElement?.getBoundingClientRect();
+        if (box) window.scrollBy(0, box.bottom - header + 12);
+      });
       await settle(page);
+      const notice = await page
+        .getByText("Brouillon gardé", { exact: false })
+        .first()
+        .boundingBox();
+      if (notice && notice.y + notice.height > 120)
+        throw new Error("5-assistant\u00a0: l'avis de brouillon paraît derrière la fenêtre");
       return OVER_HEADER_AND_TABS;
     },
   },
@@ -265,9 +339,10 @@ try {
       await withInsets(context, device);
       const page = await context.newPage();
       const bands = await shot.take(page);
+      await clearUnderBars(page, shot.cut);
       await drawPhoneBands(page, device, bands);
       await page.waitForTimeout(100);
-      await save(page, device, shot.name);
+      await save(page, device, shot.name, bands !== OVER_DARK);
       await context.close();
     }
   }

@@ -1,6 +1,6 @@
 # Request for unlisted app distribution
 
-Answers for Apple's request form for unlisted distribution (linked from developer.apple.com/support/unlisted-app-distribution, signed in as the Account Holder). Apple's wording of the questions can change; the facts below stay the same. Fill in what is between angle brackets.
+Answers for Apple's request form for unlisted distribution (developer.apple.com/contact/request/unlisted-app/, linked from developer.apple.com/support/unlisted-app-distribution, signed in as the Account Holder). Apple declines a request for an app that has not been submitted to App Review yet: send it once version 1.0 is submitted, with the line about unlisted distribution in the Review Notes (it is in review-notes.en.md). Apple's wording of the questions can change; the facts below stay the same. Fill in what is between angle brackets.
 
 ## The app
 
@@ -24,7 +24,7 @@ The app is of no use to the public: it shows nothing without an account, and acc
 
 ## Why not Apple Business Manager (custom apps)?
 
-The staff use their own iPhones, not phones owned or managed by the company. Custom apps through Apple Business Manager reach devices that the company manages, or people through redemption codes that the office would have to obtain, track and hand out one by one, for every new employee and every replaced phone. Most of the site workers are not comfortable with software: a single App Store link, sent by text message with their invitation, is what works for them.
+The staff use their own iPhones, not phones owned or managed by the company. Custom apps through Apple Business Manager reach devices that the company manages, or people through redemption codes that the office would have to obtain, track and hand out one by one, for every new employee and every replaced phone. Site workers join on their first day, often from the site itself: a single App Store link, sent by text message with their invitation, is the simplest path, with no code to redeem. Apple's own page names this case: employee-owned devices that are not eligible to be managed through Apple Business.
 
 ## Sign-in for Apple
 

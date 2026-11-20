@@ -18,7 +18,7 @@ The owner reads both in the app, signed in as the office: **Équipe** (the team 
 
 ## Notes
 
-Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,681 characters of the 4,000 allowed, comments excluded; recount after any change).
+Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,715 characters of the 4,000 allowed, comments excluded; recount after any change).
 
 EAD is the private field app of Les Entreprises Allen Dumaresq, a civil-engineering contractor in Quebec, Canada. The office, the foremen and the site workers of the company use it to open construction plans on site, read project documents, take site photos and write daily reports. The interface is in Canadian French only.
 
@@ -37,14 +37,14 @@ Inside a project, the tabs at the bottom are Accueil (home), Plans, Documents, P
 
 - Plans: tap Plans, then a sheet. Pinch to zoom; the arrows at the bottom go to the next sheet; "Rév." shows earlier revisions.
 - Photos: the Photos tab shows the site's photos by day. Tap one to see it full screen.
-- Daily reports: the Rapports tab lists them. Tap one to read it; "PDF" makes the report as a PDF with its photos.
+- Daily reports: the Rapports tab lists them. Tap one to read it; "PDF" creates the report as a PDF with its photos.
 - Documents: the Documents tab lists them by category. Tap one to open it.
 
 CAMERA
-On a project's home, tap "Prendre une photo" (or, in the Photos tab, "Prendre une photo"). iOS asks for camera access the first time. The photo is added to the project; a window offers to add a description. On a device without a camera, "De la galerie" picks a photo from the library instead.
+Tap "Prendre une photo" on a project's home or in the Photos tab. iOS asks for camera access the first time. The photo is added to the project; a window offers to add a description. On a device without a camera, "De la galerie" picks a photo from the library instead.
 
 MICROPHONE (dictation of the daily report)
-In the Rapports tab, tap the report of the day (or, on the project's home, "Dicter le rapport du jour"), then "Dicter le rapport". Before the first use, the app explains that the voice, the text and the report's photos are sent to an AI service, and asks for agreement. Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". <!-- verify at integration --> iOS then asks for microphone access. Say a few sentences about a work day (French works best), and tap the microphone again to stop. The report fills itself; nothing is saved until "Enregistrer" is tapped. "Écrire" sends typed text instead of the voice.
+In the Rapports tab, tap the report of the day (or, on the project's home, "Dicter le rapport du jour"), then "Dicter le rapport". Before the first use, the app explains that the voice, the text and the report's photos are sent to an AI service, and asks for agreement. Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". <!-- verify at integration --> iOS then asks for microphone access. Read aloud, for example: "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc." Then tap the microphone again to stop. The report fills itself; nothing is saved until "Enregistrer" is tapped. "Écrire" sends typed text instead of the voice.
 
 ACCOUNT DELETION
 Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account is deleted at once. If the demonstration account is deleted, the office can create a new one. <!-- verify at integration -->

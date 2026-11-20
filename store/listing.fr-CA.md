@@ -2,7 +2,20 @@
 
 Tout ce qui se colle dans App Store Connect pour la version 1.0, champ par champ. Le texte à coller est dans les cadres gris&nbsp;: copiez-le tel quel. À côté de chaque champ, sa longueur et la limite d'Apple (comptées en caractères).
 
-Les textes à coller n'ont volontairement aucun deux-points&nbsp;: App Store Connect ne garde pas l'espace insécable qui doit le précéder en français.
+Les textes à coller n'ont volontairement aucun deux-points, sauf dans l'adresse web&nbsp;: App Store Connect ne garde pas l'espace insécable qui doit le précéder en français.
+
+## À vérifier avant de coller
+
+Ces phrases décrivent des fonctions qui étaient en construction quand cette fiche a été écrite. Avant de coller, ouvrez l'app finale (le build envoyé à Apple) et vérifiez chacune. Si une fonction manque, retirez sa phrase&nbsp;: la fiche ne doit promettre que ce que l'app fait (règle 2.3 d'Apple). Chacune porte la marque `<!-- verify at integration -->` dans ce fichier.
+
+1. Texte promotionnel, «&nbsp;même sans réseau&nbsp;»&nbsp;: les plans gardés s'ouvrent en mode avion dans l'app iPhone.
+2. Description, «&nbsp;par un code&nbsp;»&nbsp;: l'entrée avec le cellulaire et un code du bureau existe.
+3. Description, «&nbsp;Gardez un projet sur l'appareil…&nbsp;»&nbsp;: même vérification que le point 1.
+4. Description, «&nbsp;L'assistant demande votre accord…&nbsp;»&nbsp;: l'étape d'accord paraît avant le premier envoi.
+5. Description, «&nbsp;Ouvrez un document sur le téléphone ou envoyez-le…&nbsp;»&nbsp;: le visualiseur et le partage d'iOS s'ouvrent.
+6. Description, dernière ligne, et la section «&nbsp;Adresses&nbsp;»&nbsp;: les pages /soutien et /confidentialite répondent en production.
+
+Les balises `<!-- … -->` restent en dehors des cadres gris&nbsp;: elles ne se collent pas.
 
 ## Nom de l'app
 
@@ -32,6 +45,8 @@ Plans et rapports de chantier
 ```text
 Les plans s'ouvrent vite au chantier, même sans réseau. Le rapport du jour se dicte en quelques phrases. Chaque photo va au bon projet, à la bonne date.
 ```
+
+<!-- verify at integration: plans offline inside the iPhone app -->
 
 152 caractères sur 170. Ce texte peut changer en tout temps, sans nouvelle version.
 
@@ -71,6 +86,8 @@ DOCUMENTS
 Besoin d'un compte ou d'aide? Adressez-vous au bureau d'EAD ou visitez https://ead-chantier.vercel.app/soutien
 ```
 
+<!-- verify at integration: code sign-in (paragraph 2), plans offline, the assistant's agreement step, native viewer and share sheet, /soutien live (see "À vérifier avant de coller") -->
+
 2120 caractères sur 4000.
 
 ## Mots-clés
@@ -108,26 +125,29 @@ Format demandé par Apple&nbsp;: l'année, puis le nom exact du titulaire des dr
 
 ## Cote d'âge (questionnaire)
 
-Le questionnaire tel qu'Apple le présente depuis 2025, avec la réponse pour EAD. Résultat attendu&nbsp;: **4+**.
+Les catégories et les questions ci-dessous suivent la page de référence d'Apple «&nbsp;Age ratings values and definitions&nbsp;» (developer.apple.com, lue le 20 novembre 2026). Les libellés français d'App Store Connect peuvent différer un peu&nbsp;: le libellé anglais est entre parenthèses. Résultat attendu&nbsp;: **4+**.
 
-| Section                    | Question                                                         | Réponse         |
-| -------------------------- | ---------------------------------------------------------------- | --------------- |
-| Contrôles dans l'app       | Contrôle parental                                                | Non             |
-| Contrôles dans l'app       | Vérification de l'âge                                            | Non             |
-| Fonctions                  | Accès Web sans restriction                                       | Non             |
-| Fonctions                  | Contenu généré par les utilisateurs                              | Non (voir note) |
-| Fonctions                  | Messagerie et clavardage                                         | Non             |
-| Fonctions                  | Publicité                                                        | Non             |
-| Thèmes pour adultes        | Grossièretés ou humour cru                                       | Aucun           |
-| Thèmes pour adultes        | Horreur ou peur                                                  | Aucun           |
-| Thèmes pour adultes        | Alcool, tabac ou drogues                                         | Aucun           |
-| Médical ou bien-être       | Information médicale ou traitement                               | Aucun           |
-| Médical ou bien-être       | Santé ou bien-être                                               | Non             |
-| Sexualité ou nudité        | Thèmes suggestifs, contenu sexuel, nudité                        | Aucun           |
-| Violence                   | Violence (dessin animé, réaliste, prolongée), armes              | Aucun           |
-| Jeux de hasard et concours | Jeux de hasard simulés, concours, jeux d'argent, coffres à butin | Aucun / Non     |
+| Section                                       | Question                                                                    | Réponse |
+| --------------------------------------------- | --------------------------------------------------------------------------- | ------- |
+| Contrôles dans l'app (In-App Controls)        | Contrôle parental (Parental Controls)                                       | Non     |
+| Contrôles dans l'app                          | Vérification de l'âge (Age Assurance)                                       | Non     |
+| Fonctions (Capabilities)                      | Accès Web sans restriction (Unrestricted Web Access)                        | Non     |
+| Fonctions                                     | Contenu généré par les utilisateurs (User-Generated Content)                | Non     |
+| Fonctions                                     | Réseau social (Social Media)                                                | Non     |
+| Fonctions                                     | Messagerie et clavardage (Messaging and Chat)                               | Non     |
+| Fonctions                                     | Partage de la position (Shared Location)                                    | Non     |
+| Fonctions                                     | Publicité (Advertising)                                                     | Non     |
+| Thèmes pour adultes (Mature Themes)           | Grossièretés ou humour cru (Profanity or Crude Humor)                       | Aucun   |
+| Thèmes pour adultes                           | Horreur ou peur (Horror/Fear Themes)                                        | Aucun   |
+| Thèmes pour adultes                           | Alcool, tabac ou drogues (Alcohol, Tobacco, or Drug Use or References)      | Aucun   |
+| Thèmes pour adultes                           | Rencontres (Dating and Relationships)                                       | Non     |
+| Médical ou bien-être (Medical or Wellness)    | Information médicale ou traitement (Medical or Treatment Information)       | Aucun   |
+| Médical ou bien-être                          | Santé ou bien-être (Health or Wellness Topics)                              | Aucun   |
+| Sexualité ou nudité (Sexuality or Nudity)     | Thèmes suggestifs, contenu sexuel, nudité (les trois questions)             | Aucun   |
+| Violence                                      | Violence de dessin animé, réaliste, prolongée, armes (les quatre questions) | Aucun   |
+| Activités de hasard (Chance-Based Activities) | Jeux d'argent, jeux de hasard simulés, concours, coffres à butin            | Aucun   |
 
-Note sur le contenu généré par les utilisateurs&nbsp;: les photos, rapports et documents restent dans l'équipe d'une seule entreprise, sur des comptes que l'entreprise donne. Rien n'est public, et personne ne peut écrire à un inconnu. Si un libellé du questionnaire a changé, gardez ce principe et vérifiez la cote affichée à la fin&nbsp;: elle doit être 4+.
+Contenu généré par les utilisateurs&nbsp;: Apple le définit comme la diffusion **large** de contenu créé par les utilisateurs. Dans EAD, les photos, rapports et documents restent dans l'équipe d'une seule entreprise, sur des comptes que l'entreprise donne&nbsp;; rien n'est public et personne ne peut écrire à un inconnu. D'où «&nbsp;Non&nbsp;». Selon le même tableau d'Apple, un «&nbsp;Oui&nbsp;» à cette question donnerait quand même 4+. Vérifiez la cote affichée à la fin&nbsp;: elle doit être 4+.
 
 Apple demande aussi si l'app est conçue pour les enfants&nbsp;: **Non**.
 
