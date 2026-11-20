@@ -18,7 +18,7 @@ The owner reads both in the app, signed in as the office: **Équipe** (the team 
 
 ## Notes
 
-Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,891 bytes of the 4,000 bytes allowed; recount after any change).
+Paste the text below, from "EAD is" to "Thank you.", into the "Notes" field (3,895 bytes of the 4,000 bytes allowed; recount after any change).
 
 EAD is the private field app of Les Entreprises Allen Dumaresq, a civil-engineering contractor in Quebec, Canada. The office, the foremen and the site workers of the company use it to open construction plans on site, read project documents, take site photos and write daily reports. The interface is in Canadian French only.
 
@@ -47,7 +47,7 @@ MICROPHONE (dictation of the daily report)
 On the project's home, tap "Dicter le rapport du jour", then "Dicter le rapport". Before the first use, the app says what goes to an AI service (the voice, the report's text, its photos, the names of the site's people) and to which companies, and asks for agreement ("J'accepte"). Nothing is sent before the person agrees; the agreement can be withdrawn under "Mon compte". iOS then asks for microphone access. Read aloud, for example: "Soleil, moins deux degrés. Marc Lévesque, dix heures. On a posé la conduite d'aqueduc." Then tap the microphone again to stop. The report fills itself; nothing is saved until "Enregistrer" is tapped. "Écrire" sends typed text instead of the voice.
 
 ACCOUNT DELETION
-Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account is deleted at once. Signing in again with the same number and code makes a new demonstration account.
+Tap the round initials at the top right (or "Mon compte" on the projects list), scroll down to "Supprimer mon compte" and confirm. The account is deleted at once. Signing in again with the same number and code opens the demonstration account again.
 
 PRIVACY AND SUPPORT
 The privacy policy and the support page are linked at the bottom of the first screen and of "Mon compte".

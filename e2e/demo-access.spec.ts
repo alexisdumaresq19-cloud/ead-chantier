@@ -80,7 +80,11 @@ test("a visitor types them and sees the project as a foreman, for a day", async 
   const pdf = await visitor.request.get(`/api/reports/${reports[0].id}/pdf`);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toContain("application/pdf");
-  expect((await call(visitor.request, "GET", "/api/assistant")).body).toEqual({ dictation: true });
+  // Offered, and asked for its agreement first, like anyone.
+  expect((await call(visitor.request, "GET", "/api/assistant")).body).toEqual({
+    dictation: true,
+    consentAt: null,
+  });
   await visitor.close();
 });
 
@@ -203,6 +207,18 @@ test("the visitor deletes the account, and the next visitor still gets in", asyn
   await typeCode(page, access.phone, access.code);
   await expect(page.getByRole("heading", { name: "Projets" })).toBeVisible();
   const before = (await call(first.request, "GET", "/api/me")).body.id;
+  // The visitor writes a report for a day that has none.
+  const written = await call(first.request, "POST", `/api/projects/${seed.projectId}/reports`, {
+    day: "2025-03-03",
+    weather: { condition: null, temperatureC: null, note: "" },
+    crew: [],
+    equipment: "",
+    workDone: "Essai du visiteur.",
+    notes: "",
+    photoIds: [],
+  });
+  expect(written.status).toBe(200);
+  const reportId = written.body.report.id as string;
   await page.goto("/moi");
   await page.getByRole("button", { name: "Supprimer mon compte" }).click();
   await confirm(page, "Supprimer mon compte");
@@ -215,8 +231,17 @@ test("the visitor deletes the account, and the next visitor still gets in", asyn
   await typeCode(again, access.phone, access.code);
   await expect(again.getByRole("heading", { name: "Projets" })).toBeVisible();
   await expect(again.getByText("Réfection de la rue Principale")).toBeVisible();
+  // The account that had added something comes back as itself: what the
+  // demonstration added is still its own to change.
   const after = (await call(next.request, "GET", "/api/me")).body.id;
-  expect(after).not.toBe(before);
+  expect(after).toBe(before);
+  const report = (await call(next.request, "GET", `/api/reports/${reportId}`)).body;
+  const changed = await call(next.request, "PATCH", `/api/reports/${reportId}`, {
+    notes: "Complété après le retour.",
+    baseUpdatedAt: report.updatedAt,
+  });
+  expect(changed.status).toBe(200);
+  expect((await call(next.request, "DELETE", `/api/reports/${reportId}`)).status).toBe(200);
   await next.close();
 });
 

@@ -389,6 +389,50 @@ describe.skipIf(!ready)("with a database", () => {
       expect((await demoRows()).filter((row) => row.active)).toHaveLength(1);
     });
 
+    it("comes back as itself when it had added something, so that it still changes it", async () => {
+      await createDemoAccess("office", ["p1"]);
+      const setting = (await readDemoAccess())!;
+      const typed = { phone: setting.phone, code: setting.code };
+      const first = await signInWithCode(from("203.0.114.1"), typed, fast);
+      await sql`insert into photos (id, project_id, image_key, width, height, taken_at, created_by)
+                values ('ph1', 'p1', 'k', 4, 3, now(), ${first.userId})`;
+      // The visitor agreed to the assistant, then deleted the account.
+      await sql`update users set assistant_consent_at = now() where id = ${first.userId}`;
+      await deleteOwnAccount(first.userId);
+      const [gone] = await demoRows();
+      expect(gone).toMatchObject({ id: first.userId, active: false, phone: null });
+      expect(gone.deleted_at).not.toBeNull();
+      expect(await currentUser(from("x", first.token))).toBeNull();
+
+      // The next visitor finds the same account: the photo is still its own.
+      const again = await signInWithCode(from("203.0.114.2"), typed, fast);
+      expect(again.userId).toBe(first.userId);
+      const rows = await demoRows();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        active: true,
+        deleted_at: null,
+        phone: setting.phone,
+        role: "contremaitre",
+        name: "Compte de démonstration",
+        // Nothing of the earlier visitor: the agreement is asked again.
+        assistant_consent_at: null,
+      });
+      const members =
+        await sql`select project_id from project_members where user_id = ${again.userId}`;
+      expect(members.map((row) => row.project_id)).toEqual(["p1"]);
+      // The earlier visitor's device stays signed out.
+      expect(await currentUser(from("x", first.token))).toBeNull();
+
+      // Removed by the office, then made anew: the same account again.
+      await removeDemoAccess();
+      expect((await demoRows()).filter((row) => row.active)).toHaveLength(0);
+      await createDemoAccess("office", ["p2"]);
+      const [back] = await demoRows();
+      expect(back).toMatchObject({ id: first.userId, active: true, deleted_at: null });
+      expect(await demoRows()).toHaveLength(1);
+    });
+
     it("is never shut by wrong codes on its number: the right one always gets in", async () => {
       await createDemoAccess("office", ["p1"]);
       const setting = (await readDemoAccess())!;

@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 
 import { DEMO_NAME, phoneKey } from "@/shared/access";
 
@@ -17,9 +17,12 @@ import { countDemoRemake, holdDemo } from "./door";
 // settings, as the company's code is: it opens nothing but those projects.
 //
 // Behind it stands one account (users.demo), made when the access is, and
-// made again, on the same projects, when a visitor signs in after the last
+// there again, on the same projects, when a visitor signs in after the last
 // one deleted it: "Supprimer mon compte" works for the visitor as for anyone,
-// and the next one still gets in. Its sessions last a day.
+// and the next one still gets in. An account that had added something comes
+// back as itself, so that what the demonstration added stays its own to
+// change; one that had added nothing is gone, and a new one is made. Its
+// sessions last a day.
 
 const KEY = "demo_access";
 const settings = schema.appSettings;
@@ -117,23 +120,58 @@ async function setProjects(tx: Executor, userId: string, projectIds: string[]) {
       .onConflictDoNothing();
 }
 
+/**
+ * The demonstration account a visitor, or the office, deleted after it had
+ * added something: its row stays, with the name alone, for what it added
+ * (src/server/people/delete.ts). Null when there is none.
+ */
+async function formerDemoAccount(tx: Executor): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .where(and(eq(schema.users.demo, true), isNotNull(schema.users.deletedAt)))
+    .orderBy(desc(schema.users.deletedAt))
+    .limit(1);
+  return row?.id ?? null;
+}
+
+/**
+ * Puts the demonstration account in place. The one that left its name on
+ * photos, documents or reports is brought back, rather than a new one made:
+ * a visitor who deletes the account and returns still changes what was added
+ * before, and no row piles up at each visit. Nothing of an earlier visitor
+ * comes back with it: deleting kept the name alone, and ended every session.
+ */
 async function makeDemoAccount(tx: Executor, setting: DemoSetting): Promise<string> {
-  const id = newId();
-  await tx.insert(schema.users).values({
-    id,
-    name: DEMO_NAME,
-    role: "contremaitre",
-    phone: setting.phone,
-    demo: true,
-    createdBy: setting.changedBy,
-  });
+  const former = await formerDemoAccount(tx);
+  const id = former ?? newId();
+  if (former)
+    await tx
+      .update(schema.users)
+      .set({
+        name: DEMO_NAME,
+        role: "contremaitre",
+        phone: setting.phone,
+        active: true,
+        deletedAt: null,
+      })
+      .where(eq(schema.users.id, former));
+  else
+    await tx.insert(schema.users).values({
+      id,
+      name: DEMO_NAME,
+      role: "contremaitre",
+      phone: setting.phone,
+      demo: true,
+      createdBy: setting.changedBy,
+    });
   await setProjects(tx, id, await existing(tx, setting.projectIds));
   return id;
 }
 
 /**
- * The demonstration account for a visitor's sign-in, made again if there is
- * none (the last visitor deleted it), a few times a day at most: a foreman,
+ * The demonstration account for a visitor's sign-in, put back in place if
+ * there is none (the last visitor deleted it), a few times a day at most: a foreman,
  * so that it shows the whole app, daily reports included; the routes that
  * touch the team, or what others wrote, refuse it (users.demo). Called with
  * holdDemo held, so two visitors at once never make two accounts.

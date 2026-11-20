@@ -82,9 +82,10 @@ projectIds}` readable, since the office reads it again; the number is
   in `access-code/rules.ts`). A new route that changes a project's content
   calls one of them, a new route about the team checks `user.demo`, and the
   screens hide what the server would refuse. Its visitor may delete the
-  account, as Apple asks; the next sign-in makes it again, a few times a day
-  at most. Its number is counted per network only, because its code is
-  handed out.
+  account, as Apple asks; the next sign-in puts it back, a few times a day
+  at most: the same account when it had added something (its row was kept
+  for the name), so what the demonstration added stays its own to change.
+  Its number is counted per network only, because its code is handed out.
 - **Deleting one's account** (`DELETE /api/me`, `src/server/people/delete.ts`):
   someone whose id is the author of reports, photos, documents, plans or
   projects keeps a `users` row with the name only and `deleted_at` set;

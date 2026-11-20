@@ -115,9 +115,9 @@ export function appleReviewText(access: { phone: string; code: string }): string
     `Nom d'utilisateur / User name\u00a0: ${access.phone}`,
     `Mot de passe / Password\u00a0: ${access.code}`,
     "",
-    `${ACCESS_CODE_HOW} Entrez le cellulaire et le code. Pour supprimer le compte\u00a0: Mon compte, Supprimer mon compte. Le même numéro et le même code font ensuite un nouveau compte de démonstration.`,
+    `${ACCESS_CODE_HOW} Entrez le cellulaire et le code. Pour supprimer le compte\u00a0: Mon compte, Supprimer mon compte. Le même numéro et le même code rouvrent ensuite le compte de démonstration.`,
     "",
-    'In the app, tap "J\'ai déjà un compte" if that button is shown, then "Avec un code du bureau", and enter the user name (a cell number) and the password (a code). To delete the account: Mon compte, Supprimer mon compte. Signing in again with the same number and code makes a new demo account.',
+    'In the app, tap "J\'ai déjà un compte" if that button is shown, then "Avec un code du bureau", and enter the user name (a cell number) and the password (a code). To delete the account: Mon compte, Supprimer mon compte. Signing in again with the same number and code opens the demonstration account again.',
   ].join("\n");
 }
 
