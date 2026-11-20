@@ -524,6 +524,25 @@ describe.skipIf(!ready)("with a database", () => {
         ),
       ).toBe("accepted");
 
+      // Removed and made anew is a new code too: paused again, then remade,
+      // the new access still comes back after its first deletion.
+      for (let i = 1; i < DEMO_REMAKES_PER_DAY; i++) {
+        const [account] = await demoRows();
+        await deleteOwnAccount(account.id);
+        await signInWithCode(from(`203.0.117.${i}`), renewed, fast);
+      }
+      expect(await demoRemakesPausedUntil(db, new Date())).not.toBeNull();
+      await removeDemoAccess();
+      await createDemoAccess("office", ["p1"]);
+      const anew = (await readDemoAccess())!;
+      const [made] = await demoRows();
+      await deleteOwnAccount(made.id);
+      expect(
+        await answer(
+          signInWithCode(from("203.0.117.99"), { phone: anew.phone, code: anew.code }, fast),
+        ),
+      ).toBe("accepted");
+
       // Nobody of the team is given that number, however typed.
       expect(await isDemoPhone("1 (418) 555-0100")).toBe(true);
       expect(await isDemoPhone("418 555-0101")).toBe(false);
