@@ -225,7 +225,7 @@ Un essai qui échoue&nbsp;: Claude Code cherche la cause dans «&nbsp;Dépannage
 
 **Erreurs de compilation Swift**
 
-- Dans `ios/App/App/EADViewController.swift` (le seul code Swift propre au projet, écrit sans Mac)&nbsp;: lire l'erreur, corriger au plus simple, commit. Si `NavigationFilter` refuse de compiler et que la correction n'est pas évidente, le retirer (supprimer la classe et les trois lignes qui l'installent dans `capacitorDidLoad`)&nbsp;: l'app marche sans lui, la page «&nbsp;Pas de connexion&nbsp;» peut alors apparaître un instant quand un chargement est interrompu. Noter au journal.
+- Dans `ios/App/App/EADViewController.swift` (le seul code Swift propre au projet, écrit sans Mac)&nbsp;: lire l'erreur, corriger au plus simple, commit. Si `NavigationFilter` refuse de compiler et que la correction n'est pas évidente, le retirer (supprimer la classe, son extension, la propriété `navigationFilter` et les trois lignes qui l'installent dans `capacitorDidLoad`)&nbsp;: l'app marche sans lui, la page «&nbsp;Pas de connexion&nbsp;» peut alors apparaître un instant quand un chargement est interrompu. Noter au journal.
 - `@UIApplicationMain` signalé comme dépassé dans `AppDelegate.swift`&nbsp;: le remplacer par `@main` règle l'avertissement.
 
 **Le cycle de vie par scènes (Xcode 27 et suivants)**

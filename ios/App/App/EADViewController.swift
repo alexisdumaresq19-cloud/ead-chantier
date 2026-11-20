@@ -39,8 +39,8 @@ class EADViewController: CAPBridgeViewController {
 /// shows the offline page (server.errorPath) for any load that fails. A load
 /// that was only interrupted is not a lost connection: one page replaced by
 /// another before it arrived, or a file the web view cannot show. Everything
-/// else goes to Capacitor unchanged.
-final class NavigationFilter: NSObject, WKNavigationDelegate {
+/// else goes to Capacitor unchanged, by Objective-C message forwarding.
+final class NavigationFilter: NSObject {
     /// Capacitor's WebViewDelegationHandler, kept alive by the bridge.
     private weak var target: WKNavigationDelegate?
 
@@ -60,6 +60,19 @@ final class NavigationFilter: NSObject, WKNavigationDelegate {
         return super.forwardingTarget(for: aSelector)
     }
 
+    static func isInterruption(_ error: Error) -> Bool {
+        let error = error as NSError
+        if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return true }
+        // WebKitErrorFrameLoadInterruptedByPolicyChange: a download, or a
+        // file type the web view does not display.
+        return error.domain == "WebKitErrorDomain" && error.code == 102
+    }
+}
+
+// In an extension, so that the class does not take the protocol's main-actor
+// isolation: responds(to:) and forwardingTarget(for:) override NSObject's,
+// which have none.
+extension NavigationFilter: WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if NavigationFilter.isInterruption(error) { return }
         target?.webView?(webView, didFailProvisionalNavigation: navigation, withError: error)
@@ -68,13 +81,5 @@ final class NavigationFilter: NSObject, WKNavigationDelegate {
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         if NavigationFilter.isInterruption(error) { return }
         target?.webView?(webView, didFail: navigation, withError: error)
-    }
-
-    static func isInterruption(_ error: Error) -> Bool {
-        let error = error as NSError
-        if error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled { return true }
-        // WebKitErrorFrameLoadInterruptedByPolicyChange: a download, or a
-        // file type the web view does not display.
-        return error.domain == "WebKitErrorDomain" && error.code == 102
     }
 }
